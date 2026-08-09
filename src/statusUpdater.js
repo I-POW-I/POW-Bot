@@ -129,7 +129,7 @@ function buildPanelEmbed(guildId, guild = null) {
   }
 
   return new EmbedBuilder()
-    .setTitle('POW-Bot 🖤')
+    .setTitle('[TEST] POW-Bot 🖤')
     .setColor(colour)
     .addFields(
       { name: 'Status',      value: statusLine,  inline: true },
