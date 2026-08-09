@@ -129,7 +129,7 @@ function buildPanelEmbed(guildId, guild = null) {
   }
 
   return new EmbedBuilder()
-    .setTitle('24/7 POW Bot 🖤')
+    .setTitle('POW-Bot 🖤')
     .setColor(colour)
     .addFields(
       { name: 'Status',      value: statusLine,  inline: true },
@@ -158,7 +158,7 @@ function buildStatsEmbed(guildId, client) {
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
   const embed = new EmbedBuilder()
-    .setTitle('24/7 POW Bot 🖤 — Status')
+    .setTitle('POW-Bot 🖤 — Status')
     .setColor(connected ? 0x57F287 : 0xED4245)
     .setTimestamp();
 
