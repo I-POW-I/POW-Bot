@@ -1,6 +1,6 @@
 # POW-Bot
 
-A Discord bot that sits in a voice channel and stays there 24/7. Keeps call timers running, logs all voice activity, and manages itself through a live control panel.
+A Discord bot that sits in a voice channel and stays there 24/7. Keeps call timers running, logs all voice activity, and has live control panel.
 
 ---
 
@@ -8,11 +8,11 @@ A Discord bot that sits in a voice channel and stays there 24/7. Keeps call time
 
 - Joins a voice channel and stays connected permanently
 - Plays a silent audio stream to prevent Discord from dropping the connection
-- Auto-rejoins if dropped — heartbeat checks every 2 minutes
-- Auto-rejoins the last known channel on restart
+- Instantly Auto-rejoins the last known VC if the bot's host connection drops or discord breaks
+- Instantly Auto-rejoins the last known VC on restart, so worrying about it leaving during a restart, update or change isn't a issue.
 - Logs all voice activity to a chosen channel
 - Logs deleted messages
-- Live control panel embed with buttons — no commands needed day-to-day
+- Live control panel embed with buttons
 - Updates its Discord status with the channel name and uptime
 - Persists uptime stats across restarts
 
@@ -24,8 +24,10 @@ A Discord bot that sits in a voice channel and stays there 24/7. Keeps call time
 |---|---|---|
 | `/panel` | Post the live control panel in this channel | Manage Server |
 | `/setlogchannel` | Set which channel a log type posts to | Manage Server |
-| `/status` | Show current connection stats | Everyone |
+| `/ping` | Show's current connection ping | Everyone |
 | `/clearcommands` | Force clear and re-register all slash commands | Administrator |
+| `/serverinfo` | Show's useful information about the server | Everyone |
++ plenty more!!
 
 ---
 
@@ -33,11 +35,11 @@ A Discord bot that sits in a voice channel and stays there 24/7. Keeps call time
 
 | Button | What it does | Permission |
 |---|---|---|
-| 🔊 Join | Join your current VC, or pick one from a dropdown | Manage Server |
-| 👋 Leave | Clean disconnect | Manage Server |
-| 🔌 Force Leave | Wipes all state — fixes ghost connection issues | Manage Server |
-| 📊 Stats | Shows detailed bot stats | Everyone |
-| 🔄 Refresh | Refreshes the panel embed | Everyone |
-
+|  Join | Joins your selected VC | Manage Server |
+|  Leave | Disconnect's from VC | Manage Server |
+|  Leave & Reset | Disconnect's from the current VC then wipes all previous state — fixes connection issues | Manage Server |
+|  Panel Refresh | Refreshes the panel embed | Everyone |
+|  User Info | Show's information about others. Post's time spent in the server, time spent in VC etc... | Everyone |
+|  My Info | Show's information about yourself. Post's time spent in the server, time spent in VC etc... | Everyone |
 ---
 
