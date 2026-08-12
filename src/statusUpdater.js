@@ -82,7 +82,6 @@ function startStatusUpdater(client) {
   setInterval(panelUpdate, PRESENCE_INTERVAL);
   log('INFO', 'Status updater started (20s rotation · 60s panel)');
 }
-
 // ── Panel embed ───────────────────────────────────────────────────────────────
 
 /**
@@ -107,38 +106,38 @@ function buildPanelEmbed(guildId, guild = null) {
     // Live member count in the VC (excluding bots)
     if (guild) {
       const ch = guild.channels.cache.get(entry.channelId);
-      membersInVc = ch ? `${ch.members.filter(m => !m.user.bot).size}` : '—';
+      membersInVc = ch ? `${ch.members.filter(m => !m.user.bot).size}` : '0';
     } else {
-      membersInVc = '—';
+      membersInVc = '0';
     }
 
   } else if (isGhost) {
     colour      = 0xFEE75C;
-    statusLine  = '🟡 Stalled Connection — Use Force Leave to Reset';
+    statusLine  = '🟡 Stalled';
     channelLine = entry.channelName;
     vcUptime    = '—';
     processUp   = getProcessUptime();
-    membersInVc = '—';
+    membersInVc = '0';
   } else {
     colour      = 0xED4245;
     statusLine  = '🔴 Sleeping...';
     channelLine = '—';
     vcUptime    = '—';
     processUp   = getProcessUptime();
-    membersInVc = '—';
+    membersInVc = '0';
   }
+
+  // High-Density Compact Grid Layout String
+  const descriptionGrid = [
+    `**Status:** ${statusLine}  •  **Channel:** ${channelLine}`,
+    `**VC Uptime:** \`${vcUptime}\`  •  **Members:** \`${membersInVc}\``,
+    `**Process Up:** \`${processUp}\`  •  **Memory:** \`${memMB} MB\``
+  ].join('\n');
 
   return new EmbedBuilder()
     .setTitle('POW-Bot 🖤')
     .setColor(colour)
-    .addFields(
-      { name: 'Status',      value: statusLine,  inline: true },
-      { name: 'Channel',     value: channelLine, inline: true },
-      { name: 'VC Uptime',   value: vcUptime,    inline: true },
-      { name: 'Members',     value: membersInVc, inline: true },
-      { name: 'Process Up',  value: processUp,   inline: true },
-      { name: 'Memory',      value: `${memMB} MB`, inline: true },
-    )
+    .setDescription(descriptionGrid)
     .setFooter({ text: 'Last updated' })
     .setTimestamp();
 }
@@ -154,7 +153,6 @@ function buildStatsEmbed(guildId, client) {
   const ping      = client.ws.ping;
   const totalActive = client.guilds.cache.filter(g => isConnected(g.id)).size;
 
-  // Always show 🟢 Connected for any healthy state — don't expose internal state names
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
   const embed = new EmbedBuilder()
@@ -163,7 +161,6 @@ function buildStatsEmbed(guildId, client) {
     .setTimestamp();
 
   if (connected && entry) {
-    // Live member count
     const guild     = client.guilds.cache.get(guildId);
     const ch        = guild?.channels.cache.get(entry.channelId);
     const inVc      = ch ? ch.members.filter(m => !m.user.bot).size : '—';
@@ -175,12 +172,8 @@ function buildStatsEmbed(guildId, client) {
       { name: 'WebSocket Ping', value: ping >= 0 ? `${ping}ms` : 'Calculating...',                         inline: true  },
       { name: 'Members in VC',  value: `${inVc}`,                                                          inline: true  },
       { name: 'Memory',         value: `${memMB} MB`,                                                      inline: true  },
-      {
-        name:  'Reconnects',
-        value: `${entry.reconnectCount}`,
-        inline: true,
-      },
-      { name: 'Active VCs',    value: `${totalActive} server(s)`,                                          inline: true  },
+      { name: 'Reconnects',     value: `${entry.reconnectCount}`,                                           inline: true  },
+      { name: 'Active VCs',     value: `${totalActive} server(s)`,                                          inline: true  },
       { name: 'Sessions Tracked (DB)', value: `${totals.total_sessions.toLocaleString()}`,                 inline: true  },
       {
         name:   'Persisted Stats',
@@ -201,7 +194,6 @@ function buildStatsEmbed(guildId, client) {
 
   return embed;
 }
-
 // ── Member profile embed ──────────────────────────────────────────────────────
 
 const KEY_PERMS = [
@@ -220,9 +212,6 @@ function buildMemberEmbed(member, guild) {
   const user    = member.user;
   const stats   = getUserStats(user.id, guild.id);
 
-
-
-  // ── Time in server ────────────────────────────────────────────────────────
   let timeInServer = null;
   if (member.joinedAt) {
     const diff = Date.now() - member.joinedTimestamp;
@@ -231,10 +220,8 @@ function buildMemberEmbed(member, guild) {
     timeInServer = d > 0 ? `${d}d ${h}h` : `${h}h`;
   }
 
-  // ── Timeout status ────────────────────────────────────────────────────────
   const timedOut = member.communicationDisabledUntil && member.communicationDisabledUntil > new Date();
 
-  // ── Key permissions ───────────────────────────────────────────────────────
   let permStr = null;
   try {
     const perms = member.permissions;
@@ -246,24 +233,16 @@ function buildMemberEmbed(member, guild) {
     }
   } catch {}
 
-  // ── Account age ──────────────────────────────────────────────────────────
   const ageMs     = Date.now() - user.createdAt.getTime();
   const ageYears  = Math.floor(ageMs / (365.25 * 24 * 3600 * 1000));
   const ageMonths = Math.floor((ageMs % (365.25 * 24 * 3600 * 1000)) / (30.44 * 24 * 3600 * 1000));
   const ageStr    = ageYears > 0 ? `${ageYears}y ${ageMonths}m` : `${ageMonths} month(s)`;
 
-  // ── Nickname ──────────────────────────────────────────────────────────────
-  const nickname = member.nickname && member.nickname !== user.username
-    ? member.nickname
-    : null;
+  const nickname = member.nickname && member.nickname !== user.username ? member.nickname : null;
 
-  // ── Boost status ─────────────────────────────────────────────────────────
   const boostSince = member.premiumSince;
-  const boostStr   = boostSince
-    ? `Boosting since <t:${Math.floor(boostSince.getTime() / 1000)}:R>`
-    : 'Not boosting';
+  const boostStr   = boostSince ? `Boosting since <t:${Math.floor(boostSince.getTime() / 1000)}:R>` : 'Not boosting';
 
-  // ── Current voice state ───────────────────────────────────────────────────
   const vc  = member.voice;
   const vcKey = `${guild.id}_${user.id}`;
   let vcLine;
@@ -292,7 +271,6 @@ function buildMemberEmbed(member, guild) {
     vcLine = 'Not in a voice channel';
   }
 
-  // ── Last seen ─────────────────────────────────────────────────────────────
   let lastSeenStr = '—';
   if (vc?.channel) {
     lastSeenStr = 'Currently in VC';
@@ -300,14 +278,12 @@ function buildMemberEmbed(member, guild) {
     lastSeenStr = `<t:${Math.floor(stats.last_seen / 1000)}:R>`;
   }
 
-  // ── Roles (exclude @everyone, max 10) ─────────────────────────────────────
   const roles = member.roles.cache
     .filter(r => r.id !== guild.id)
     .sort((a, b) => b.position - a.position)
     .first(10)
     .map(r => `<@&${r.id}>`);
 
-  // ── Build embed ───────────────────────────────────────────────────────────
   const embed = new EmbedBuilder()
     .setColor(member.displayColor || 0x5865F2)
     .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true, size: 256 }) })
@@ -333,24 +309,20 @@ function buildMemberEmbed(member, guild) {
     embed.addFields({ name: 'Timed Out', value: `Until <t:${Math.floor(member.communicationDisabledUntilTimestamp / 1000)}:R>`, inline: true });
   }
 
-
-
   embed.addFields({ name: 'In Voice', value: vcLine, inline: false });
 
-  // ── VC Stats (from database) ────────────────────────────────────────────────
+  // Uniform Compact Grid Analytics implementation
   if (stats.session_count > 0) {
-    embed.addFields(
-      { name: 'Total VC Time',   value: formatMs(stats.total_ms),                              inline: true },
-      { name: 'Sessions',        value: `${stats.session_count}`,                              inline: true },
-      { name: 'Avg Session',     value: formatMs(stats.avg_ms),                                inline: true },
-      { name: 'Top Channel',     value: stats.top_channel
-          ? `**${stats.top_channel}** (${formatMs(stats.top_channel_ms)})`
-          : '—',                                                                                 inline: true },
-      { name: 'VC Streak',       value: stats.streak > 0 ? `${stats.streak} day(s)` : '—', inline: true },
-      { name: 'Last Seen in VC', value: lastSeenStr,                                            inline: true },
-    );
+    const vcGrid = [
+      `**Total VC Time:** \`${formatMs(stats.total_ms)}\`  •  **Sessions:** \`${stats.session_count}\``,
+      `**Avg Session:** \`${formatMs(stats.avg_ms)}\`  •  **VC Streak:** \`${stats.streak > 0 ? stats.streak + ' day(s)' : '—'}\``,
+      `**Top Channel:** ${stats.top_channel ? `**${stats.top_channel}** (\`${formatMs(stats.top_channel_ms)}\`)` : '—'}`,
+      `**Last Seen:** ${lastSeenStr}`
+    ].join('\n');
+
+    embed.addFields({ name: 'Voice Activity Analytics', value: vcGrid, inline: false });
   } else {
-    embed.addFields({ name: 'VC Stats', value: 'No sessions tracked yet for this member.', inline: false });
+    embed.addFields({ name: 'Voice Activity Analytics', value: 'No sessions tracked yet for this member.', inline: false });
   }
 
   if (roles.length > 0) {
