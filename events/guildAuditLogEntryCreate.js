@@ -5,7 +5,7 @@ const { getLogChannel } = require('../src/guildConfig');
 const TRACKED = new Set([
   AuditLogEvent.ChannelCreate, AuditLogEvent.ChannelDelete, AuditLogEvent.ChannelUpdate,
   AuditLogEvent.RoleCreate, AuditLogEvent.RoleDelete, AuditLogEvent.RoleUpdate,
-  AuditLogEvent.MemberRoleUpdate, AuditLogEvent.MemberUpdate,
+  AuditLogEvent.MemberRoleUpdate,
   AuditLogEvent.GuildUpdate, AuditLogEvent.InviteCreate,
   AuditLogEvent.EmojiCreate, AuditLogEvent.EmojiDelete,
   AuditLogEvent.WebhookCreate, AuditLogEvent.WebhookDelete,
@@ -19,7 +19,6 @@ const LABELS = {
   [AuditLogEvent.RoleDelete]:       { title: 'Role Deleted',             colour: 0xED4245 },
   [AuditLogEvent.RoleUpdate]:       { title: 'Role Updated',             colour: 0x5865F2 },
   [AuditLogEvent.MemberRoleUpdate]: { title: 'Member Roles Changed',     colour: 0xFEE75C },
-  [AuditLogEvent.MemberUpdate]:     { title: 'Member Updated',           colour: 0x5865F2 },
   [AuditLogEvent.GuildUpdate]:      { title: 'Server Settings Changed',  colour: 0x5865F2 },
   [AuditLogEvent.InviteCreate]:     { title: 'Invite Created',           colour: 0x57F287 },
   [AuditLogEvent.EmojiCreate]:      { title: 'Emoji Added',              colour: 0x57F287 },
@@ -44,7 +43,7 @@ module.exports = {
       if (entry.executor) embed.setAuthor({ name: entry.executor.tag, iconURL: entry.executor.displayAvatarURL?.({ dynamic: true }) });
       embed.addFields({ name: 'By', value: executor, inline: true });
       const target = entry.target;
-      if (entry.action === AuditLogEvent.MemberRoleUpdate || entry.action === AuditLogEvent.MemberUpdate) {
+      if (entry.action === AuditLogEvent.MemberRoleUpdate) {
         if (target) embed.addFields({ name: 'Member', value: `${target} — ${target.tag || target.id}`, inline: true });
         const added   = entry.changes?.filter(c => c.key === '$add').flatMap(c => c.new?.map(r => `<@&${r.id}>`) || []);
         const removed = entry.changes?.filter(c => c.key === '$remove').flatMap(c => c.new?.map(r => `<@&${r.id}>`) || []);
