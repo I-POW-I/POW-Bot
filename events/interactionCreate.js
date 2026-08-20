@@ -1,4 +1,15 @@
-const { Events, PermissionFlagsBits, MessageFlags, ActivityType } = require('discord.js');
+const { 
+  Events, 
+  PermissionFlagsBits, 
+  MessageFlags, 
+  ActivityType, 
+  UserSelectMenuBuilder, 
+  ChannelSelectMenuBuilder, 
+  ChannelType, 
+  ButtonBuilder, 
+  ButtonStyle, 
+  ActionRowBuilder 
+} = require('discord.js');
 const { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice');
 const { log }                     = require('../src/logger');
 const store                       = require('../src/connectionStore');
@@ -73,7 +84,6 @@ async function joinChannel(targetChannel, guild, member, client, interaction) {
       flags: [MessageFlags.Ephemeral],
     });
   }
-}
 
 module.exports = {
   name: Events.InteractionCreate,
@@ -138,7 +148,6 @@ module.exports = {
       }
       return;
     }
-
     // ── Channel select (voice channel picker for Join) ─────────────────────────
     if (interaction.isChannelSelectMenu() && interaction.customId === 'bot_join_channel') {
       const targetChannel = interaction.channels.first();
@@ -246,10 +255,9 @@ module.exports = {
       const subId = interaction.values[0];
       const sub   = selectOne('SELECT * FROM game_subscriptions WHERE id = ?', [subId]);
       if (!sub) return interaction.update({ content: '❌ Not found.', components: [] });
-      // deferReply creates a new ephemeral response — runTest uses editReply on it
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
       const { runTest } = require('../commands/gamealerts');
-      return runTest(interaction, sub, true); // true = already deferred
+      return runTest(interaction, sub, true);
     }
 
     // ── Remove streamer select ────────────────────────────────────────────────
@@ -292,7 +300,7 @@ module.exports = {
               bot_join: '🔊 Join', bot_leave: '👋 Leave',
               bot_forceleave: '🔌 Force Leave', bot_refresh: '🔄 Refresh',
               bot_myinfo: '👤 My Info', bot_lookup: '🔍 Lookup',
-              bot_verify: '✅ Verify',
+              bot_verify: '✅ Verify', bot_admin_drag: '🔀 Move Members'
             };
             const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
             await btnCh.send({
@@ -336,7 +344,6 @@ module.exports = {
         return interaction.reply({ content: 'Failed to assign role — make sure my role is above the verify role in Server Settings → Roles.', flags: [MessageFlags.Ephemeral] });
       }
     }
-
     // ── Open to everyone ──────────────────────────────────────────────────────
 
     if (interaction.customId === 'bot_refresh') {
@@ -358,6 +365,119 @@ module.exports = {
         components: [buildUserSelectRow()],
         flags:      [MessageFlags.Ephemeral],
       });
+    }
+
+    // ── 🎛️ Mass User Migration Panel Handler ──────────────────────────────────
+    if (interaction.customId === 'bot_admin_drag') {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.MoveMembers)) {
+        return interaction.reply({ 
+          content: '❌ **Access Denied:** You lack the `Move Members` permission required to activate this management hub.', 
+          flags: [MessageFlags.Ephemeral] 
+        });
+      }
+
+      const entry = store.getEntry(guild.id);
+      if (!entry || !entry.channelId) {
+        return interaction.reply({ 
+          content: '❌ **Abuse Prevention:** The application connection state is dormant. Secure the bot inside a voice channel first.', 
+          flags: [MessageFlags.Ephemeral] 
+        });
+      }
+
+      const modVoiceChannel = interaction.member.voice?.channelId;
+      if (modVoiceChannel !== entry.channelId) {
+        return interaction.reply({ 
+          content: `❌ **Access Denied:** You must physically be present inside the bot's current voice channel (<#${entry.channelId}>) to use this interface!`, 
+          flags: [MessageFlags.Ephemeral] 
+        });
+      }
+
+      const userSelect = new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder()
+          .setCustomId('drag_select_users')
+          .setPlaceholder('👥 Select members to migrate (Max 25)...')
+          .setMinValues(1)
+          .setMaxValues(25)
+      );
+
+      const channelSelect = new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('drag_select_target')
+          .setPlaceholder('🔊 Select destination voice channel...')
+          .addChannelTypes(ChannelType.GuildVoice)
+      );
+
+      const actionButtons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('drag_execute_confirm')
+          .setLabel('Execute Mass Move')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      const menuMessage = await interaction.reply({
+        content: '🎛️ **Mass Migration Control Room**\n1. Select the target members.\n2. Choose their destination channel.\n3. Click execute to process.',
+        components: [userSelect, channelSelect, actionButtons],
+        flags: [MessageFlags.Ephemeral],
+        withResponse: true
+      });
+
+      let selectedUserIds = [];
+      let targetChannelId = null;
+
+      const collector = menuMessage.resource.message.createMessageComponentCollector({
+        time: 180000
+      });
+
+      collector.on('collect', async (componentInteraction) => {
+        if (componentInteraction.user.id !== interaction.user.id) {
+          return componentInteraction.reply({ content: '❌ Access Denied: This operation portal belongs to another administrator.', flags: [MessageFlags.Ephemeral] });
+        }
+
+        if (componentInteraction.customId === 'drag_select_users') {
+          selectedUserIds = componentInteraction.values;
+          await componentInteraction.deferUpdate();
+        }
+
+        if (componentInteraction.customId === 'drag_select_target') {
+          targetChannelId = componentInteraction.values;
+          await componentInteraction.deferUpdate();
+        }
+
+        if (componentInteraction.customId === 'drag_execute_confirm') {
+          if (selectedUserIds.length === 0 || !targetChannelId) {
+            return componentInteraction.reply({
+              content: '⚠️ **Configuration Error:** You must identify your target members and target channel parameters first!',
+              flags: [MessageFlags.Ephemeral]
+            });
+          }
+
+          await componentInteraction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+          let movedCount = 0;
+          let failedCount = 0;
+
+          for (const userId of selectedUserIds) {
+            try {
+              const memberToMove = await interaction.guild.members.fetch(userId);
+              if (!memberToMove.voice.channelId) {
+                failedCount++;
+                continue;
+              }
+              await memberToMove.voice.setChannel(targetChannelId);
+              movedCount++;
+            } catch (err) {
+              failedCount++;
+            }
+          }
+
+          await componentInteraction.editReply({
+            content: `✅ **Operation Successful!**\nSuccessfully migrated **${movedCount}** members over to <#${targetChannelId}>.\n*(Skipped ${failedCount} targets due to channel permission visibility constraints or inactive voice connections)*`
+          });
+
+          collector.stop();
+        }
+      });
+      return;
     }
 
     // ── Role/owner gated ──────────────────────────────────────────────────────
