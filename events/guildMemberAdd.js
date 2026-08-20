@@ -45,7 +45,7 @@ module.exports = {
       if (isNew)                                    flags.push('Account under 7 days old');
       if (isSuspect && !isNew)                      flags.push('Account under 30 days old');
       if (user.username.match(/\d{4,}$/))          flags.push('Username ends in many numbers');
-      if (user.username.match(/^[a-z]+\d{4,}$/i))  flags.push('Username pattern common on alts');
+      if (user.username.match(/^[a-z]+\d{4,}$/i))  flags.push('Username pattern common on alt accounts');
       if (!user.avatar)                             flags.push('No profile picture (default avatar)');
       if (user.bot)                                 flags.push('Bot account');
 
@@ -66,7 +66,7 @@ module.exports = {
         .setTimestamp();
 
       if (flags.length > 0) {
-        embed.setDescription(`⚠️ **Possible alt account indicators:**\n${flags.map(f => `• ${f}`).join('\n')}`);
+        embed.setDescription(`⚠️\n${flags.map(f => `• ${f}`).join('\n')}`);
       }
 
       await logChannel.send({ embeds: [embed] });
