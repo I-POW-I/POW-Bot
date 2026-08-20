@@ -1,13 +1,23 @@
 /**
- * Kick.com platform wrapper — Safe Web Unlocking Proxy Engine.
- * Bypasses Discloud host blocks by routing requests through a resilient open API proxy.
+ * Kick.com platform wrapper — Resilient Web Unlocking Proxy Engine.
+ * Bypasses Cloudflare hosting blocks safely by routing queries through Crawlbase.
  */
+
+// 🛠️ CONFIGURATION: Paste your full "Standard token" inside the quotes below!
+const CRAWLBASE_TOKEN = '4KE5-CE7LMu8finknxFWRw';
 
 async function getStreamStatus(username) {
   const name = username.toLowerCase();
   
-  // 🌐 Patched API Route: Using an updated, active public proxy bypass link
-  const targetUrl = `https://vercel.app{name}`;
+  if (!CRAWLBASE_TOKEN || CRAWLBASE_TOKEN.includes('PASTE_YOUR_')) {
+    console.warn(`[KICK TRACKER ENGINE] Missing Proxy API Key. Running unstable public mirror fallback for ${name}.`);
+  }
+
+  // Construct a bulletproof cloud-bypassing URL via Crawlbase wrapper
+  const kickUrl = `https://kick.com{name}`;
+  const targetUrl = CRAWLBASE_TOKEN && !CRAWLBASE_TOKEN.includes('PASTE_YOUR_')
+    ? `https://crawlbase.com{CRAWLBASE_TOKEN}&url=${encodeURIComponent(kickUrl)}`
+    : `https://vercel.app{name}`; // Backup safeguard
 
   try {
     const res = await fetch(targetUrl, {
@@ -15,11 +25,11 @@ async function getStreamStatus(username) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
         'Accept': 'application/json'
       },
-      signal: AbortSignal.timeout(10000), // Hard limit to stop Discloud from locking up
+      signal: AbortSignal.timeout(15000), // Gives the proxy network plenty of time to bypass Cloudflare
     });
 
-    // Handle Cloudflare bans gracefully
     if (res.status === 403 || res.status === 429) {
+      console.error(`[KICK TRACKER ENGINE] Proxy returned structural blockage code: ${res.status}`);
       return { error: res.status };
     }
     
@@ -27,7 +37,7 @@ async function getStreamStatus(username) {
 
     const body = await res.json();
     
-    // Support both proxy formats (nested under 'data' or root level)
+    // Unpack Crawlbase body responses directly
     const data = body.data || body;
     if (!data || (!data.user && !data.slug)) return null;
 
@@ -45,8 +55,7 @@ async function getStreamStatus(username) {
       displayName,
     };
   } catch (err) {
-    // Soft log to keep your Discloud log stream clean
-    console.error(`[KICK TRACKER ENGINE] Connection skipped for ${name}: proxy route failed.`);
+    console.error(`[KICK TRACKER CRITICAL ERROR] Connection dropped for ${name}: API connection path failed.`);
     return null;
   }
 }
