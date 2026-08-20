@@ -87,6 +87,37 @@ module.exports = {
   once: false,
 
   async execute(oldState, newState) {
+    // ── Anti-Drag Verification Block ──────────────────────────────────────────
+    if (newState.id === newState.client.user.id) {
+      const oldChannel = oldState.channel;
+      const newChannel = newState.channel;
+
+      // Only act if the bot moved from an active channel to an unapproved one
+      if (oldChannel && newChannel && oldChannel.id !== newChannel.id) {
+        const store = require('../src/connectionStore'); // Corrected path for your root events folder!
+        const entry = store.getEntry(newState.guild.id);
+
+        if (entry && newChannel.id !== entry.channelId) {
+          log('WARN', `Anti-Drag caught move to ${newChannel.name}. Snapping back to ${entry.channelName}`);
+          
+          try {
+            const { joinVoiceChannel } = require('@discordjs/voice');
+            joinVoiceChannel({
+              channelId: entry.channelId,
+              guildId: newState.guild.id,
+              adapterCreator: newState.guild.voiceAdapterCreator,
+              selfMute: false,
+              selfDeaf: true
+            });
+          } catch (error) {
+            log('ERROR', 'Anti-Drag pull-back failed', { message: error.message });
+          }
+          return; // Stop execution here so the bot doesn't write normal user tracking logs for itself
+        }
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     const member = newState.member || oldState.member;
     if (!member || member.user.bot) return;
 
