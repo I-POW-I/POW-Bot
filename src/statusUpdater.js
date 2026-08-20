@@ -127,21 +127,24 @@ function buildPanelEmbed(guildId, guild = null) {
     membersInVc = '0';
   }
 
-  // High-Density Compact Grid Layout String
-  const descriptionGrid = [
-    `**Status:** ${statusLine}  •  **Channel:** ${channelLine}`,
-    `**VC Uptime:** \`${vcUptime}\`  •  **Members:** \`${membersInVc}\``,
-    `**Process Up:** \`${processUp}\`  •  **Memory:** \`${memMB} MB\``
-  ].join('\n');
-
+  // Native responsive grid structure matching your exact sequence
   return new EmbedBuilder()
     .setTitle('POW-Bot 🖤')
     .setColor(colour)
-    .setDescription(descriptionGrid)
+    .addFields(
+      // Row 1: System Metrics
+      { name: '🚥 Status', value: statusLine, inline: true },
+      { name: '💜 Process Up', value: `\`${processUp}\``, inline: true },
+      { name: '📎 Memory', value: `\`${memMB} MB\``, inline: true },
+      
+      // Row 2: Voice Channel Session Details
+      { name: '🔊 Channel', value: channelLine, inline: true },
+      { name: '⏳ VC Uptime', value: `\`${vcUptime}\``, inline: true },
+      { name: '🥷🏽 Members', value: `\`${membersInVc}\``, inline: true }
+    )
     .setFooter({ text: 'Last updated' })
     .setTimestamp();
 }
-
 // ── Stats embed ─────────────────────────────────────────────
 
 function buildStatsEmbed(guildId, client) {
@@ -156,7 +159,7 @@ function buildStatsEmbed(guildId, client) {
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
   const embed = new EmbedBuilder()
-    .setTitle('POW-Bot 🖤 — Status')
+    .setTitle('POW-Bot 🖤 Server & Bot info')
     .setColor(connected ? 0x57F287 : 0xED4245)
     .setTimestamp();
 
@@ -166,30 +169,39 @@ function buildStatsEmbed(guildId, client) {
     const inVc      = ch ? ch.members.filter(m => !m.user.bot).size : '—';
 
     embed.addFields(
-      { name: 'Connection',     value: statusLabel,                                                         inline: true  },
-      { name: 'VC Uptime',      value: store.formatUptime(entry.joinedAt),                                  inline: true  },
-      { name: 'Process Uptime', value: getProcessUptime(),                                                  inline: true  },
-      { name: 'WebSocket Ping', value: ping >= 0 ? `${ping}ms` : 'Calculating...',                         inline: true  },
-      { name: 'Members in VC',  value: `${inVc}`,                                                          inline: true  },
-      { name: 'Memory',         value: `${memMB} MB`,                                                      inline: true  },
-      { name: 'Reconnects',     value: `${entry.reconnectCount}`,                                           inline: true  },
-      { name: 'Active VCs',     value: `${totalActive} server(s)`,                                          inline: true  },
-      { name: 'Sessions Tracked (DB)', value: `${totals.total_sessions.toLocaleString()}`,                 inline: true  },
+      // Row 1: Connection & Core State
+      { name: '🚥 Connection', value: statusLabel, inline: true },
+      { name: '⏳ VC Uptime', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
+      { name: '💜 Process Uptime', value: `\`${getProcessUptime()}\``, inline: true },
+
+      // Row 2: Performance Metrics
+      { name: '🌐 WebOSocket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`Calculating...`', inline: true },
+      { name: '📎 Memory', value: `\`${memMB} MB\``, inline: true },
+      { name: '🥷🏽 Members in VC', value: `\`${inVc}\``, inline: true },
+
+      // Row 3: Tracking History totals
+      { name: '➖ Reconnects', value: `\`${entry.reconnectCount}\``, inline: true },
+      { name: '🔊 Active VCs', value: `\`${totalActive} server(s)\``, inline: true },
+      { name: '➖ Total Sessions (DB)', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
+
+      // Row 4: Wide Base Data
       {
-        name:   'Persisted Stats',
-        value:  saved.joinedAt
-          ? `Since <t:${Math.floor(new Date(saved.joinedAt).getTime() / 1000)}:R> · ${saved.reconnectCount} reconnect(s)`
-          : 'None saved yet',
+        name: '➖ Persisted Stats',
+        value: saved.joinedAt
+          ? `Since <t:${Math.floor(new Date(saved.joinedAt).getTime() / 1000)}:R> · \`${saved.reconnectCount}\` reconnect(s)`
+          : '*None saved yet*',
         inline: false,
       },
     );
   } else {
-    embed.setDescription('Not currently connected to any voice channel.').addFields(
-      { name: 'Process Uptime', value: getProcessUptime(), inline: true },
-      { name: 'Memory',         value: `${memMB} MB`,      inline: true },
-      { name: 'WebSocket Ping', value: ping >= 0 ? `${ping}ms` : '—', inline: true },
-      { name: 'Sessions Tracked (DB)', value: `${totals.total_sessions.toLocaleString()}`, inline: true },
-    );
+    // Clean 4-Field grid when the bot is resting
+    embed.setDescription('💤 *Not currently connected to any voice channel.*')
+      .addFields(
+        { name: '💜 Process Uptime', value: `\`${getProcessUptime()}\``, inline: true },
+        { name: '📎 Memory', value: `\`${memMB} MB\``, inline: true },
+        { name: '🌐 WebSocket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`—`', inline: true },
+        { name: '▫️ Total Sessions (DB)', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true }
+      );
   }
 
   return embed;
@@ -209,8 +221,8 @@ const KEY_PERMS = [
 ];
 
 function buildMemberEmbed(member, guild) {
-  const user    = member.user;
-  const stats   = getUserStats(user.id, guild.id);
+  const user  = member.user;
+  const stats = getUserStats(user.id, guild.id);
 
   let timeInServer = null;
   if (member.joinedAt) {
@@ -220,62 +232,32 @@ function buildMemberEmbed(member, guild) {
     timeInServer = d > 0 ? `${d}d ${h}h` : `${h}h`;
   }
 
-  const timedOut = member.communicationDisabledUntil && member.communicationDisabledUntil > new Date();
-
-  let permStr = null;
-  try {
-    const perms = member.permissions;
-    if (perms.has(PermissionsBitField.Flags.Administrator)) {
-      permStr = 'Administrator';
-    } else {
-      const has = KEY_PERMS.filter(([f]) => perms.has(PermissionsBitField.Flags[f])).map(([,l]) => l);
-      if (has.length > 0) permStr = has.join(', ');
-    }
-  } catch {}
-
   const ageMs     = Date.now() - user.createdAt.getTime();
   const ageYears  = Math.floor(ageMs / (365.25 * 24 * 3600 * 1000));
   const ageMonths = Math.floor((ageMs % (365.25 * 24 * 3600 * 1000)) / (30.44 * 24 * 3600 * 1000));
-  const ageStr    = ageYears > 0 ? `${ageYears}y ${ageMonths}m` : `${ageMonths} month(s)`;
+  const ageStr    = ageYears > 0 ? `${ageYears}y ${ageMonths}m` : `${ageMonths}m`;
 
-  const nickname = member.nickname && member.nickname !== user.username ? member.nickname : null;
-
+  const nickname   = member.nickname && member.nickname !== user.username ? member.nickname : 'None';
   const boostSince = member.premiumSince;
-  const boostStr   = boostSince ? `Boosting since <t:${Math.floor(boostSince.getTime() / 1000)}:R>` : 'Not boosting';
+  const boostStr   = boostSince ? `💜 <t:${Math.floor(boostSince.getTime() / 1000)}:R>` : '❌ No';
 
-  const vc  = member.voice;
+  const vc = member.voice;
   const vcKey = `${guild.id}_${user.id}`;
+  
   let vcLine;
-
   if (vc?.channel) {
     const sessionMs = joinTimes.has(vcKey) ? Date.now() - joinTimes.get(vcKey) : null;
-    const streaming = streamTimes.has(vcKey);
-
     const indicators = [
-      vc.selfMute   ? 'Muted'       : null,
-      vc.selfDeaf   ? 'Deafened'    : null,
-      vc.serverMute ? 'Server Muted' : null,
-      vc.serverDeaf ? 'Server Deafened'  : null,
-      vc.streaming  ? 'Streaming'   : null,
-      vc.selfVideo  ? 'Live Camera'       : null,
+      vc.selfMute   ? '➖ Muted' : null,
+      vc.selfDeaf   ? '➖ Deafened' : null,
+      vc.serverMute ? '➖ Server Muted' : null,
+      vc.serverDeaf ? '➖ Server Deafened' : null
     ].filter(Boolean);
 
-    vcLine = `<#${vc.channel.id}> — **${vc.channel.name}**`;
-    if (sessionMs) vcLine += ` · ${formatLive(sessionMs)}`;
-    if (streaming) {
-      const streamMs = Date.now() - streamTimes.get(vcKey);
-      vcLine += `\nStreaming for ${formatLive(streamMs)}`;
-    }
-    if (indicators.length > 0) vcLine += `\n${indicators.join(' · ')}`;
+    vcLine = `🔊 <#${vc.channel.id}> ${sessionMs ? `— \`${formatLive(sessionMs)}\`` : ''}`;
+    if (indicators.length > 0) vcLine += `\n⚙️ ${indicators.join('  •  ')}`;
   } else {
-    vcLine = 'Not in a voice channel';
-  }
-
-  let lastSeenStr = '—';
-  if (vc?.channel) {
-    lastSeenStr = 'Currently in VC';
-  } else if (stats.last_seen) {
-    lastSeenStr = `<t:${Math.floor(stats.last_seen / 1000)}:R>`;
+    vcLine = '💤 Not connected to a voice channel';
   }
 
   const roles = member.roles.cache
@@ -286,101 +268,97 @@ function buildMemberEmbed(member, guild) {
 
   const embed = new EmbedBuilder()
     .setColor(member.displayColor || 0x5865F2)
-    .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true, size: 256 }) })
+    .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true }) })
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
-    .setTitle('User Profile')
+    .setTitle('🥷🏽 User Profile Profile')
+    // Row 1: Registry Markers
     .addFields(
-      { name: 'Joined Server',  value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>`, inline: true },
-      { name: 'Account Created', value: `<t:${Math.floor(user.createdAt.getTime() / 1000)}:D>\n<t:${Math.floor(user.createdAt.getTime() / 1000)}:R>`, inline: true },
-      { name: 'Account Age',    value: ageStr, inline: true },
+      { name: '▫️ Joined Server', value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n(<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>)`, inline: true },
+      { name: '▫️ Account Created', value: `<t:${Math.floor(user.createdAt.getTime() / 1000)}:D>\n(<t:${Math.floor(user.createdAt.getTime() / 1000)}:R>)`, inline: true },
+      { name: '▫️ Account Age', value: `\`${ageStr}\``, inline: true },
+
+      // Row 2: Presence Metadata
+      { name: '▪️ Nickname', value: `\`${nickname}\``, inline: true },
+      { name: '▪️ Time in Server', value: `\`${timeInServer || '—'}\``, inline: true },
+      { name: '▪️ Boosting', value: boostStr, inline: true },
+
+      // Row 3: Live Channels (Pushed to wide row block)
+      { name: '💚 Active VC', value: vcLine, inline: false }
     );
 
-  if (timeInServer) {
-    embed.addFields({ name: 'Time in Server', value: timeInServer, inline: true });
-  }
-
-  if (nickname) {
-    embed.addFields({ name: 'Nickname', value: nickname, inline: true });
-  }
-
-  embed.addFields({ name: 'Boost Status', value: boostStr, inline: false });
-
-  if (timedOut) {
-    embed.addFields({ name: 'Timed Out', value: `Until <t:${Math.floor(member.communicationDisabledUntilTimestamp / 1000)}:R>`, inline: true });
-  }
-
-  embed.addFields({ name: 'In Voice', value: vcLine, inline: false });
-
-  // Uniform Compact Grid Analytics implementation
+  // Row 4: Historical Metrics (Clean 3-Column Performance Grid)
   if (stats.session_count > 0) {
-    const vcGrid = [
-      `**Total VC Time:** \`${formatMs(stats.total_ms)}\`  •  **Sessions:** \`${stats.session_count}\``,
-      `**Avg Session:** \`${formatMs(stats.avg_ms)}\`  •  **VC Streak:** \`${stats.streak > 0 ? stats.streak + ' day(s)' : '—'}\``,
-      `**Top Channel:** ${stats.top_channel ? `**${stats.top_channel}** (\`${formatMs(stats.top_channel_ms)}\`)` : '—'}`,
-      `**Last Seen:** ${lastSeenStr}`
-    ].join('\n');
+    let lastSeenStr = stats.last_seen ? `<t:${Math.floor(stats.last_seen / 1000)}:R>` : '—';
+    if (vc?.channel) lastSeenStr = '🟢 Active Now';
 
-    embed.addFields({ name: 'Voice Activity Analytics', value: vcGrid, inline: false });
-  } else {
-    embed.addFields({ name: 'Voice Activity Analytics', value: 'No sessions tracked yet for this member.', inline: false });
+    embed.addFields(
+      { name: '▫️ Total VC Time', value: `\`${formatMs(stats.total_ms)}\``, inline: true },
+      { name: '▫️ Total Sessions', value: `\`${stats.session_count}\``, inline: true },
+      { name: '▫️ Avg Session', value: `\`${formatMs(stats.avg_ms)}\``, inline: true },
+
+      { name: '▪️ Top Channel', value: stats.top_channel ? `**${stats.top_channel}**\n(\`${formatMs(stats.top_channel_ms)}\`)` : '—', inline: true },
+      { name: '▪️ VC Streak', value: `\`${stats.streak} day(s)\``, inline: true },
+      { name: '▪️ Last Tracked', value: lastSeenStr, inline: true }
+    );
   }
 
+  // Row 5: Role Badges
   if (roles.length > 0) {
-    embed.addFields({
-      name:  `Roles (${member.roles.cache.size - 1})`,
-      value: roles.join(' '),
-      inline: false,
-    });
+    embed.addFields({ name: `✔️ Assigned Roles (${member.roles.cache.size - 1})`, value: roles.join(' '), inline: false });
   }
 
-  embed.setTimestamp();
-  return embed;
+  return embed.setTimestamp();
 }
 
 // ── Panel buttons ─────────────────────────────────────────────────────────────
 
 function buildPanelButtons() {
+  // Row 1: Connection Basics
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bot_join')
       .setLabel('Join')
-      .setEmoji('▪️')
+      .setEmoji('🟩')
       .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
       .setCustomId('bot_leave')
       .setLabel('Leave')
-      .setEmoji('▪️')
-      .setStyle(ButtonStyle.Secondary),
+      .setEmoji('🟧')
+      .setStyle(ButtonStyle.Secondary)
+  );
 
+  // Row 2: Management & Maintenance
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bot_forceleave')
       .setLabel('Leave & Reset')
-      .setEmoji('▪️')
+      .setEmoji('🟥')
       .setStyle(ButtonStyle.Danger),
+
+    new ButtonBuilder()
+      .setCustomId('bot_refresh')
+      .setLabel('Panel Refresh')
+      .setEmoji('🟨')
+      .setStyle(ButtonStyle.Secondary)
   );
 
-  const row2 = new ActionRowBuilder().addComponents(
+  // Row 3: Identity & Discovery
+  const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bot_myinfo')
       .setLabel('My Info')
-      .setEmoji('▫️')
+      .setEmoji('🟦')
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
       .setCustomId('bot_lookup')
       .setLabel('User Lookup')
-      .setEmoji('▫️')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('bot_refresh')
-      .setLabel('Panel Refresh')
-      .setEmoji('▫️')
-      .setStyle(ButtonStyle.Secondary),
+      .setEmoji('🟪')
+      .setStyle(ButtonStyle.Secondary)
   );
 
-  return [row1, row2];
+  return [row1, row2, row3];
 }
 
 // ── Select menus ──────────────────────────────────────────────────────────────
