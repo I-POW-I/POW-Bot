@@ -13,11 +13,11 @@ async function getStreamStatus(username) {
     console.warn(`[KICK TRACKER ENGINE] Missing Proxy API Key. Running unstable public mirror fallback for ${name}.`);
   }
 
-  // 🌐 FIX: Must use standard backticks (`) for variable interpolation to work!
+  // 🌐 FIX 1: Routing to /scraper instead of root endpoint to activate native proxy browsers
   const kickUrl = `https://kick.com{name}`;
   const targetUrl = CRAWLBASE_TOKEN
-    ? `https://crawlbase.com{CRAWLBASE_TOKEN}&format=json&url=${encodeURIComponent(kickUrl)}`
-    : `https://vercel.app{name}`;
+    ? `https://crawlbase.com{CRAWLBASE_TOKEN}&url=${encodeURIComponent(kickUrl)}`
+    : `https://vercel.app{name}`; // Backup safeguard
 
   try {
     const res = await fetch(targetUrl, {
@@ -25,7 +25,7 @@ async function getStreamStatus(username) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
         'Accept': 'application/json'
       },
-      signal: AbortSignal.timeout(25000), // ⏳ 25s limit because Crawlbase takes time to clear Cloudflare
+      signal: AbortSignal.timeout(30000), // ⏳ Increased to 30s to allow full browser rendering pass
     });
 
     if (res.status === 403 || res.status === 429) {
@@ -38,9 +38,19 @@ async function getStreamStatus(username) {
       return null;
     }
 
-    const body = await res.json();
+    // 🌐 FIX 2: Read as plain text first to stop raw JSON parsing errors
+    const rawText = await res.text();
+    if (!rawText) return null;
+
+    let body;
+    try {
+      body = JSON.parse(rawText);
+    } catch {
+      console.error(`[KICK TRACKER ENGINE] Failed to parse response data payload from proxy router for ${name}.`);
+      return null;
+    }
     
-    // Support nested proxy data structures or direct root objects
+    // Unpack clean data mapping parameters
     const data = body.body ? JSON.parse(body.body) : (body.data || body);
     if (!data || (!data.user && !data.slug)) return null;
 
