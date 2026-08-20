@@ -419,4 +419,5 @@ module.exports = {
   buildMemberEmbed,
   buildChannelSelectRow,
   buildUserSelectRow,
+  buildStatsEmbed,
 };
