@@ -3,17 +3,17 @@
  * Bypasses Cloudflare hosting blocks safely by routing queries through Crawlbase.
  */
 
-// 🛠️ CONFIGURATION: Ensure your full 4KE5 token is pasted inside the single quotes below!
-const CRAWLBASE_TOKEN = '4KE5-CE7LMu8finknxFWRw';
+// 🔒 SECURE: Reads your token dynamically from system environment properties
+const CRAWLBASE_TOKEN = process.env.CRAWLBASE_TOKEN;
 
 async function getStreamStatus(username) {
   const name = username.toLowerCase();
   
-  if (!CRAWLBASE_TOKEN || CRAWLBASE_TOKEN.includes('PASTE_YOUR_')) {
+  if (!CRAWLBASE_TOKEN) {
     console.warn(`[KICK TRACKER ENGINE] Missing Proxy API Key. Running unstable public mirror fallback for ${name}.`);
   }
 
-  // 🌐 FIX: Added &format=json to handle API responses correctly via Crawlbase
+  // 🌐 FIX: Corrected quotes to backticks (`) so JavaScript handles template literals properly!
   const kickUrl = `https://kick.com{name}`;
   const targetUrl = CRAWLBASE_TOKEN && !CRAWLBASE_TOKEN.includes('PASTE_YOUR_')
     ? `https://crawlbase.com{CRAWLBASE_TOKEN}&format=json&url=${encodeURIComponent(kickUrl)}`
@@ -25,7 +25,7 @@ async function getStreamStatus(username) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
         'Accept': 'application/json'
       },
-      signal: AbortSignal.timeout(25000), // ⏳ Increased to 25s because anti-bot processing takes time
+      signal: AbortSignal.timeout(25000), // ⏳ 25s because anti-bot processing takes extra execution time
     });
 
     if (res.status === 403 || res.status === 429) {
@@ -34,8 +34,6 @@ async function getStreamStatus(username) {
     }
     
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      // If Crawlbase fails, log the exact code it gave back to help us debug
       console.warn(`[KICK TRACKER ENGINE] Crawlbase returned status ${res.status} for ${name}`);
       return null;
     }
