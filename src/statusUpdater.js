@@ -248,16 +248,16 @@ function buildMemberEmbed(member, guild) {
   if (vc?.channel) {
     const sessionMs = joinTimes.has(vcKey) ? Date.now() - joinTimes.get(vcKey) : null;
     const indicators = [
-      vc.selfMute   ? '➖ Muted' : null,
-      vc.selfDeaf   ? '➖ Deafened' : null,
-      vc.serverMute ? '➖ Server Muted' : null,
-      vc.serverDeaf ? '➖ Server Deafened' : null
+      vc.selfMute   ? 'Muted' : null,
+      vc.selfDeaf   ? 'Deafened' : null,
+      vc.serverMute ? 'Server Muted' : null,
+      vc.serverDeaf ? 'Server Deafened' : null
     ].filter(Boolean);
 
     vcLine = `🔊 <#${vc.channel.id}> ${sessionMs ? `— \`${formatLive(sessionMs)}\`` : ''}`;
     if (indicators.length > 0) vcLine += `\n⚙️ ${indicators.join('  •  ')}`;
   } else {
-    vcLine = '💤 Not connected to a voice channel';
+    vcLine = '💤 Not in a VC';
   }
 
   const roles = member.roles.cache
@@ -273,17 +273,17 @@ function buildMemberEmbed(member, guild) {
     .setTitle('🥷🏽 User Profile Profile')
     // Row 1: Registry Markers
     .addFields(
-      { name: '▫️ Joined Server', value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n(<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>)`, inline: true },
-      { name: '▫️ Account Created', value: `<t:${Math.floor(user.createdAt.getTime() / 1000)}:D>\n(<t:${Math.floor(user.createdAt.getTime() / 1000)}:R>)`, inline: true },
-      { name: '▫️ Account Age', value: `\`${ageStr}\``, inline: true },
+      { name: 'Joined Server', value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n(<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>)`, inline: true },
+      { name: 'Account Created', value: `<t:${Math.floor(user.createdAt.getTime() / 1000)}:D>\n(<t:${Math.floor(user.createdAt.getTime() / 1000)}:R>)`, inline: true },
+      { name: 'Account Age', value: `\`${ageStr}\``, inline: true },
 
       // Row 2: Presence Metadata
-      { name: '▪️ Nickname', value: `\`${nickname}\``, inline: true },
-      { name: '▪️ Time in Server', value: `\`${timeInServer || '—'}\``, inline: true },
-      { name: '▪️ Boosting', value: boostStr, inline: true },
+      { name: 'Nickname', value: `\`${nickname}\``, inline: true },
+      { name: 'Time in Server', value: `\`${timeInServer || '—'}\``, inline: true },
+      { name: 'Boosting', value: boostStr, inline: true },
 
       // Row 3: Live Channels (Pushed to wide row block)
-      { name: '💚 Active VC', value: vcLine, inline: false }
+      { name: 'Active VC', value: vcLine, inline: false }
     );
 
   // Row 4: Historical Metrics (Clean 3-Column Performance Grid)
@@ -292,19 +292,19 @@ function buildMemberEmbed(member, guild) {
     if (vc?.channel) lastSeenStr = '🟢 Active Now';
 
     embed.addFields(
-      { name: '▫️ Total VC Time', value: `\`${formatMs(stats.total_ms)}\``, inline: true },
-      { name: '▫️ Total Sessions', value: `\`${stats.session_count}\``, inline: true },
-      { name: '▫️ Avg Session', value: `\`${formatMs(stats.avg_ms)}\``, inline: true },
+      { name: 'Total VC Time', value: `\`${formatMs(stats.total_ms)}\``, inline: true },
+      { name: 'Total Sessions', value: `\`${stats.session_count}\``, inline: true },
+      { name: 'Avg Time', value: `\`${formatMs(stats.avg_ms)}\``, inline: true },
 
-      { name: '▪️ Top Channel', value: stats.top_channel ? `**${stats.top_channel}**\n(\`${formatMs(stats.top_channel_ms)}\`)` : '—', inline: true },
-      { name: '▪️ VC Streak', value: `\`${stats.streak} day(s)\``, inline: true },
-      { name: '▪️ Last Tracked', value: lastSeenStr, inline: true }
+      { name: 'Top VC', value: stats.top_channel ? `**${stats.top_channel}**\n(\`${formatMs(stats.top_channel_ms)}\`)` : '—', inline: true },
+      { name: 'VC Streak', value: `\`${stats.streak} day(s)\``, inline: true },
+      { name: 'Last Tracked', value: lastSeenStr, inline: true }
     );
   }
 
   // Row 5: Role Badges
   if (roles.length > 0) {
-    embed.addFields({ name: `✔️ Assigned Roles (${member.roles.cache.size - 1})`, value: roles.join(' '), inline: false });
+    embed.addFields({ name: `Assigned Roles (${member.roles.cache.size - 1})`, value: roles.join(' '), inline: false });
   }
 
   return embed.setTimestamp();
