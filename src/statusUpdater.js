@@ -134,13 +134,13 @@ function buildPanelEmbed(guildId, guild = null) {
     .addFields(
       // Row 1: System Metrics
       { name: '🚥 Status', value: statusLine, inline: true },
-      { name: '💜 Process Up', value: `\`${processUp}\``, inline: true },
-      { name: '📎 Memory', value: `\`${memMB} MB\``, inline: true },
+      { name: 'Bot Up-Time', value: `\`${processUp}\``, inline: true },
+      { name: 'Memory', value: `\`${memMB} MB\``, inline: true },
       
       // Row 2: Voice Channel Session Details
-      { name: '🔊 Channel', value: channelLine, inline: true },
-      { name: '⏳ VC Uptime', value: `\`${vcUptime}\``, inline: true },
-      { name: '🥷🏽 Members', value: `\`${membersInVc}\``, inline: true }
+      { name: 'Current VC', value: channelLine, inline: true },
+      { name: 'VC Uptime', value: `\`${vcUptime}\``, inline: true },
+      { name: 'Members In VC', value: `\`${membersInVc}\``, inline: true }
     )
     .setFooter({ text: 'Last updated' })
     .setTimestamp();
