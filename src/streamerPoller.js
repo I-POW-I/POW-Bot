@@ -25,9 +25,9 @@ const ERROR_THROTTLE  = 30 * 60_000;  // Only log same error once per 30 min
 const COLOURS = { kick: 0x53FC18, twitch: 0x9146FF, youtube: 0xFF0000 };
 const NAMES   = { kick: 'Kick',   twitch: 'Twitch', youtube: 'YouTube' };
 const ICONS   = {
-  kick:    'https://kick.com',
-  twitch:  'https://twitchcdn.net',
-  youtube: 'https://youtube.com',
+  kick:    'https://kick.com/favicon.ico',
+  twitch:  'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c1.png',
+  youtube: 'https://www.youtube.com/favicon.ico',
 };
 
 // Track last error log time per streamer to avoid spam
@@ -89,12 +89,12 @@ async function checkSubscription(client, sub) {
   // API returned an error object
   if (!status || status.error) {
     const errCode = status?.error;
-    if (errCode === '403') {
-      throttleLog(errKey, `${NAMES[sub.platform]}: Access blocked for ${sub.display_name || sub.username} (403) — Verify your platform connection or token configuration.`);
-    } else if (errCode) {
-      throttleLog(errKey, `${NAMES[sub.platform]} check encountered an error for ${sub.display_name || sub.username}`, { error: String(errCode) });
+    if (errCode === 403) {
+      throttleLog(errKey, `${NAMES[sub.platform]}: access blocked for ${sub.display_name || sub.username} (403) — Kick/Twitch may be blocking this server's IP or credentials are wrong`);
+    } else if (typeof errCode === 'string') {
+      throttleLog(errKey, `${NAMES[sub.platform]} check failed for ${sub.display_name || sub.username}`, { error: errCode });
     } else {
-      throttleLog(errKey, `${NAMES[sub.platform]} connection request dropped for ${sub.display_name || sub.username}`);
+      throttleLog(errKey, `${NAMES[sub.platform]} check failed for ${sub.display_name || sub.username}`);
     }
     return;
   }
