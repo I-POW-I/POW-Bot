@@ -13,11 +13,15 @@ async function getStreamStatus(username) {
     console.warn("[KICK TRACKER ENGINE] Missing Proxy API Key. Running unstable public mirror fallback for " + name);
   }
 
-  // 🌐 FIX: Converted to standard string concatenation to completely destroy template literal parsing errors!
+  // 🌐 Clean destination endpoint on Kick's system
   const kickUrl = "https://kick.com" + name;
-  const targetUrl = CRAWLBASE_TOKEN
-    ? "https://crawlbase.com" + CRAWLBASE_TOKEN + "&url=" + encodeURIComponent(kickUrl)
-    : "https://vercel.app" + name;
+  
+  // 🌐 FIX: Perfectly structured string builders to guarantee valid URL generation parameters
+  let targetUrl = "https://vercel.app" + name;
+  
+  if (CRAWLBASE_TOKEN && CRAWLBASE_TOKEN.trim() !== "") {
+    targetUrl = "https://crawlbase.com" + CRAWLBASE_TOKEN.trim() + "&url=" + encodeURIComponent(kickUrl);
+  }
 
   try {
     const res = await fetch(targetUrl, {
@@ -25,7 +29,7 @@ async function getStreamStatus(username) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
         'Accept': 'application/json'
       },
-      signal: AbortSignal.timeout(30000), // ⏳ 30s limit because Crawlbase takes time to clear Cloudflare
+      signal: AbortSignal.timeout(30000), // ⏳ 30s limit to allow full browser rendering passes
     });
 
     if (res.status === 403 || res.status === 429) {
@@ -63,7 +67,7 @@ async function getStreamStatus(username) {
       category:    isLive ? (stream.categories?.[0]?.name || null) : null,
       viewers:     isLive ? (stream.viewer_count ?? 0) : null,
       thumbnail:   isLive ? (stream.thumbnail?.url || null) : null,
-      url:         "https://kick.com" + name,
+      url:         "https://kick.com/" + name,
       displayName,
     };
   } catch (err) {
