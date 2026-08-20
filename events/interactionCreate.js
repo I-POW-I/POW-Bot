@@ -84,6 +84,7 @@ async function joinChannel(targetChannel, guild, member, client, interaction) {
       flags: [MessageFlags.Ephemeral],
     });
   }
+}
 
 module.exports = {
   name: Events.InteractionCreate,
@@ -148,6 +149,7 @@ module.exports = {
       }
       return;
     }
+    
     // ── Channel select (voice channel picker for Join) ─────────────────────────
     if (interaction.isChannelSelectMenu() && interaction.customId === 'bot_join_channel') {
       const targetChannel = interaction.channels.first();
@@ -344,6 +346,7 @@ module.exports = {
         return interaction.reply({ content: 'Failed to assign role — make sure my role is above the verify role in Server Settings → Roles.', flags: [MessageFlags.Ephemeral] });
       }
     }
+
     // ── Open to everyone ──────────────────────────────────────────────────────
 
     if (interaction.customId === 'bot_refresh') {
@@ -411,7 +414,7 @@ module.exports = {
         new ButtonBuilder()
           .setCustomId('drag_execute_confirm')
           .setLabel('Execute Mass Move')
-          .setStyle(ButtonStyle.Danger)
+          .setStyle(ButtonStyle.Secondary) // Sleek Black Style updated!
       );
 
       const menuMessage = await interaction.reply({
