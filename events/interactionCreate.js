@@ -149,6 +149,7 @@ module.exports = {
       }
       return;
     }
+
     
     // ── Channel select (voice channel picker for Join) ─────────────────────────
     if (interaction.isChannelSelectMenu() && interaction.customId === 'bot_join_channel') {
@@ -176,8 +177,8 @@ module.exports = {
     // ── Game alert: add (game selected from search results) ──────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_add_select') {
       const { guild, member } = interaction;
-      const [appId, channelId, roleId] = interaction.values[0].split('|||');
-      const gameName = interaction.component.options.find(o => o.value === interaction.values[0])?.label || `App ${appId}`;
+      const [appId, channelId, roleId] = interaction.values.split('|||');
+      const gameName = interaction.component.options.find(o => o.value === interaction.values)?.label || `App ${appId}`;
 
       const existing = selectOne(
         'SELECT id FROM game_subscriptions WHERE guild_id = ? AND app_id = ?',
@@ -211,7 +212,7 @@ module.exports = {
     // ── Game alert: edit (change channel/role) ───────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_edit_select') {
       const { guild, member } = interaction;
-      const [subId, channelId, roleId] = interaction.values[0].split('|||');
+      const [subId, channelId, roleId] = interaction.values.split('|||');
       const sub = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
 
       if (!sub) {
@@ -236,7 +237,7 @@ module.exports = {
     // ── Game alert: remove ────────────────────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_remove_select') {
       const { guild, member } = interaction;
-      const subId    = interaction.values[0];
+      const subId    = interaction.values;
       const sub      = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
 
       if (!sub) {
@@ -254,7 +255,7 @@ module.exports = {
 
     // ── Game alert: test (game selected) ─────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_test_select') {
-      const subId = interaction.values[0];
+      const subId = interaction.values;
       const sub   = selectOne('SELECT * FROM game_subscriptions WHERE id = ?', [subId]);
       if (!sub) return interaction.update({ content: '❌ Not found.', components: [] });
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
@@ -265,7 +266,7 @@ module.exports = {
     // ── Remove streamer select ────────────────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'remove_streamer_select') {
       const { guild, member } = interaction;
-      const subId = interaction.values[0];
+      const subId = interaction.values;
       const sub   = selectOne('SELECT * FROM streamer_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
 
       if (!sub) {
@@ -280,7 +281,7 @@ module.exports = {
         components: [],
       });
     }
-
+    
     if (!interaction.isButton()) return;
 
     const { guild, member } = interaction;
@@ -414,7 +415,7 @@ module.exports = {
         new ButtonBuilder()
           .setCustomId('drag_execute_confirm')
           .setLabel('Execute Mass Move')
-          .setStyle(ButtonStyle.Secondary) // Sleek Black Style updated!
+          .setStyle(ButtonStyle.Secondary)
       );
 
       const menuMessage = await interaction.reply({
@@ -424,7 +425,7 @@ module.exports = {
         withResponse: true
       });
 
-      let selectedUserIds = [];
+      let selectedUsersMap = new Map();
       let targetChannelId = null;
 
       const collector = menuMessage.resource.message.createMessageComponentCollector({
@@ -437,17 +438,17 @@ module.exports = {
         }
 
         if (componentInteraction.customId === 'drag_select_users') {
-          selectedUserIds = componentInteraction.values;
+          selectedUsersMap = componentInteraction.users;
           await componentInteraction.deferUpdate();
         }
 
         if (componentInteraction.customId === 'drag_select_target') {
-          targetChannelId = componentInteraction.values;
+          targetChannelId = componentInteraction.channels.first()?.id || null;
           await componentInteraction.deferUpdate();
         }
 
         if (componentInteraction.customId === 'drag_execute_confirm') {
-          if (selectedUserIds.length === 0 || !targetChannelId) {
+          if (selectedUsersMap.size === 0 || !targetChannelId) {
             return componentInteraction.reply({
               content: '⚠️ **Configuration Error:** You must identify your target members and target channel parameters first!',
               flags: [MessageFlags.Ephemeral]
@@ -459,7 +460,7 @@ module.exports = {
           let movedCount = 0;
           let failedCount = 0;
 
-          for (const userId of selectedUserIds) {
+          for (const userId of selectedUsersMap.keys()) {
             try {
               const memberToMove = await interaction.guild.members.fetch(userId);
               if (!memberToMove.voice.channelId) {
@@ -547,3 +548,4 @@ module.exports = {
     }
   },
 };
+
