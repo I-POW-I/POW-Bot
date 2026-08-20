@@ -268,7 +268,10 @@ module.exports = {
     // ── Remove streamer select ────────────────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'remove_streamer_select') {
       const { guild, member } = interaction;
-      const subId = interaction.values;
+      
+      // 🛠️ FIX: Grab the first element out of the selection array string mapping
+      const subId = interaction.values[0]; 
+      
       const sub   = selectOne('SELECT * FROM streamer_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
 
       if (!sub) {
@@ -283,6 +286,7 @@ module.exports = {
         components: [],
       });
     }
+
 
     
     if (!interaction.isButton()) return;
