@@ -134,7 +134,7 @@ function buildPanelEmbed(guildId, guild = null) {
     .addFields(
       // Row 1: System Metrics
       { name: '🚥 Status', value: statusLine, inline: true },
-      { name: 'Bot Up-Time', value: `\`${processUp}\``, inline: true },
+      { name: 'Uptime', value: `\`${processUp}\``, inline: true },
       { name: 'Memory', value: `\`${memMB} MB\``, inline: true },
       
       // Row 2: Voice Channel Session Details
