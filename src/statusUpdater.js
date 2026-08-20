@@ -339,7 +339,7 @@ function buildPanelButtons() {
     new ButtonBuilder()
       .setCustomId('bot_refresh')
       .setLabel('Panel Refresh')
-      .setEmoji('🟨')
+      .setEmoji('▫️')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -348,13 +348,13 @@ function buildPanelButtons() {
     new ButtonBuilder()
       .setCustomId('bot_myinfo')
       .setLabel('My Info')
-      .setEmoji('🟦')
+      .setEmoji('▫️')
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
       .setCustomId('bot_lookup')
       .setLabel('User Lookup')
-      .setEmoji('🟪')
+      .setEmoji('▫️')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -362,8 +362,8 @@ function buildPanelButtons() {
   const row4 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bot_admin_drag_init') // 🛠️ Updated customId
-      .setLabel('Mass Move Users')
-      .setEmoji('⬛')
+      .setLabel('Move Users')
+      .setEmoji('▫️')
       .setStyle(ButtonStyle.Secondary)
   );
 
