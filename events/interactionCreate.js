@@ -86,6 +86,7 @@ async function joinChannel(targetChannel, guild, member, client, interaction) {
   }
 }
 
+
 module.exports = {
   name: Events.InteractionCreate,
   once: false,
@@ -149,6 +150,7 @@ module.exports = {
       }
       return;
     }
+
 
     
     // ── Channel select (voice channel picker for Join) ─────────────────────────
@@ -281,13 +283,13 @@ module.exports = {
         components: [],
       });
     }
+
     
     if (!interaction.isButton()) return;
 
     const { guild, member } = interaction;
 
     // ── Log button use to console and command log channel ─────────────────────
-    // 🛠️ FILTER ADDED HERE: Don't let the global logger double-post the move button
     if (interaction.customId !== 'bot_admin_drag_init' && interaction.customId !== 'drag_execute_confirm') {
       log('INFO', `Button: ${interaction.customId}`, {
         user:  interaction.user.tag,
@@ -326,7 +328,6 @@ module.exports = {
         } catch { /* non-critical */ }
       }
     }
-
     const isAdmin = member.permissions.has(PermissionFlagsBits.ManageGuild);
 
     // ── Verify button ─────────────────────────────────────────────────────────
@@ -375,13 +376,13 @@ module.exports = {
       });
     }
 
-    // ── 🎛️ Mass User Move Panel Handler (Active Users Only) ──────────────
+    // ── 🎛️ Mass User Migration Panel Handler (Active Humans Only) ──────────────
     if (interaction.customId === 'bot_admin_drag_init') {
       const { StringSelectMenuBuilder } = require('discord.js');
 
       if (!interaction.member.permissions.has(PermissionFlagsBits.MoveMembers)) {
         return interaction.reply({ 
-          content: '❌ **Access Denied:** You lack the `Move Members` permission required to do this.', 
+          content: '❌ **Access Denied:** You lack the `Move Members` permission required to activate this management hub.', 
           flags: [MessageFlags.Ephemeral] 
         });
       }
@@ -389,7 +390,7 @@ module.exports = {
       const entry = store.getEntry(guild.id);
       if (!entry || !entry.channelId) {
         return interaction.reply({ 
-          content: '❌ **Abuse Prevention:** The application connection state is dormant. Place the bot inside a voice channel first.', 
+          content: '❌ **Abuse Prevention:** The application connection state is dormant. Secure the bot inside a voice channel first.', 
           flags: [MessageFlags.Ephemeral] 
         });
       }
@@ -397,38 +398,35 @@ module.exports = {
       const modVoiceChannel = interaction.member.voice?.channelId;
       if (modVoiceChannel !== entry.channelId) {
         return interaction.reply({ 
-          content: `❌ **Access Denied:** You must be present inside the current voice channel (<#${entry.channelId}>) to use this interface!`, 
+          content: `❌ **Access Denied:** You must physically be present inside the bot's current voice channel (<#${entry.channelId}>) to use this interface!`, 
           flags: [MessageFlags.Ephemeral] 
         });
       }
 
-      // Fetch the bot's current voice channel object directly from Discord's cache
       const activeVoiceRoom = guild.channels.cache.get(entry.channelId);
       if (!activeVoiceRoom) {
         return interaction.reply({ content: '❌ Could not find the active voice channel session.', flags: [MessageFlags.Ephemeral] });
       }
 
-      // Filter: Exclude all bots and only target members actively sitting in this room
       const activeHumans = activeVoiceRoom.members.filter(m => !m.user.bot);
 
       if (activeHumans.size === 0) {
         return interaction.reply({
-          content: '⚠️ **Operation Aborted:** There are no users currently connected in this voice channel to move!',
+          content: '⚠️ **Operation Aborted:** There are no real human users currently connected to this voice channel to migrate!',
           flags: [MessageFlags.Ephemeral]
         });
       }
 
-      // Map the filtered active human array into options for our String Select Menu
       const dropdownOptions = activeHumans.map(m => ({
         label: m.user.globalName || m.user.username,
         description: `@${m.user.username}`,
         value: m.user.id
-      })).slice(0, 25); // Hard cap at Discord's 25 option limit
+      })).slice(0, 25);
 
       const userSelect = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId('drag_select_users')
-          .setPlaceholder('Select members to move...')
+          .setPlaceholder('👥 Select members to migrate...')
           .setMinValues(1)
           .setMaxValues(dropdownOptions.length)
           .addOptions(dropdownOptions)
@@ -437,19 +435,19 @@ module.exports = {
       const channelSelect = new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('drag_select_target')
-          .setPlaceholder('🔊 Select voice channel...')
+          .setPlaceholder('🔊 Select destination voice channel...')
           .addChannelTypes(ChannelType.GuildVoice)
       );
 
       const actionButtons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('drag_execute_confirm')
-          .setLabel('Move Users')
-          .setStyle(ButtonStyle.Success)
+          .setLabel('Execute Mass Move')
+          .setStyle(ButtonStyle.Secondary)
       );
 
       const menuMessage = await interaction.reply({
-        content: `🎛️ **Mass Move**\nDetected **${activeHumans.size}** active users inside <#${entry.channelId}>.\n\n1. Select the members.\n2. Choose the channel.\n3. Click Move to process.`,
+        content: `🎛️ **Mass Migration Control Room**\nDetected **${activeHumans.size}** active human users inside <#${entry.channelId}>.\n\n1. Select the targets.\n2. Choose their destination channel.\n3. Click execute to process.`,
         components: [userSelect, channelSelect, actionButtons],
         flags: [MessageFlags.Ephemeral],
         withResponse: true
@@ -464,11 +462,11 @@ module.exports = {
 
       collector.on('collect', async (componentInteraction) => {
         if (componentInteraction.user.id !== interaction.user.id) {
-          return componentInteraction.reply({ content: '❌ Access Denied.', flags: [MessageFlags.Ephemeral] });
+          return componentInteraction.reply({ content: '❌ Access Denied: This operation portal belongs to another administrator.', flags: [MessageFlags.Ephemeral] });
         }
 
         if (componentInteraction.customId === 'drag_select_users') {
-          selectedUserIds = componentInteraction.values; // Reads selected IDs straight from values
+          selectedUserIds = componentInteraction.values;
           await componentInteraction.deferUpdate();
         }
 
@@ -478,9 +476,9 @@ module.exports = {
         }
 
         if (componentInteraction.customId === 'drag_execute_confirm') {
-          if (selectedUsersMap.size === 0 || !targetChannelId) {
+          if (selectedUserIds.length === 0 || !targetChannelId) {
             return componentInteraction.reply({
-              content: '❌ **Configuration Error:** You the users & voice channel first!',
+              content: '⚠️ **Configuration Error:** You must identify your target members and target channel parameters first!',
               flags: [MessageFlags.Ephemeral]
             });
           }
@@ -490,7 +488,7 @@ module.exports = {
           let movedCount = 0;
           let failedCount = 0;
 
-          for (const userId of selectedUsersMap.keys()) {
+          for (const userId of selectedUserIds) {
             try {
               const memberToMove = await interaction.guild.members.fetch(userId);
               if (!memberToMove.voice.channelId) {
@@ -504,7 +502,6 @@ module.exports = {
             }
           }
 
-          // 🛠️ HOOK ADDED HERE: Post one clean, definitive log payload to your tracking systems
           log('INFO', `Mass Move Executed: Moved ${movedCount} users`, {
             user:  interaction.user.tag,
             guild: interaction.guild.name,
@@ -518,11 +515,12 @@ module.exports = {
               const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
               if (btnCh?.isTextBased()) {
                 await btnCh.send({
+
                   embeds: [
                     new _EB2()
-                      .setColor(0x2F3136) // Sleek dark charcoal log profile
+                      .setColor(0x2F3136)
                       .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
-                      .setTitle('Moved Users')
+                      .setTitle('🔀 Mass Users Migration Executed')
                       .addFields(
                         { name: 'Moderator', value: `${interaction.member}`, inline: true },
                         { name: 'Destination', value: `<#${targetChannelId}>`, inline: true },
@@ -535,13 +533,15 @@ module.exports = {
             }
           } catch { /* non-critical */ }
 
-          // Edit the moderator's ephemeral menu response interface with the final output
           await componentInteraction.editReply({
-            content: `✅ **Move Successful!**\nSuccessfully Moved **${movedCount}** Users over to <#${targetChannelId}>.\n*(Skipped ${failedCount} Users due to channel permission constraints or inactive voice connections)*`
+            content: `✅ **Operation Successful!**\nSuccessfully migrated **${movedCount}** members over to <#${targetChannelId}>.\n*(Skipped ${failedCount} targets due to channel permission visibility constraints or inactive voice connections)*`
           });
 
           collector.stop();
         }
+      });
+      return;
+    }
 
 
 
