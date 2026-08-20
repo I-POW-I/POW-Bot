@@ -287,42 +287,46 @@ module.exports = {
     const { guild, member } = interaction;
 
     // ── Log button use to console and command log channel ─────────────────────
-    log('INFO', `Button: ${interaction.customId}`, {
-      user:  interaction.user.tag,
-      guild: interaction.guild?.name || 'DM',
-    });
-    if (interaction.guild) {
-      try {
-        const { getLogChannel: _glc } = require('../src/guildConfig');
-        const { EmbedBuilder: _EB2 } = require('discord.js');
-        const btnLogId = _glc(interaction.guild.id, 'commands');
-        if (btnLogId) {
-          const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
-          if (btnCh?.isTextBased()) {
-            const BUTTON_LABELS = {
-              bot_join: '🔊 Join', bot_leave: '👋 Leave',
-              bot_forceleave: '🔌 Force Leave', bot_refresh: '🔄 Refresh',
-              bot_myinfo: '👤 My Info', bot_lookup: '🔍 Lookup',
-              bot_verify: '✅ Verify', bot_admin_drag: '🔀 Move Members'
-            };
-            const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
-            await btnCh.send({
-              embeds: [
-                new _EB2()
-                  .setColor(0x9C59D1)
-                  .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
-                  .setTitle(`Button: ${label}`)
-                  .addFields(
-                    { name: 'Used By', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
-                    { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : '—',            inline: true },
-                  )
-                  .setTimestamp(),
-              ],
-            });
+    // 🛠️ FILTER ADDED HERE: Don't let the global logger double-post the move button
+    if (interaction.customId !== 'bot_admin_drag_init' && interaction.customId !== 'drag_execute_confirm') {
+      log('INFO', `Button: ${interaction.customId}`, {
+        user:  interaction.user.tag,
+        guild: interaction.guild?.name || 'DM',
+      });
+      if (interaction.guild) {
+        try {
+          const { getLogChannel: _glc } = require('../src/guildConfig');
+          const { EmbedBuilder: _EB2 } = require('discord.js');
+          const btnLogId = _glc(interaction.guild.id, 'commands');
+          if (btnLogId) {
+            const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
+            if (btnCh?.isTextBased()) {
+              const BUTTON_LABELS = {
+                bot_join: '🔊 Join', bot_leave: '👋 Leave',
+                bot_forceleave: '🔌 Force Leave', bot_refresh: '🔄 Refresh',
+                bot_myinfo: '👤 My Info', bot_lookup: '🔍 Lookup',
+                bot_verify: '✅ Verify'
+              };
+              const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
+              await btnCh.send({
+                embeds: [
+                  new _EB2()
+                    .setColor(0x9C59D1)
+                    .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
+                    .setTitle(`Button: ${label}`)
+                    .addFields(
+                      { name: 'Used By', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
+                      { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : '—',            inline: true },
+                    )
+                    .setTimestamp(),
+                ],
+              });
+            }
           }
-        }
-      } catch { /* non-critical */ }
+        } catch { /* non-critical */ }
+      }
     }
+
     const isAdmin = member.permissions.has(PermissionFlagsBits.ManageGuild);
 
     // ── Verify button ─────────────────────────────────────────────────────────
@@ -474,9 +478,9 @@ module.exports = {
         }
 
         if (componentInteraction.customId === 'drag_execute_confirm') {
-          if (selectedUserIds.length === 0 || !targetChannelId) {
+          if (selectedUsersMap.size === 0 || !targetChannelId) {
             return componentInteraction.reply({
-              content: '⚠️ **Configuration Error:** You must choose the members and channel first!',
+              content: '❌ **Configuration Error:** You the users & voice channel first!',
               flags: [MessageFlags.Ephemeral]
             });
           }
@@ -486,7 +490,7 @@ module.exports = {
           let movedCount = 0;
           let failedCount = 0;
 
-          for (const userId of selectedUserIds) {
+          for (const userId of selectedUsersMap.keys()) {
             try {
               const memberToMove = await interaction.guild.members.fetch(userId);
               if (!memberToMove.voice.channelId) {
@@ -500,15 +504,45 @@ module.exports = {
             }
           }
 
+          // 🛠️ HOOK ADDED HERE: Post one clean, definitive log payload to your tracking systems
+          log('INFO', `Mass Move Executed: Moved ${movedCount} users`, {
+            user:  interaction.user.tag,
+            guild: interaction.guild.name,
+          });
+
+          try {
+            const { getLogChannel: _glc } = require('../src/guildConfig');
+            const { EmbedBuilder: _EB2 } = require('discord.js');
+            const btnLogId = _glc(interaction.guild.id, 'commands');
+            if (btnLogId) {
+              const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
+              if (btnCh?.isTextBased()) {
+                await btnCh.send({
+                  embeds: [
+                    new _EB2()
+                      .setColor(0x2F3136) // Sleek dark charcoal log profile
+                      .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
+                      .setTitle('Moved Users')
+                      .addFields(
+                        { name: 'Moderator', value: `${interaction.member}`, inline: true },
+                        { name: 'Destination', value: `<#${targetChannelId}>`, inline: true },
+                        { name: 'Results', value: `✅ Moved: \`${movedCount}\` · ❌ Skipped/Failed: \`${failedCount}\``, inline: false }
+                      )
+                      .setTimestamp(),
+                  ],
+                });
+              }
+            }
+          } catch { /* non-critical */ }
+
+          // Edit the moderator's ephemeral menu response interface with the final output
           await componentInteraction.editReply({
-            content: `✅ **Move Successful!**\nSuccessfully moved **${movedCount}** members over to <#${targetChannelId}>.\n*(Skipped ${failedCount} targets due to channel permission visibility constraints or inactive voice connections)*`
+            content: `✅ **Move Successful!**\nSuccessfully Moved **${movedCount}** Users over to <#${targetChannelId}>.\n*(Skipped ${failedCount} Users due to channel permission constraints or inactive voice connections)*`
           });
 
           collector.stop();
         }
-      });
-      return;
-    }
+
 
 
     // ── Role/owner gated ──────────────────────────────────────────────────────
