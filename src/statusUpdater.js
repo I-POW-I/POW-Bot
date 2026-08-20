@@ -358,7 +358,16 @@ function buildPanelButtons() {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  return [row1, row2, row3];
+  // 🛠️ NEW Row 4: Administration Custom Tools
+  const row4 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('bot_admin_drag')
+      .setLabel('Move Users')
+      .setEmoji('⬛')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  return [row1, row2, row3, row4];
 }
 
 // ── Select menus ──────────────────────────────────────────────────────────────
