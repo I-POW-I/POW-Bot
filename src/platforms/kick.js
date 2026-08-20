@@ -3,7 +3,7 @@
  * Bypasses Cloudflare hosting blocks safely by routing queries through Crawlbase.
  */
 
-// 🔒 SECURE: Reads your token dynamically from system environment properties
+// 🔒 Reads your secret token dynamically from Discloud's Environment settings
 const CRAWLBASE_TOKEN = process.env.CRAWLBASE_TOKEN;
 
 async function getStreamStatus(username) {
@@ -13,9 +13,9 @@ async function getStreamStatus(username) {
     console.warn(`[KICK TRACKER ENGINE] Missing Proxy API Key. Running unstable public mirror fallback for ${name}.`);
   }
 
-  // 🌐 FIX: Corrected quotes to backticks (`) so JavaScript handles template literals properly!
+  // 🌐 FIX: Must use standard backticks (`) for variable interpolation to work!
   const kickUrl = `https://kick.com{name}`;
-  const targetUrl = CRAWLBASE_TOKEN && !CRAWLBASE_TOKEN.includes('PASTE_YOUR_')
+  const targetUrl = CRAWLBASE_TOKEN
     ? `https://crawlbase.com{CRAWLBASE_TOKEN}&format=json&url=${encodeURIComponent(kickUrl)}`
     : `https://vercel.app{name}`;
 
@@ -25,7 +25,7 @@ async function getStreamStatus(username) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
         'Accept': 'application/json'
       },
-      signal: AbortSignal.timeout(25000), // ⏳ 25s because anti-bot processing takes extra execution time
+      signal: AbortSignal.timeout(25000), // ⏳ 25s limit because Crawlbase takes time to clear Cloudflare
     });
 
     if (res.status === 403 || res.status === 429) {
