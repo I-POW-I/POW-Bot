@@ -92,15 +92,28 @@ module.exports = {
       const oldChannel = oldState.channel;
       const newChannel = newState.channel;
 
-      // Only act if the bot moved from an active channel to an unapproved one
       if (oldChannel && newChannel && oldChannel.id !== newChannel.id) {
-        const store = require('../src/connectionStore'); // Corrected path for your root events folder!
+        const store = require('../src/connectionStore'); 
         const entry = store.getEntry(newState.guild.id);
 
         if (entry && newChannel.id !== entry.channelId) {
           log('WARN', `Anti-Drag caught move to ${newChannel.name}. Snapping back to ${entry.channelName}`);
           
           try {
+            // Check your server audit logs to see who dragged the bot
+            const draggedBy = await getMoveMod(newState.guild, newChannel.id);
+
+            const embed = base(newState.member, C.forceLeave, '🤖 Bot Intercepted Unauthorized Move')
+              .setDescription(`The application caught an unapproved drag action and successfully rubber-banded itself back to its assigned room.`)
+              .addFields(
+                { name: 'Intercepted In', value: `<#${newChannel.id}>`, inline: true },
+                { name: 'Returned Back To', value: `<#${entry.channelId}>`, inline: true },
+                { name: 'Uptime Intact', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
+                { name: 'Action Handled By', value: draggedBy || '*Unknown (Likely dragged self/API delay)*', inline: false }
+              );
+            
+            await sendLog(newState.guild, embed);
+
             const { joinVoiceChannel } = require('@discordjs/voice');
             joinVoiceChannel({
               channelId: entry.channelId,
@@ -112,7 +125,7 @@ module.exports = {
           } catch (error) {
             log('ERROR', 'Anti-Drag pull-back failed', { message: error.message });
           }
-          return; // Stop execution here so the bot doesn't write normal user tracking logs for itself
+          return; 
         }
       }
     }
@@ -175,7 +188,6 @@ module.exports = {
     if (oldChannel && newChannel && oldChannel.id !== newChannel.id) {
       endSession(member.user.id, guild.id);
       startSession(member.user.id, guild.id, newChannel.id, newChannel.name);
-      // Do NOT reset joinTimes — keep original so duration on leave shows total time
 
       const movedBy = await getMoveMod(guild, newChannel.id);
       const embed   = base(member,
