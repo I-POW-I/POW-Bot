@@ -3,7 +3,7 @@
  * Bypasses Cloudflare hosting blocks safely by routing queries through Crawlbase.
  */
 
-// 🛠️ CONFIGURATION: Paste your full "Standard token" inside the quotes below!
+// 🛠️ CONFIGURATION: Ensure your full 4KE5 token is pasted inside the single quotes below!
 const CRAWLBASE_TOKEN = '4KE5-CE7LMu8finknxFWRw';
 
 async function getStreamStatus(username) {
@@ -13,11 +13,11 @@ async function getStreamStatus(username) {
     console.warn(`[KICK TRACKER ENGINE] Missing Proxy API Key. Running unstable public mirror fallback for ${name}.`);
   }
 
-  // Construct a bulletproof cloud-bypassing URL via Crawlbase wrapper
+  // 🌐 FIX: Added &format=json to handle API responses correctly via Crawlbase
   const kickUrl = `https://kick.com{name}`;
   const targetUrl = CRAWLBASE_TOKEN && !CRAWLBASE_TOKEN.includes('PASTE_YOUR_')
-    ? `https://crawlbase.com{CRAWLBASE_TOKEN}&url=${encodeURIComponent(kickUrl)}`
-    : `https://vercel.app{name}`; // Backup safeguard
+    ? `https://crawlbase.com{CRAWLBASE_TOKEN}&format=json&url=${encodeURIComponent(kickUrl)}`
+    : `https://vercel.app{name}`;
 
   try {
     const res = await fetch(targetUrl, {
@@ -25,7 +25,7 @@ async function getStreamStatus(username) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
         'Accept': 'application/json'
       },
-      signal: AbortSignal.timeout(15000), // Gives the proxy network plenty of time to bypass Cloudflare
+      signal: AbortSignal.timeout(25000), // ⏳ Increased to 25s because anti-bot processing takes time
     });
 
     if (res.status === 403 || res.status === 429) {
@@ -33,12 +33,17 @@ async function getStreamStatus(username) {
       return { error: res.status };
     }
     
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      // If Crawlbase fails, log the exact code it gave back to help us debug
+      console.warn(`[KICK TRACKER ENGINE] Crawlbase returned status ${res.status} for ${name}`);
+      return null;
+    }
 
     const body = await res.json();
     
-    // Unpack Crawlbase body responses directly
-    const data = body.data || body;
+    // Support nested proxy data structures or direct root objects
+    const data = body.body ? JSON.parse(body.body) : (body.data || body);
     if (!data || (!data.user && !data.slug)) return null;
 
     const isLive = !!data.livestream;
@@ -55,7 +60,7 @@ async function getStreamStatus(username) {
       displayName,
     };
   } catch (err) {
-    console.error(`[KICK TRACKER CRITICAL ERROR] Connection dropped for ${name}: API connection path failed.`);
+    console.error(`[KICK TRACKER CRITICAL ERROR] Connection dropped for ${name}: ${err.message}`);
     return null;
   }
 }
