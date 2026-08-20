@@ -170,23 +170,23 @@ function buildStatsEmbed(guildId, client) {
 
     embed.addFields(
       // Row 1: Connection & Core State
-      { name: '🚥 Connection', value: statusLabel, inline: true },
-      { name: '⏳ VC Uptime', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
-      { name: '💜 Process Uptime', value: `\`${getProcessUptime()}\``, inline: true },
+      { name: '🚥 Status', value: statusLabel, inline: true },
+      { name: 'VC Uptime', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
+      { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
 
       // Row 2: Performance Metrics
-      { name: '🌐 WebOSocket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`Calculating...`', inline: true },
-      { name: '📎 Memory', value: `\`${memMB} MB\``, inline: true },
-      { name: '🥷🏽 Members in VC', value: `\`${inVc}\``, inline: true },
+      { name: 'Web Socket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`Calculating...`', inline: true },
+      { name: 'Memory', value: `\`${memMB} MB\``, inline: true },
+      { name: 'Members in VC', value: `\`${inVc}\``, inline: true },
 
       // Row 3: Tracking History totals
-      { name: '➖ Reconnects', value: `\`${entry.reconnectCount}\``, inline: true },
+      { name: 'Reconnects', value: `\`${entry.reconnectCount}\``, inline: true },
       { name: '🔊 Active VCs', value: `\`${totalActive} server(s)\``, inline: true },
-      { name: '➖ Total Sessions (DB)', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
+      { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
 
       // Row 4: Wide Base Data
       {
-        name: '➖ Persisted Stats',
+        name: 'Persisted Stats',
         value: saved.joinedAt
           ? `Since <t:${Math.floor(new Date(saved.joinedAt).getTime() / 1000)}:R> · \`${saved.reconnectCount}\` reconnect(s)`
           : '*None saved yet*',
@@ -197,10 +197,10 @@ function buildStatsEmbed(guildId, client) {
     // Clean 4-Field grid when the bot is resting
     embed.setDescription('💤 *Not currently connected to any voice channel.*')
       .addFields(
-        { name: '💜 Process Uptime', value: `\`${getProcessUptime()}\``, inline: true },
-        { name: '📎 Memory', value: `\`${memMB} MB\``, inline: true },
-        { name: '🌐 WebSocket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`—`', inline: true },
-        { name: '▫️ Total Sessions (DB)', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true }
+        { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
+        { name: 'Memory', value: `\`${memMB} MB\``, inline: true },
+        { name: 'Web Socket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`—`', inline: true },
+        { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true }
       );
   }
 
