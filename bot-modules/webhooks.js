@@ -1,5 +1,15 @@
 const { supabase } = require('./supabase-client');
 const { WebhookClient, EmbedBuilder } = require('discord.js');
+const crypto = require('crypto');
+
+// Constant-time token compare — a plain `===` leaks timing info that can
+// (in theory) be used to guess a secret token character-by-character.
+function safeTokenCompare(a, b) {
+  const bufA = Buffer.from(String(a ?? ''));
+  const bufB = Buffer.from(String(b ?? ''));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 // Cache: guildId -> { webhooks, fetchedAt }
 const cache = new Map();
@@ -141,14 +151,25 @@ async function handleHttpTrigger(req, res) {
     res.end(JSON.stringify({ error: 'Method not allowed' }));
     return;
   }
-  const auth = req.headers.authorization;
-  if (auth !== `Bearer ${process.env.BOT_API_TOKEN}`) {
+  const auth = req.headers.authorization || '';
+  const expectedToken = process.env.BOT_API_TOKEN;
+  if (!expectedToken || !safeTokenCompare(auth, `Bearer ${expectedToken}`)) {
     res.writeHead(401, { ...cors, 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Unauthorized' }));
     return;
   }
+  const MAX_BODY_BYTES = 16 * 1024; // this endpoint only ever needs a tiny JSON body
   let body = '';
-  for await (const chunk of req) body += chunk;
+  let bytes = 0;
+  for await (const chunk of req) {
+    bytes += chunk.length;
+    if (bytes > MAX_BODY_BYTES) {
+      res.writeHead(413, { ...cors, 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Payload too large' }));
+      return;
+    }
+    body += chunk;
+  }
   let parsed;
   try {
     parsed = JSON.parse(body);
