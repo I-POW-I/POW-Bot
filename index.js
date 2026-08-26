@@ -1,15 +1,15 @@
 /*
  * POW Bot — modified index.js with dashboard module integration
  *
- * Drop this file into your bot repo root, replacing the existing index.js.
  * It preserves ALL existing voice/24-7 logic and adds the five dashboard
- * feature modules (automod, custom commands, reaction roles, tickets, webhooks).
+ * feature modules (automod, custom commands, reaction roles, tickets, webhooks),
+ * plus the dashboard heartbeat/command sync (src/dashboardSync.js).
  */
 
 const { loadCommands, loadEvents } = require('./src/registry');
 const { log } = require('./src/logger');
 const client = require('./src/client');
-const botModules = require('./bot-modules');
+const { startDashboardSync } = require('./src/dashboardSync');
 const http = require('http');
 require('dotenv').config();
 
@@ -23,40 +23,58 @@ if (!process.env.CLIENT_ID) {
   process.exit(1);
 }
 
-// ── Supabase env check (new — only needed for dashboard modules) ─────────────
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  log('WARN', 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing — dashboard modules will be disabled.');
-  log('WARN', 'Add them to .env to enable automod, custom commands, reaction roles, tickets, webhooks.');
-}
-
 // ── Load existing commands and events (unchanged) ────────────────────────────
 loadCommands(client);
 loadEvents(client);
 
-// ── Register dashboard feature modules (new) ─────────────────────────────────
-// Only register if Supabase env vars are present, so the bot still runs
-// without them during initial testing.
+// ── Register dashboard feature modules (automod, custom commands, reaction
+//    roles, tickets, webhooks) ────────────────────────────────────────────────
+// IMPORTANT: `require('./bot-modules')` is deliberately done in here, INSIDE
+// the env check, not at the top of the file. bot-modules/supabase-client.js
+// throws synchronously if SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are missing,
+// and every module in bot-modules/ requires it at load time. If that require
+// happened at the top of this file (as it did before), a missing or mistyped
+// Supabase env var would crash the ENTIRE bot before it even logs in to
+// Discord — not just disable the dashboard modules. The try/catch below is a
+// second layer of safety: even a bug inside one of the modules can no longer
+// take the whole bot down with it.
 if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  botModules.register(client);
-  log('INFO', 'Dashboard feature modules registered (automod, custom commands, reaction roles, tickets, webhooks).');
+  try {
+    const botModules = require('./bot-modules');
+    botModules.register(client);
+    log('INFO', 'Dashboard feature modules registered (automod, custom commands, reaction roles, tickets, webhooks).');
+  } catch (err) {
+    log('ERROR', 'Dashboard feature modules failed to load — bot continuing without them.', { error: err.message });
+  }
 } else {
-  log('WARN', 'Dashboard feature modules skipped — set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable.');
+  log('WARN', 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing — dashboard modules will be disabled.');
+  log('WARN', 'Add them to .env to enable automod, custom commands, reaction roles, tickets, webhooks.');
 }
 
-// ── Optional: webhook HTTP trigger server (new) ──────────────────────────────
+// ── Dashboard heartbeat + remote command polling (new) ───────────────────────
+// Pushes online/ping/guild-count to the dashboard every 60s and polls for
+// queued commands (restart, presence, sync, refresh_status) every 15s.
+// Needs DASHBOARD_URL + BOT_API_TOKEN — see src/dashboardSync.js.
+startDashboardSync(client);
+
+// ── Optional: webhook HTTP trigger server ─────────────────────────────────────
 // Lets the dashboard's "Test webhook" button fire through the bot.
 // Runs on BOT_HTTP_PORT (default 8081). Only starts if BOT_API_TOKEN is set.
 if (process.env.BOT_API_TOKEN) {
-  const { handleHttpTrigger } = require('./bot-modules/webhooks');
-  const port = parseInt(process.env.BOT_HTTP_PORT || '8081', 10);
-  const server = http.createServer((req, res) => {
-    if (req.url?.startsWith('/webhooks/trigger')) return handleHttpTrigger(req, res);
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
-  });
-  server.listen(port, () => {
-    log('INFO', `Webhook HTTP trigger listening on port ${port}`);
-  });
+  try {
+    const { handleHttpTrigger } = require('./bot-modules/webhooks');
+    const port = parseInt(process.env.BOT_HTTP_PORT || '8081', 10);
+    const server = http.createServer((req, res) => {
+      if (req.url?.startsWith('/webhooks/trigger')) return handleHttpTrigger(req, res);
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+    });
+    server.listen(port, () => {
+      log('INFO', `Webhook HTTP trigger listening on port ${port}`);
+    });
+  } catch (err) {
+    log('WARN', 'Webhook HTTP trigger server not started (webhooks module unavailable).', { error: err.message });
+  }
 }
 
 // ── Login (unchanged) ────────────────────────────────────────────────────────
