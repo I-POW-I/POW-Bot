@@ -179,8 +179,8 @@ module.exports = {
     // ── Game alert: add (game selected from search results) ──────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_add_select') {
       const { guild, member } = interaction;
-      const [appId, channelId, roleId] = interaction.values.split('|||');
-      const gameName = interaction.component.options.find(o => o.value === interaction.values)?.label || `App ${appId}`;
+      const [appId, channelId, roleId] = interaction.values[0].split('|||');
+      const gameName = interaction.component.options.find(o => o.value === interaction.values[0])?.label || `App ${appId}`;
 
       const existing = selectOne(
         'SELECT id FROM game_subscriptions WHERE guild_id = ? AND app_id = ?',
@@ -214,7 +214,7 @@ module.exports = {
     // ── Game alert: edit (change channel/role) ───────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_edit_select') {
       const { guild, member } = interaction;
-      const [subId, channelId, roleId] = interaction.values.split('|||');
+      const [subId, channelId, roleId] = interaction.values[0].split('|||');
       const sub = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
 
       if (!sub) {
@@ -239,7 +239,7 @@ module.exports = {
     // ── Game alert: remove ────────────────────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_remove_select') {
       const { guild, member } = interaction;
-      const subId    = interaction.values;
+      const subId    = interaction.values[0];
       const sub      = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
 
       if (!sub) {
@@ -257,7 +257,7 @@ module.exports = {
 
     // ── Game alert: test (game selected) ─────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_test_select') {
-      const subId = interaction.values;
+      const subId = interaction.values[0];
       const sub   = selectOne('SELECT * FROM game_subscriptions WHERE id = ?', [subId]);
       if (!sub) return interaction.update({ content: '❌ Not found.', components: [] });
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
@@ -613,4 +613,3 @@ module.exports = {
     }
   },
 };
-
