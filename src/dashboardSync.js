@@ -25,7 +25,7 @@
 
 const { log } = require('./logger');
 const store = require('./connectionStore');
-const { setCustomPresence } = require('./statusUpdater');
+const { setDashboardPresences } = require('./statusUpdater');
 
 const SYNC_INTERVAL_MS = 60_000;
 const POLL_INTERVAL_MS = 15_000;
@@ -98,29 +98,29 @@ async function markCommand(id, status, errorMessage) {
   }
 }
 
-const PRESENCE_TYPE_MAP = {
-  Playing: 0,   // ActivityType.Playing
-  Watching: 3,  // ActivityType.Watching
-  Listening: 2, // ActivityType.Listening
-  Custom: 4,    // ActivityType.Custom
-};
+const VALID_TYPES = ['Playing', 'Watching', 'Listening', 'Custom'];
+
+function normalizePresence(p) {
+  const type = VALID_TYPES.includes(p?.type) ? p.type : 'Custom';
+  const text = String(p?.text || '').slice(0, 128).trim();
+  return { type, text };
+}
 
 async function applyPresenceCommand(client, payload) {
-  const type = payload?.type || 'Custom';
-  const text = (payload?.text || '').slice(0, 128);
-  if (!text) throw new Error('Presence command missing text');
+  const mode = payload?.mode === 'fixed' ? 'fixed' : 'rotate';
+  const rawList = Array.isArray(payload?.presences)
+    ? payload.presences
+    : payload?.text
+      ? [{ type: payload.type, text: payload.text }] // back-compat with the old single-presence shape
+      : [];
 
-  const activityType = PRESENCE_TYPE_MAP[type] ?? PRESENCE_TYPE_MAP.Custom;
-  const activity =
-    activityType === PRESENCE_TYPE_MAP.Custom
-      ? { name: 'Custom Status', state: text, type: activityType }
-      : { name: text, type: activityType };
+  const presences = rawList.map(normalizePresence).filter((p) => p.text).slice(0, 3);
+  if (!presences.length) throw new Error('Presence command had no usable text');
 
-  // Pin this presence so the 20s status-rotation loop in statusUpdater.js
-  // doesn't immediately overwrite it — matches what the dashboard UI already
-  // tells the user ("Setting a custom presence overrides the rotation").
-  setCustomPresence(activity);
-  client.user.setPresence({ status: 'online', activities: [activity] });
+  // Hand off to statusUpdater's rotation — it decides whether these blend in
+  // (mode: 'rotate') or fully replace the rotation (mode: 'fixed'). The next
+  // 20s rotation tick will pick this up and apply it to Discord.
+  setDashboardPresences(mode, presences);
 }
 
 async function processCommand(client, cmd) {
