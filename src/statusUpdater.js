@@ -14,16 +14,32 @@ const PRESENCE_INTERVAL  = 60 * 1000;
 const ROTATION_INTERVAL  = 20 * 1000;
 let rotationIndex = 0;
 
-// Set by the dashboard's "presence" command (via src/dashboardSync.js) so the
-// rotation loop below doesn't immediately overwrite a manually-set presence.
-let pinnedPresence = null;
+// Set by the dashboard's "presence" command (via src/dashboardSync.js).
+// mode: 'rotate'  -> blended into buildRotationSlots() alongside voice/member slots
+//       'fixed'   -> replaces the rotation entirely, cycling only through these
+let dashboardPresenceMode = 'rotate';
+let dashboardPresences = []; // [{ type: 'Playing'|'Watching'|'Listening'|'Custom', text }]
 
-function setCustomPresence(activity) {
-  pinnedPresence = activity;
+const PRESENCE_TYPE_MAP = {
+  Playing: ActivityType.Playing,
+  Watching: ActivityType.Watching,
+  Listening: ActivityType.Listening,
+  Custom: ActivityType.Custom,
+};
+
+function toSlot({ type, text }) {
+  const activityType = PRESENCE_TYPE_MAP[type] ?? ActivityType.Custom;
+  return { name: text, discordStatus: 'online', type: activityType };
 }
 
-function clearCustomPresence() {
-  pinnedPresence = null;
+function setDashboardPresences(mode, presences) {
+  dashboardPresenceMode = mode === 'fixed' ? 'fixed' : 'rotate';
+  dashboardPresences = Array.isArray(presences) ? presences.slice(0, 3) : [];
+}
+
+function clearDashboardPresences() {
+  dashboardPresenceMode = 'rotate';
+  dashboardPresences = [];
 }
 
 const HEALTHY = [
@@ -61,6 +77,11 @@ function formatLive(ms) {
 // ── Presence ──────────────────────────────────────────────────────────────────
 
 function buildRotationSlots(client) {
+  // Fixed mode: dashboard presences completely replace the normal rotation.
+  if (dashboardPresenceMode === 'fixed' && dashboardPresences.length) {
+    return dashboardPresences.map(toSlot);
+  }
+
   const active = store.getAllEntries().filter(([guildId]) => isConnected(guildId));
   const slots = [];
   for (const [, meta] of active) {
@@ -76,15 +97,17 @@ function buildRotationSlots(client) {
     discordStatus: 'dnd',
     type:          ActivityType.Watching,
   });
+
+  // Rotate mode: blend dashboard presences in alongside the normal slots.
+  if (dashboardPresenceMode === 'rotate' && dashboardPresences.length) {
+    slots.push(...dashboardPresences.map(toSlot));
+  }
+
   return slots;
 }
 
 function startStatusUpdater(client) {
   const rotate = () => {
-    if (pinnedPresence) {
-      // A custom presence was set from the dashboard — leave it alone.
-      return;
-    }
     const slots = buildRotationSlots(client);
     rotationIndex = rotationIndex % slots.length;
     const slot = slots[rotationIndex];
@@ -436,6 +459,6 @@ module.exports = {
   buildChannelSelectRow,
   buildUserSelectRow,
   buildStatsEmbed,
-  setCustomPresence,
-  clearCustomPresence,
+  setDashboardPresences,
+  clearDashboardPresences,
 };
