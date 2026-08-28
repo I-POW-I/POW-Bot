@@ -1,4 +1,15 @@
-const { Events, PermissionFlagsBits, MessageFlags, ActivityType } = require('discord.js');
+const { 
+  Events, 
+  PermissionFlagsBits, 
+  MessageFlags, 
+  ActivityType, 
+  UserSelectMenuBuilder, 
+  ChannelSelectMenuBuilder, 
+  ChannelType, 
+  ButtonBuilder, 
+  ButtonStyle, 
+  ActionRowBuilder 
+} = require('discord.js');
 const { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice');
 const { log }                     = require('../src/logger');
 const store                       = require('../src/connectionStore');
@@ -75,6 +86,7 @@ async function joinChannel(targetChannel, guild, member, client, interaction) {
   }
 }
 
+
 module.exports = {
   name: Events.InteractionCreate,
   once: false,
@@ -139,6 +151,8 @@ module.exports = {
       return;
     }
 
+
+    
     // ── Channel select (voice channel picker for Join) ─────────────────────────
     if (interaction.isChannelSelectMenu() && interaction.customId === 'bot_join_channel') {
       const targetChannel = interaction.channels.first();
@@ -246,16 +260,18 @@ module.exports = {
       const subId = interaction.values[0];
       const sub   = selectOne('SELECT * FROM game_subscriptions WHERE id = ?', [subId]);
       if (!sub) return interaction.update({ content: '❌ Not found.', components: [] });
-      // deferReply creates a new ephemeral response — runTest uses editReply on it
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
       const { runTest } = require('../commands/gamealerts');
-      return runTest(interaction, sub, true); // true = already deferred
+      return runTest(interaction, sub, true);
     }
 
     // ── Remove streamer select ────────────────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'remove_streamer_select') {
       const { guild, member } = interaction;
-      const subId = interaction.values[0];
+      
+      // 🛠️ FIX: Grab the first element out of the selection array string mapping
+      const subId = interaction.values[0]; 
+      
       const sub   = selectOne('SELECT * FROM streamer_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
 
       if (!sub) {
@@ -271,46 +287,59 @@ module.exports = {
       });
     }
 
+
+    
     if (!interaction.isButton()) return;
 
     const { guild, member } = interaction;
 
     // ── Log button use to console and command log channel ─────────────────────
-    log('INFO', `Button: ${interaction.customId}`, {
-      user:  interaction.user.tag,
-      guild: interaction.guild?.name || 'DM',
-    });
-    if (interaction.guild) {
-      try {
-        const { getLogChannel: _glc } = require('../src/guildConfig');
-        const { EmbedBuilder: _EB2 } = require('discord.js');
-        const btnLogId = _glc(interaction.guild.id, 'commands');
-        if (btnLogId) {
-          const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
-          if (btnCh?.isTextBased()) {
-            const BUTTON_LABELS = {
-              bot_join: '🔊 Join', bot_leave: '👋 Leave',
-              bot_forceleave: '🔌 Force Leave', bot_refresh: '🔄 Refresh',
-              bot_myinfo: '👤 My Info', bot_lookup: '🔍 Lookup',
-              bot_verify: '✅ Verify',
-            };
-            const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
-            await btnCh.send({
-              embeds: [
-                new _EB2()
-                  .setColor(0x9C59D1)
-                  .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
-                  .setTitle(`Button: ${label}`)
-                  .addFields(
-                    { name: 'Used By', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
-                    { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : '—',            inline: true },
-                  )
-                  .setTimestamp(),
-              ],
-            });
+    // Buttons owned by dashboard feature modules (bot-modules/tickets.js etc.)
+    // have their own dedicated logging (e.g. ticket transcripts to the
+    // dashboard-configured ticket log channel) — logging them again here as a
+    // generic "Button: ticket_open" duplicates that and adds no useful context.
+    const DASHBOARD_OWNED_BUTTON_IDS = ['ticket_open', 'ticket_close', 'ticket_claim'];
+    if (
+      interaction.customId !== 'bot_admin_drag_init' &&
+      interaction.customId !== 'drag_execute_confirm' &&
+      !DASHBOARD_OWNED_BUTTON_IDS.includes(interaction.customId)
+    ) {
+      log('INFO', `Button: ${interaction.customId}`, {
+        user:  interaction.user.tag,
+        guild: interaction.guild?.name || 'DM',
+      });
+      if (interaction.guild) {
+        try {
+          const { getLogChannel: _glc } = require('../src/guildConfig');
+          const { EmbedBuilder: _EB2 } = require('discord.js');
+          const btnLogId = _glc(interaction.guild.id, 'commands');
+          if (btnLogId) {
+            const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
+            if (btnCh?.isTextBased()) {
+              const BUTTON_LABELS = {
+                bot_join: '🔊 Join', bot_leave: '👋 Leave',
+                bot_forceleave: '🔌 Force Leave', bot_refresh: '🔄 Refresh',
+                bot_myinfo: '👤 My Info', bot_lookup: '🔍 Lookup',
+                bot_verify: '✅ Verify'
+              };
+              const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
+              await btnCh.send({
+                embeds: [
+                  new _EB2()
+                    .setColor(0x9C59D1)
+                    .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
+                    .setTitle(`Button: ${label}`)
+                    .addFields(
+                      { name: 'Used By', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
+                      { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : '—',            inline: true },
+                    )
+                    .setTimestamp(),
+                ],
+              });
+            }
           }
-        }
-      } catch { /* non-critical */ }
+        } catch { /* non-critical */ }
+      }
     }
     const isAdmin = member.permissions.has(PermissionFlagsBits.ManageGuild);
 
@@ -359,6 +388,175 @@ module.exports = {
         flags:      [MessageFlags.Ephemeral],
       });
     }
+
+    // ── 🎛️ Mass User Migration Panel Handler (Active Humans Only) ──────────────
+    if (interaction.customId === 'bot_admin_drag_init') {
+      const { StringSelectMenuBuilder } = require('discord.js');
+
+      if (!interaction.member.permissions.has(PermissionFlagsBits.MoveMembers)) {
+        return interaction.reply({ 
+          content: '❌ **Access Denied:** You lack the `Move Members` permission required to activate this.', 
+          flags: [MessageFlags.Ephemeral] 
+        });
+      }
+
+      const entry = store.getEntry(guild.id);
+      if (!entry || !entry.channelId) {
+        return interaction.reply({ 
+          content: '❌ **Abuse Prevention:** The application connection state is dormant. Secure the bot inside a voice channel first.', 
+          flags: [MessageFlags.Ephemeral] 
+        });
+      }
+
+      const modVoiceChannel = interaction.member.voice?.channelId;
+      if (modVoiceChannel !== entry.channelId) {
+        return interaction.reply({ 
+          content: `❌ **Access Denied:** You must be present inside the bot's current voice channel (<#${entry.channelId}>) to use this interface!`, 
+          flags: [MessageFlags.Ephemeral] 
+        });
+      }
+
+      const activeVoiceRoom = guild.channels.cache.get(entry.channelId);
+      if (!activeVoiceRoom) {
+        return interaction.reply({ content: '❌ Could not find the active voice channel.', flags: [MessageFlags.Ephemeral] });
+      }
+
+      const activeHumans = activeVoiceRoom.members.filter(m => !m.user.bot);
+
+      if (activeHumans.size === 0) {
+        return interaction.reply({
+          content: '⚠️ **Operation Aborted:** There are users currently connected in this voice channel to move!',
+          flags: [MessageFlags.Ephemeral]
+        });
+      }
+
+      const dropdownOptions = activeHumans.map(m => ({
+        label: m.user.globalName || m.user.username,
+        description: `@${m.user.username}`,
+        value: m.user.id
+      })).slice(0, 25);
+
+      const userSelect = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('drag_select_users')
+          .setPlaceholder('Select users to move...')
+          .setMinValues(1)
+          .setMaxValues(dropdownOptions.length)
+          .addOptions(dropdownOptions)
+      );
+
+      const channelSelect = new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('drag_select_target')
+          .setPlaceholder('🔊 Select voice channel...')
+          .addChannelTypes(ChannelType.GuildVoice)
+      );
+
+      const actionButtons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('drag_execute_confirm')
+          .setLabel('Move Users')
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      const menuMessage = await interaction.reply({
+        content: `🎛️ **Mass Move**\nDetected **${activeHumans.size}** Users in <#${entry.channelId}>.\n\n1. Select the users.\n2. Choose the voice channel.\n3. Click move to execute.`,
+        components: [userSelect, channelSelect, actionButtons],
+        flags: [MessageFlags.Ephemeral],
+        withResponse: true
+      });
+
+      let selectedUserIds = [];
+      let targetChannelId = null;
+
+      const collector = menuMessage.resource.message.createMessageComponentCollector({
+        time: 180000
+      });
+
+      collector.on('collect', async (componentInteraction) => {
+        if (componentInteraction.user.id !== interaction.user.id) {
+          return componentInteraction.reply({ content: '❌ Access Denied.', flags: [MessageFlags.Ephemeral] });
+        }
+
+        if (componentInteraction.customId === 'drag_select_users') {
+          selectedUserIds = componentInteraction.values;
+          await componentInteraction.deferUpdate();
+        }
+
+        if (componentInteraction.customId === 'drag_select_target') {
+          targetChannelId = componentInteraction.channels.first()?.id || null;
+          await componentInteraction.deferUpdate();
+        }
+
+        if (componentInteraction.customId === 'drag_execute_confirm') {
+          if (selectedUserIds.length === 0 || !targetChannelId) {
+            return componentInteraction.reply({
+              content: '⚠️ **Configuration Error:** You must choose the users & voice channel first!',
+              flags: [MessageFlags.Ephemeral]
+            });
+          }
+
+          await componentInteraction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+          let movedCount = 0;
+          let failedCount = 0;
+
+          for (const userId of selectedUserIds) {
+            try {
+              const memberToMove = await interaction.guild.members.fetch(userId);
+              if (!memberToMove.voice.channelId) {
+                failedCount++;
+                continue;
+              }
+              await memberToMove.voice.setChannel(targetChannelId);
+              movedCount++;
+            } catch (err) {
+              failedCount++;
+            }
+          }
+
+          log('INFO', `Move Executed: Moved ${movedCount} users`, {
+            user:  interaction.user.tag,
+            guild: interaction.guild.name,
+          });
+
+          try {
+            const { getLogChannel: _glc } = require('../src/guildConfig');
+            const { EmbedBuilder: _EB2 } = require('discord.js');
+            const btnLogId = _glc(interaction.guild.id, 'commands');
+            if (btnLogId) {
+              const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
+              if (btnCh?.isTextBased()) {
+                await btnCh.send({
+
+                  embeds: [
+                    new _EB2()
+                      .setColor(0x2F3136)
+                      .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
+                      .setTitle('Moved Users Executed')
+                      .addFields(
+                        { name: 'Moderator', value: `${interaction.member}`, inline: true },
+                        { name: 'Destination', value: `<#${targetChannelId}>`, inline: true },
+                        { name: 'Results', value: `Moved: \`${movedCount}\` · Skipped/Failed: \`${failedCount}\``, inline: false }
+                      )
+                      .setTimestamp(),
+                  ],
+                });
+              }
+            }
+          } catch { /* non-critical */ }
+
+          await componentInteraction.editReply({
+            content: `✅ **Move Successful!**\nMoved **${movedCount}** users over to <#${targetChannelId}>.\n*(Skipped ${failedCount} users)*`
+          });
+
+          collector.stop();
+        }
+      });
+      return;
+    }
+
+
 
     // ── Role/owner gated ──────────────────────────────────────────────────────
     const botControlRoleId = getBotControlRoleId(guild.id);
