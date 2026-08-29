@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { log }            = require('../src/logger');
-const { getLogChannel, getGuildConfig } = require('../src/guildConfig');
+const { getLogChannel }  = require('../src/guildConfig');
+const { getWelcomeConfig } = require('../src/welcomeConfig');
 const { generateCard }   = require('../src/imageGenerator');
 
 module.exports = {
@@ -8,16 +9,21 @@ module.exports = {
   once: false,
   async execute(member) {
     const { guild } = member;
-    const config    = getGuildConfig(guild.id);
+    const welcomeConfig = await getWelcomeConfig(guild.id);
     const user      = member.user;
 
     // ── 1. Welcome image card ─────────────────────────────────────────────────
-    if (config.welcomeChannelId) {
+    if (welcomeConfig.welcomeChannelId) {
       try {
-        const channel = await guild.channels.fetch(config.welcomeChannelId);
+        const channel = await guild.channels.fetch(welcomeConfig.welcomeChannelId);
         if (channel?.isTextBased()) {
-          const buffer = await generateCard('welcome', member.displayName || user.username,
-            user.displayAvatarURL({ dynamic: false, size: 512 }), guild.memberCount);
+          const buffer = await generateCard(
+            'welcome',
+            { nickname: member.nickname, username: user.username },
+            user.displayAvatarURL({ dynamic: false, size: 512 }),
+            guild.memberCount,
+            welcomeConfig.cardConfig
+          );
           await channel.send({ content: `${member}`, files: [new AttachmentBuilder(buffer, { name: 'welcome.png' })] });
         }
       } catch (err) {
