@@ -12,7 +12,7 @@ const {
   PermissionFlagsBits, ChannelType,
 } = require('discord.js');
 const { log }            = require('../src/logger');
-const { setGuildConfig, getGuildConfig } = require('../src/guildConfig');
+const { getWelcomeConfig, setWelcomeConfig } = require('../src/welcomeConfig');
 const { generateCard }   = require('../src/imageGenerator');
 
 module.exports = {
@@ -58,7 +58,7 @@ module.exports = {
       const leaveCh   = interaction.options.getChannel('leave-channel');
 
       if (!welcomeCh && !leaveCh) {
-        const config = getGuildConfig(guild.id);
+        const config = await getWelcomeConfig(guild.id);
         const wId = config.welcomeChannelId;
         const lId = config.leaveChannelId;
         return interaction.reply({
@@ -69,6 +69,8 @@ module.exports = {
             '',
             'Use `/welcome setup welcome-channel: leave-channel:` to configure.',
             'Use `/welcome test` and `/welcome testleave` to preview.',
+            '',
+            'Card look (name shown, color, layout) can be customised from the dashboard.',
           ].join('\n'),
           flags: [MessageFlags.Ephemeral],
         });
@@ -77,7 +79,7 @@ module.exports = {
       const updates = {};
       if (welcomeCh) updates.welcomeChannelId = welcomeCh.id;
       if (leaveCh)   updates.leaveChannelId   = leaveCh.id;
-      setGuildConfig(guild.id, updates);
+      await setWelcomeConfig(guild.id, updates);
 
       log('INFO', 'Welcome config updated', { guild: guild.name, by: member.user.tag });
 
@@ -98,12 +100,18 @@ module.exports = {
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
       const type        = sub === 'test' ? 'welcome' : 'leave';
-      const displayName = member.displayName || member.user.username;
       const avatarUrl   = member.user.displayAvatarURL({ dynamic: false, size: 512 });
       const memberCount = guild.memberCount;
+      const welcomeConfig = await getWelcomeConfig(guild.id);
 
       try {
-        const buffer     = await generateCard(type, displayName, avatarUrl, memberCount);
+        const buffer     = await generateCard(
+          type,
+          { nickname: member.nickname, username: member.user.username },
+          avatarUrl,
+          memberCount,
+          welcomeConfig.cardConfig
+        );
         const attachment = new AttachmentBuilder(buffer, { name: `${type}-preview.png` });
 
         return interaction.editReply({
