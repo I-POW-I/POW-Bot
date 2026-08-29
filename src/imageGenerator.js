@@ -2,11 +2,17 @@
  * Welcome / leave card generator.
  * Uses @napi-rs/canvas — prebuilt Linux x64 binaries, works on Discloud.
  *
- * Design:
+ * Design (unchanged from before):
  *   - Transparent background (floats on Discord's dark chat)
- *   - Large circular avatar centered
- *   - Bold username text below avatar
+ *   - Large circular avatar
+ *   - Bold name text below avatar
  *   - Smaller subtitle line beneath that
+ *
+ * New: accepts an optional cardConfig (from src/welcomeConfig.js, editable
+ * via the dashboard) controlling which name to show, the ring/accent
+ * color, and horizontal placement of the avatar and text. Every field is
+ * optional — omitting cardConfig entirely reproduces the exact previous
+ * behaviour.
  */
 
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
@@ -14,8 +20,12 @@ const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const W        = 640;  // Canvas width
 const H        = 320;  // Canvas height
 const AVATAR_R = 96;   // Avatar radius (192px diameter)
-const AVATAR_X = W / 2;
 const AVATAR_Y = 130;
+
+const DEFAULT_ACCENT = { welcome: '#5865F2', leave: '#747F8D' };
+
+const AVATAR_X_BY_POSITION = { left: 150, center: W / 2, right: W - 150 };
+const TEXT_X_BY_ALIGN      = { left: 40, center: W / 2, right: W - 40 };
 
 async function fetchAvatar(url) {
   // Force PNG format for consistency
@@ -27,15 +37,31 @@ async function fetchAvatar(url) {
 /**
  * Generate a welcome or leave card.
  * @param {'welcome'|'leave'} type
- * @param {string}  displayName  Member's display name
+ * @param {{ nickname: string|null, username: string }} member  Both name forms — cardConfig.nameMode picks which to show, falling back to the other if the chosen one is unavailable
  * @param {string}  avatarUrl    Discord avatar URL
  * @param {number}  memberCount  Guild member count
+ * @param {{ nameMode?: 'nickname'|'username', accentColor?: string|null, avatarPosition?: 'left'|'center'|'right', textAlign?: 'left'|'center'|'right' }} [cardConfig]
  * @returns {Buffer}  PNG image buffer
  */
-async function generateCard(type, displayName, avatarUrl, memberCount) {
+async function generateCard(type, member, avatarUrl, memberCount, cardConfig = {}) {
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
   const isLeave = type === 'leave';
+
+  const nameMode       = cardConfig.nameMode === 'username' ? 'username' : 'nickname';
+  const avatarPosition = AVATAR_X_BY_POSITION[cardConfig.avatarPosition] !== undefined
+    ? cardConfig.avatarPosition : 'center';
+  const textAlign      = TEXT_X_BY_ALIGN[cardConfig.textAlign] !== undefined
+    ? cardConfig.textAlign : 'center';
+  const accent         = cardConfig.accentColor || DEFAULT_ACCENT[isLeave ? 'leave' : 'welcome'];
+
+  const AVATAR_X = AVATAR_X_BY_POSITION[avatarPosition];
+  const TEXT_X   = TEXT_X_BY_ALIGN[textAlign];
+
+  const displayName =
+    nameMode === 'username'
+      ? member.username
+      : (member.nickname || member.username);
 
   // Transparent background — nothing to fill
 
@@ -43,7 +69,7 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
 
   // Subtle shadow ring so avatar stands out against dark backgrounds
   ctx.save();
-  ctx.shadowColor = isLeave ? 'rgba(100,100,100,0.5)' : 'rgba(88,101,242,0.6)';
+  ctx.shadowColor = isLeave ? 'rgba(100,100,100,0.5)' : hexToRgba(accent, 0.6);
   ctx.shadowBlur  = 28;
   ctx.beginPath();
   ctx.arc(AVATAR_X, AVATAR_Y, AVATAR_R + 2, 0, Math.PI * 2);
@@ -64,19 +90,16 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
     ctx.clip();
     ctx.drawImage(img, AVATAR_X - AVATAR_R, AVATAR_Y - AVATAR_R, AVATAR_R * 2, AVATAR_R * 2);
     ctx.restore();
-
-
-
   } catch {
     // Fallback: plain coloured circle if avatar fails to load
     ctx.beginPath();
     ctx.arc(AVATAR_X, AVATAR_Y, AVATAR_R, 0, Math.PI * 2);
-    ctx.fillStyle = isLeave ? '#747F8D' : '#5865F2';
+    ctx.fillStyle = isLeave ? '#747F8D' : accent;
     ctx.fill();
   }
 
-  // ── Username ──────────────────────────────────────────────────────────────────
-  ctx.textAlign    = 'center';
+  // ── Name ──────────────────────────────────────────────────────────────────
+  ctx.textAlign    = textAlign;
   ctx.textBaseline = 'middle';
 
   // Truncate long names
@@ -90,7 +113,7 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
   ctx.fillStyle = '#ffffff';
   ctx.shadowColor = 'rgba(0,0,0,0.9)';
   ctx.shadowBlur  = 6;
-  ctx.fillText(name, W / 2, AVATAR_Y + AVATAR_R + 44);
+  ctx.fillText(name, TEXT_X, AVATAR_Y + AVATAR_R + 44);
   ctx.shadowBlur  = 0;
 
   // ── Subtitle ──────────────────────────────────────────────────────────────────
@@ -110,9 +133,16 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
 
   ctx.shadowColor = 'rgba(0,0,0,0.8)';
   ctx.shadowBlur  = 4;
-  ctx.fillText(sub, W / 2, AVATAR_Y + AVATAR_R + 82);
+  ctx.fillText(sub, TEXT_X, AVATAR_Y + AVATAR_R + 82);
 
   return canvas.toBuffer('image/png');
+}
+
+function hexToRgba(hex, alpha) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!m) return `rgba(88,101,242,${alpha})`; // fall back to the old default blue
+  const [r, g, b] = [m[1], m[2], m[3]].map((h) => parseInt(h, 16));
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 module.exports = { generateCard };
