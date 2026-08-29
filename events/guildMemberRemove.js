@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder, AuditLogEvent, AttachmentBuilder } = require('discord.js');
 const { log }                    = require('../src/logger');
-const { getLogChannel, getGuildConfig } = require('../src/guildConfig');
+const { getLogChannel }          = require('../src/guildConfig');
+const { getWelcomeConfig }       = require('../src/welcomeConfig');
 const { generateCard }           = require('../src/imageGenerator');
 
 async function getKicker(guild, userId, windowMs = 5000) {
@@ -23,18 +24,23 @@ module.exports = {
 
   async execute(member) {
     const { guild } = member;
-    const config    = getGuildConfig(guild.id);
+    const welcomeConfig = await getWelcomeConfig(guild.id);
     const kick      = await getKicker(guild, member.id);
 
     // ── 1. Leave image card ───────────────────────────────────────────────────
-    const leaveChannelId = config.leaveChannelId || config.welcomeChannelId;
+    const leaveChannelId = welcomeConfig.leaveChannelId || welcomeConfig.welcomeChannelId;
     if (leaveChannelId) {
       try {
         const channel = await guild.channels.fetch(leaveChannelId);
         if (channel?.isTextBased()) {
-          const displayName = member.displayName || member.user.username;
           const avatarUrl   = member.user.displayAvatarURL({ dynamic: false, size: 512 });
-          const buffer      = await generateCard('leave', displayName, avatarUrl, guild.memberCount);
+          const buffer      = await generateCard(
+            'leave',
+            { nickname: member.nickname, username: member.user.username },
+            avatarUrl,
+            guild.memberCount,
+            welcomeConfig.cardConfig
+          );
           await channel.send({ files: [new AttachmentBuilder(buffer, { name: 'leave.png' })] });
         }
       } catch (err) {
