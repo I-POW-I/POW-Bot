@@ -87,11 +87,11 @@ async function pushStatus(client) {
 
 // ── Remote command handling ──────────────────────────────────────────────────
 
-async function markCommand(id, status, errorMessage) {
+async function markCommand(id, status, extra = {}) {
   try {
     await callDashboard(`/api/bot/commands/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, ...(errorMessage ? { error_message: errorMessage } : {}) }),
+      body: JSON.stringify({ status, ...extra }),
     });
   } catch (err) {
     log('WARN', `Failed to mark bot_command ${id} as ${status}`, { error: err.message });
@@ -142,8 +142,29 @@ async function processCommand(client, cmd) {
       await markCommand(cmd.id, 'completed');
       return;
 
+    case 'fetch_channels': {
+      const { getGuildChannels } = require('./guildDataApi');
+      const channels = getGuildChannels(client, cmd.guild_id);
+      await markCommand(cmd.id, 'completed', { result: { channels } });
+      return;
+    }
+
+    case 'fetch_roles': {
+      const { getGuildRoles } = require('./guildDataApi');
+      const roles = getGuildRoles(client, cmd.guild_id);
+      await markCommand(cmd.id, 'completed', { result: { roles } });
+      return;
+    }
+
+    case 'render_preview': {
+      const { renderWelcomePreview } = require('./guildDataApi');
+      const image_base64 = await renderWelcomePreview(client, cmd.guild_id, cmd.payload || {});
+      await markCommand(cmd.id, 'completed', { result: { image_base64 } });
+      return;
+    }
+
     default:
-      await markCommand(cmd.id, 'failed', `Unknown command: ${cmd.command}`);
+      await markCommand(cmd.id, 'failed', { error_message: `Unknown command: ${cmd.command}` });
   }
 }
 
@@ -158,7 +179,7 @@ async function pollCommands(client) {
         await processCommand(client, cmd);
       } catch (err) {
         log('ERROR', `bot_command ${cmd.id} (${cmd.command}) failed`, { error: err.message });
-        await markCommand(cmd.id, 'failed', err.message);
+        await markCommand(cmd.id, 'failed', { error_message: err.message });
       }
     }
   } catch (err) {
