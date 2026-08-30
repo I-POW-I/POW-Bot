@@ -57,27 +57,29 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
 // Needs DASHBOARD_URL + BOT_API_TOKEN — see src/dashboardSync.js.
 startDashboardSync(client);
 
-// ── Optional: bot HTTP server — webhook triggers + live guild data ───────────
-// Lets the dashboard's "Test webhook" button fire through the bot, and lets
-// the dashboard fetch a guild's real channels/roles instead of showing
-// placeholder data. Runs on BOT_HTTP_PORT (default 8081). Only starts if
-// BOT_API_TOKEN is set.
+// ── Optional: webhook HTTP trigger server ─────────────────────────────────────
+// Lets something POST to this bot to fire a webhook message. Note: on
+// Discloud, TYPE=bot apps have no public network/subdomain at all (only
+// TYPE=site apps do — confirmed against docs.discloud.com), so this server
+// is only reachable from inside the same container — it is NOT how the
+// dashboard talks to the bot. Channels/roles/preview requests go through
+// src/dashboardSync.js's bot_commands queue polling instead. This is left
+// in place in case Discloud's networking changes or a future plan tier
+// enables private VLAN access between apps.
 if (process.env.BOT_API_TOKEN) {
   try {
     const { handleHttpTrigger } = require('./bot-modules/webhooks');
-    const { handleGuildDataRequest } = require('./src/guildDataApi');
     const port = parseInt(process.env.BOT_HTTP_PORT || '8081', 10);
-    const server = http.createServer(async (req, res) => {
+    const server = http.createServer((req, res) => {
       if (req.url?.startsWith('/webhooks/trigger')) return handleHttpTrigger(req, res);
-      if (await handleGuildDataRequest(req, res, client)) return;
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
     });
     server.listen(port, () => {
-      log('INFO', `Bot HTTP server listening on port ${port} (webhook triggers + live guild data)`);
+      log('INFO', `Webhook HTTP trigger listening on port ${port} (container-local only)`);
     });
   } catch (err) {
-    log('WARN', 'Bot HTTP server not started.', { error: err.message });
+    log('WARN', 'Webhook HTTP trigger server not started.', { error: err.message });
   }
 }
 
