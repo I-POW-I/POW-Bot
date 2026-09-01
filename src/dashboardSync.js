@@ -45,6 +45,16 @@ async function callDashboard(path, options = {}) {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      Accept: 'application/json',
+      // A real User-Agent matters here — the dashboard's own Discloud logs
+      // showed ZERO incoming request activity for these calls even while
+      // this function was receiving a raw HTML 502 error page back,
+      // meaning something in front of Next.js (Cloudflare, most likely,
+      // since Discloud serves apps through it) was blocking the request
+      // before it ever reached the app. Node's default fetch sends no
+      // real User-Agent at all, which is a common trigger for bot
+      // protection / WAF rules on Cloudflare-fronted sites.
+      'User-Agent': 'POW-Bot-DashboardSync/1.0 (+https://github.com/I-POW-I/POW-Bot)',
       Authorization: `Bearer ${token}`,
       ...(options.headers || {}),
     },
