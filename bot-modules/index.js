@@ -1,75 +1,40 @@
 /*
- * POW Bot — modified index.js with dashboard module integration
- *
- * It preserves ALL existing voice/24-7 logic and adds the five dashboard
- * feature modules (automod, custom commands, reaction roles, tickets, webhooks),
- * plus the dashboard heartbeat/command sync (src/dashboardSync.js).
+ * POW Bot — feature modules index
+ * Drop this whole `bot-modules/` folder into your 247-Pow-Bot repo
+ * (e.g. at the repo root) and wire it up in src/index.js as shown in README.md.
  */
 
-const { loadCommands, loadEvents } = require('./src/registry');
-const { log } = require('./src/logger');
-const client = require('./src/client');
-const { startDashboardSync } = require('./src/dashboardSync');
-require('dotenv').config();
+/*
+ * POW Bot — feature modules index
+ * Drop this whole `bot-modules/` folder into your 247-Pow-Bot repo
+ * (e.g. at the repo root) and wire it up in src/index.js as shown in README.md.
+ *
+ * webhooks and tickets are intentionally deleted
+ */
 
-// ── Existing env checks (unchanged) ──────────────────────────────────────────
-if (!process.env.BOT_TOKEN) {
-  log('ERROR', 'Missing BOT_TOKEN in .env — cannot start.');
-  process.exit(1);
-}
-if (!process.env.CLIENT_ID) {
-  log('ERROR', 'Missing CLIENT_ID in .env — cannot start.');
-  process.exit(1);
-}
+const automod = require('./automod');
+const customCommands = require('./custom-commands');
+const reactionRoles = require('./reaction-roles');
 
-// ── Load existing commands and events (unchanged) ────────────────────────────
-loadCommands(client);
-loadEvents(client);
+function register(client) {
+  client.on('messageCreate', async (message) => {
+    // Automod first; if it acts it returns early. Custom commands run regardless
+    // of whether automod triggered (automod itself short-circuits per message).
+    await automod.evaluate(message);
+    await customCommands.handleMessage(message);
+  });
 
-// ── Register dashboard feature modules (automod, custom commands, reaction
-//    roles, tickets, webhooks) ────────────────────────────────────────────────
-// IMPORTANT: `require('./bot-modules')` is deliberately done in here, INSIDE
-// the env check, not at the top of the file. bot-modules/supabase-client.js
-// throws synchronously if SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are missing,
-// and every module in bot-modules/ requires it at load time. If that require
-// happened at the top of this file (as it did before), a missing or mistyped
-// Supabase env var would crash the ENTIRE bot before it even logs in to
-// Discord — not just disable the dashboard modules. The try/catch below is a
-// second layer of safety: even a bug inside one of the modules can no longer
-// take the whole bot down with it.
-if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  try {
-    const botModules = require('./bot-modules');
-    botModules.register(client);
-    log('INFO', 'Dashboard feature modules registered (automod, custom commands, reaction roles). Tickets and webhooks are disabled.');
-  } catch (err) {
-    log('ERROR', 'Dashboard feature modules failed to load — bot continuing without them.', { error: err.message });
-  }
-} else {
-  log('WARN', 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing — dashboard modules will be disabled.');
-  log('WARN', 'Add them to .env to enable automod, custom commands, reaction roles, tickets, webhooks.');
+  client.on('messageReactionAdd', async (reaction, user) => {
+    await reactionRoles.handleAdd(reaction, user);
+  });
+  client.on('messageReactionRemove', async (reaction, user) => {
+    await reactionRoles.handleRemove(reaction, user);
+  });
 }
 
-// ── Dashboard heartbeat + remote command polling (new) ───────────────────────
-// Pushes online/ping/guild-count to the dashboard every 60s and polls for
-// queued commands (restart, presence, sync, refresh_status) every 15s.
-// Needs DASHBOARD_URL + BOT_API_TOKEN — see src/dashboardSync.js.
-startDashboardSync(client);
-
-// The webhook HTTP trigger server was removed here — the webhooks feature
-// is disabled (bot-modules/webhooks.js is no longer registered in
-// bot-modules/index.js). Nothing calls this endpoint anymore anyway: the
-// dashboard's webhook test button always posted straight to Discord's
-// webhook URL directly, never through the bot. If webhooks come back later,
-// re-add the server block and re-register the module.
-
-// ── Login (unchanged) ────────────────────────────────────────────────────────
-client.login(process.env.BOT_TOKEN);
-
-// ── Error handlers (unchanged) ───────────────────────────────────────────────
-process.on('unhandledRejection', (error) => {
-  log('ERROR', 'Unhandled promise rejection', { message: error.message });
-});
-process.on('uncaughtException', (error) => {
-  log('ERROR', 'Uncaught exception', { message: error.message });
-});
+module.exports = {
+  register,
+  automod,
+  customCommands,
+  reactionRoles,
+};
