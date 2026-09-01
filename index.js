@@ -2,7 +2,7 @@
  * POW Bot — modified index.js with dashboard module integration
  *
  * It preserves ALL existing voice/24-7 logic and adds the five dashboard
- * feature modules (automod, custom commands, reaction roles, tickets, webhooks),
+ * feature modules (automod, custom commands, reaction roles),
  * plus the dashboard heartbeat/command sync (src/dashboardSync.js).
  */
 
@@ -10,7 +10,6 @@ const { loadCommands, loadEvents } = require('./src/registry');
 const { log } = require('./src/logger');
 const client = require('./src/client');
 const { startDashboardSync } = require('./src/dashboardSync');
-const http = require('http');
 require('dotenv').config();
 
 // ── Existing env checks (unchanged) ──────────────────────────────────────────
@@ -42,7 +41,7 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
   try {
     const botModules = require('./bot-modules');
     botModules.register(client);
-    log('INFO', 'Dashboard feature modules registered (automod, custom commands, reaction roles, tickets, webhooks).');
+    log('INFO', 'Dashboard feature modules registered (automod, custom commands, reaction roles). Tickets and webhooks are disabled.');
   } catch (err) {
     log('ERROR', 'Dashboard feature modules failed to load — bot continuing without them.', { error: err.message });
   }
@@ -57,31 +56,12 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
 // Needs DASHBOARD_URL + BOT_API_TOKEN — see src/dashboardSync.js.
 startDashboardSync(client);
 
-// ── Optional: webhook HTTP trigger server ─────────────────────────────────────
-// Lets something POST to this bot to fire a webhook message. Note: on
-// Discloud, TYPE=bot apps have no public network/subdomain at all (only
-// TYPE=site apps do — confirmed against docs.discloud.com), so this server
-// is only reachable from inside the same container — it is NOT how the
-// dashboard talks to the bot. Channels/roles/preview requests go through
-// src/dashboardSync.js's bot_commands queue polling instead. This is left
-// in place in case Discloud's networking changes or a future plan tier
-// enables private VLAN access between apps.
-if (process.env.BOT_API_TOKEN) {
-  try {
-    const { handleHttpTrigger } = require('./bot-modules/webhooks');
-    const port = parseInt(process.env.BOT_HTTP_PORT || '8081', 10);
-    const server = http.createServer((req, res) => {
-      if (req.url?.startsWith('/webhooks/trigger')) return handleHttpTrigger(req, res);
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
-    });
-    server.listen(port, () => {
-      log('INFO', `Webhook HTTP trigger listening on port ${port} (container-local only)`);
-    });
-  } catch (err) {
-    log('WARN', 'Webhook HTTP trigger server not started.', { error: err.message });
-  }
-}
+// The webhook HTTP trigger server was removed here — the webhooks feature
+// is disabled (bot-modules/webhooks.js is no longer registered in
+// bot-modules/index.js). Nothing calls this endpoint anymore anyway: the
+// dashboard's webhook test button always posted straight to Discord's
+// webhook URL directly, never through the bot. If webhooks come back later,
+// re-add the server block and re-register the module.
 
 // ── Login (unchanged) ────────────────────────────────────────────────────────
 client.login(process.env.BOT_TOKEN);
