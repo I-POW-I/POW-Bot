@@ -43,6 +43,11 @@ function clearDashboardPresences() {
   dashboardPresences = [];
 }
 
+/** Ground truth for what the bot is actually doing right now, for the heartbeat to report. */
+function getDashboardPresenceState() {
+  return { mode: dashboardPresenceMode, presences: dashboardPresences };
+}
+
 const HEALTHY = [
   VoiceConnectionStatus.Ready,
   VoiceConnectionStatus.Signalling,
@@ -462,4 +467,5 @@ module.exports = {
   buildStatsEmbed,
   setDashboardPresences,
   clearDashboardPresences,
+  getDashboardPresenceState,
 };
