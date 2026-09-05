@@ -27,9 +27,10 @@ const PRESENCE_TYPE_MAP = {
   Custom: ActivityType.Custom,
 };
 
-function toSlot({ type, text }) {
+function toSlot({ type, text, discordStatus }) {
   const activityType = PRESENCE_TYPE_MAP[type] ?? ActivityType.Custom;
-  return { name: text, discordStatus: 'online', type: activityType };
+  const validStatus = ['online', 'idle', 'dnd'].includes(discordStatus) ? discordStatus : 'online';
+  return { name: text, discordStatus: validStatus, type: activityType };
 }
 
 function setDashboardPresences(mode, presences) {
