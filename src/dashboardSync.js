@@ -76,6 +76,12 @@ function buildStatusPayload(client) {
     total_members: totalMembers,
     process_uptime_ms: Math.round(process.uptime() * 1000),
     memory_mb: Math.round(memoryMb * 10) / 10,
+    // Previously only a count was reported. The owner panel's server list
+    // was falling back to "servers the logged-in admin can manage on
+    // Discord" instead, which is a different (and often larger) list than
+    // "servers the bot is actually in" — this lets the dashboard filter
+    // correctly.
+    guild_ids: Array.from(client.guilds.cache.keys()),
   };
 }
 
@@ -113,7 +119,8 @@ const VALID_TYPES = ['Playing', 'Watching', 'Listening', 'Custom'];
 function normalizePresence(p) {
   const type = VALID_TYPES.includes(p?.type) ? p.type : 'Custom';
   const text = String(p?.text || '').slice(0, 128).trim();
-  return { type, text };
+  const discordStatus = ['online', 'idle', 'dnd'].includes(p?.discordStatus) ? p.discordStatus : 'online';
+  return { type, text, discordStatus };
 }
 
 async function applyPresenceCommand(client, payload) {
