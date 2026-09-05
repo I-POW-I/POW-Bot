@@ -270,7 +270,11 @@ function buildMemberEmbed(member, guild) {
     .setColor(member.displayColor || 0x5865F2)
     .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true }) })
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
-    .setTitle('🥷🏽 User Profile Profile')
+    .setTitle('🥷🏽 User Profile')
+    // Section header — visually separates the identity block below from
+    // everything else in the embed, per request, without changing any of
+    // the existing fields themselves.
+    .addFields({ name: '\u200b', value: '📋 **Account Overview**', inline: false })
     // Row 1: Registry Markers
     .addFields(
       { name: 'Joined Server', value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n(<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>)`, inline: true },
@@ -298,6 +302,8 @@ function buildMemberEmbed(member, guild) {
 
       { name: 'Top VC', value: stats.top_channel ? `**${stats.top_channel}**\n(\`${formatMs(stats.top_channel_ms)}\`)` : '—', inline: true },
       { name: 'VC Streak', value: `\`${stats.streak} day(s)\``, inline: true },
+      { name: 'Longest Session', value: `\`${formatMs(stats.longest_session_ms)}\``, inline: true },
+
       { name: 'Last Tracked', value: lastSeenStr, inline: true }
     );
   }
