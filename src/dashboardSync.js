@@ -67,6 +67,8 @@ function buildStatusPayload(client) {
   const activeConnections = store.getAllEntries().length;
   const totalMembers = client.guilds.cache.reduce((sum, g) => sum + (g.memberCount || 0), 0);
   const memoryMb = process.memoryUsage().rss / (1024 * 1024);
+  const { getDashboardPresenceState } = require('./statusUpdater');
+  const presenceState = getDashboardPresenceState();
 
   return {
     online: true,
@@ -82,6 +84,13 @@ function buildStatusPayload(client) {
     // "servers the bot is actually in" — this lets the dashboard filter
     // correctly.
     guild_ids: Array.from(client.guilds.cache.keys()),
+    // Ground truth for what the bot is ACTUALLY doing right now — a
+    // "Clear status" action on the dashboard changes this in-memory on the
+    // bot, but nothing was reporting that change back, so the dashboard's
+    // stored presence_mode/presence_list would stay stale after a clear
+    // until you happened to set a new one.
+    presence_mode: presenceState.mode,
+    presence_list: presenceState.presences,
   };
 }
 
@@ -152,6 +161,14 @@ async function processCommand(client, cmd) {
       await applyPresenceCommand(client, cmd.payload);
       await markCommand(cmd.id, 'completed');
       return;
+
+    case 'clear_presence': {
+      const { clearDashboardPresences } = require('./statusUpdater');
+      clearDashboardPresences();
+      await pushStatus(client); // reflect the clear immediately, don't wait for the next 60s heartbeat
+      await markCommand(cmd.id, 'completed');
+      return;
+    }
 
     case 'sync':
     case 'refresh_status':
