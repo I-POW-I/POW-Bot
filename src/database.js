@@ -221,10 +221,11 @@ function getOpenSession(userId, guildId) {
 function getUserStats(userId, guildId) {
   const base = selectOne(
     `SELECT COUNT(*) AS session_count, COALESCE(SUM(duration_ms),0) AS total_ms,
-            COALESCE(AVG(duration_ms),0) AS avg_ms, MAX(left_at) AS last_seen
+            COALESCE(AVG(duration_ms),0) AS avg_ms, COALESCE(MAX(duration_ms),0) AS longest_session_ms,
+            MAX(left_at) AS last_seen
      FROM vc_sessions WHERE user_id = ? AND guild_id = ? AND duration_ms IS NOT NULL`,
     [userId, guildId]
-  ) || { session_count: 0, total_ms: 0, avg_ms: 0, last_seen: null };
+  ) || { session_count: 0, total_ms: 0, avg_ms: 0, longest_session_ms: 0, last_seen: null };
 
   const top = selectOne(
     `SELECT channel_name, SUM(duration_ms) AS total_ms FROM vc_sessions
