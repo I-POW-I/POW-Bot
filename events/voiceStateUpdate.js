@@ -7,7 +7,7 @@ const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { log }                      = require('../src/logger');
 const { getLogChannel }            = require('../src/guildConfig');
 const { joinTimes, streamTimes }   = require('../src/memberTracker');
-const { startSession, endSession } = require('../src/database');
+const { startSession, endSession, startStreamSession, endStreamSession } = require('../src/database');
 
 const C = {
   join:           0x57F287,
@@ -236,6 +236,7 @@ module.exports = {
     if (oldState.streaming !== newState.streaming) {
       if (newState.streaming) {
         streamTimes.set(key, Date.now());
+        startStreamSession(member.id, guild.id);
         await sendLog(guild, base(member, C.streamStart, 'Member Started Streaming')
           .addFields(
             { name: 'Channel', value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
@@ -247,6 +248,7 @@ module.exports = {
           ? formatDuration(Date.now() - streamTimes.get(key))
           : null;
         streamTimes.delete(key);
+        endStreamSession(member.id, guild.id);
         await sendLog(guild, base(member, C.streamStop, 'Member Stopped Streaming')
           .addFields(
             { name: 'Channel',      value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
