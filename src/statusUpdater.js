@@ -7,7 +7,7 @@ const { getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice'
 const { log }                              = require('./logger');
 const store                                = require('./connectionStore');
 const { getGuildConfig, getStats, getLogChannel } = require('./guildConfig');
-const { getUserStats, getServerTotals, formatMs }  = require('./database');
+const { getUserStats, getServerTotals, formatMs, getStreamStats }  = require('./database');
 const { joinTimes, streamTimes }           = require('./memberTracker');
 
 const PRESENCE_INTERVAL  = 60 * 1000;
@@ -223,6 +223,7 @@ const KEY_PERMS = [
 function buildMemberEmbed(member, guild) {
   const user  = member.user;
   const stats = getUserStats(user.id, guild.id);
+  const streamStats = getStreamStats(user.id, guild.id);
 
   let timeInServer = null;
   if (member.joinedAt) {
@@ -260,41 +261,45 @@ function buildMemberEmbed(member, guild) {
     vcLine = '💤 Not in a VC';
   }
 
-  const roles = member.roles.cache
+  const allRoles = member.roles.cache
     .filter(r => r.id !== guild.id)
-    .sort((a, b) => b.position - a.position)
-    .first(10)
-    .map(r => `<@&${r.id}>`);
+    .sort((a, b) => b.position - a.position);
+  const roles = allRoles.first(4).map(r => `<@&${r.id}>`);
+  const extraRoleCount = Math.max(0, allRoles.size - 4);
 
   const embed = new EmbedBuilder()
     .setColor(member.displayColor || 0x5865F2)
     .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true }) })
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
     .setTitle('🥷🏽 User Profile')
-    // Section header — visually separates the identity block below from
-    // everything else in the embed, per request, without changing any of
-    // the existing fields themselves.
-    .addFields({ name: '\u200b', value: '📋 **Account Overview**', inline: false })
+    // Section headers below use a plain bold bullet, not decorative emoji,
+    // per request — just enough to visually separate each group of fields.
+    .addFields({ name: '\u200b', value: '**▸ Account Overview**', inline: false })
     // Row 1: Registry Markers
     .addFields(
       { name: 'Joined Server', value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n(<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>)`, inline: true },
       { name: 'Account Created', value: `<t:${Math.floor(user.createdAt.getTime() / 1000)}:D>\n(<t:${Math.floor(user.createdAt.getTime() / 1000)}:R>)`, inline: true },
-      { name: 'Account Age', value: `\`${ageStr}\``, inline: true },
-
-      // Row 2: Presence Metadata
+      { name: 'Account Age', value: `\`${ageStr}\``, inline: true }
+    )
+    .addFields({ name: '\u200b', value: '**▸ Member Details**', inline: false })
+    // Row 2: Presence Metadata
+    .addFields(
       { name: 'Nickname', value: `\`${nickname}\``, inline: true },
       { name: 'Time in Server', value: `\`${timeInServer || '—'}\``, inline: true },
-      { name: 'Boosting', value: boostStr, inline: true },
-
-      // Row 3: Live Channels (Pushed to wide row block)
+      { name: 'Boosting', value: boostStr, inline: true }
+    )
+    .addFields({ name: '\u200b', value: '**▸ Live Status**', inline: false })
+    // Row 3: Live Channels
+    .addFields(
       { name: 'Active VC', value: vcLine, inline: false }
     );
 
-  // Row 4: Historical Metrics (Clean 3-Column Performance Grid)
+  // Historical Metrics
   if (stats.session_count > 0) {
     let lastSeenStr = stats.last_seen ? `<t:${Math.floor(stats.last_seen / 1000)}:R>` : '—';
     if (vc?.channel) lastSeenStr = '🟢 Active Now';
 
+    embed.addFields({ name: '\u200b', value: '**▸ Voice Activity**', inline: false });
     embed.addFields(
       { name: 'Total VC Time', value: `\`${formatMs(stats.total_ms)}\``, inline: true },
       { name: 'Total Sessions', value: `\`${stats.session_count}\``, inline: true },
@@ -304,13 +309,19 @@ function buildMemberEmbed(member, guild) {
       { name: 'VC Streak', value: `\`${stats.streak} day(s)\``, inline: true },
       { name: 'Longest Session', value: `\`${formatMs(stats.longest_session_ms)}\``, inline: true },
 
-      { name: 'Last Tracked', value: lastSeenStr, inline: true }
+      { name: 'Last Tracked', value: lastSeenStr, inline: true },
+      { name: 'Longest Stream', value: `\`${formatMs(streamStats.longest_stream_ms)}\``, inline: true }
     );
   }
 
-  // Row 5: Role Badges
+  // Roles — capped to 4, with a "+N more" indicator instead of dumping everyone
   if (roles.length > 0) {
-    embed.addFields({ name: `Assigned Roles (${member.roles.cache.size - 1})`, value: roles.join(' '), inline: false });
+    embed.addFields({ name: '\u200b', value: '**▸ Roles**', inline: false });
+    embed.addFields({
+      name: `Assigned Roles (${allRoles.size})`,
+      value: extraRoleCount > 0 ? `${roles.join(' ')} \`+${extraRoleCount} more\`` : roles.join(' '),
+      inline: false,
+    });
   }
 
   return embed.setTimestamp();
