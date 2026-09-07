@@ -42,6 +42,16 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_guild      ON vc_sessions (guild_id);
       CREATE INDEX IF NOT EXISTS idx_joined     ON vc_sessions (joined_at);
 
+      CREATE TABLE IF NOT EXISTS stream_sessions (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      TEXT    NOT NULL,
+        guild_id     TEXT    NOT NULL,
+        joined_at    INTEGER NOT NULL,
+        left_at      INTEGER,
+        duration_ms  INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_stream_user_guild ON stream_sessions (user_id, guild_id);
+
       CREATE TABLE IF NOT EXISTS streamer_subscriptions (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id            TEXT    NOT NULL,
@@ -244,8 +254,34 @@ function getServerTotals(guildId) {
   ) || { total_sessions: 0, total_ms: 0 };
 }
 
+function startStreamSession(userId, guildId) {
+  run(
+    'INSERT INTO stream_sessions (user_id, guild_id, joined_at) VALUES (?, ?, ?)',
+    [userId, guildId, Date.now()]
+  );
+}
+
+function endStreamSession(userId, guildId) {
+  const now  = Date.now();
+  const open = selectOne(
+    'SELECT id FROM stream_sessions WHERE user_id = ? AND guild_id = ? AND left_at IS NULL ORDER BY joined_at DESC LIMIT 1',
+    [userId, guildId]
+  );
+  if (!open) return;
+  run('UPDATE stream_sessions SET left_at = ?, duration_ms = ? - joined_at WHERE id = ?', [now, now, open.id]);
+}
+
+function getStreamStats(userId, guildId) {
+  return selectOne(
+    `SELECT COALESCE(MAX(duration_ms),0) AS longest_stream_ms
+     FROM stream_sessions WHERE user_id = ? AND guild_id = ? AND duration_ms IS NOT NULL`,
+    [userId, guildId]
+  ) || { longest_stream_ms: 0 };
+}
+
 module.exports = {
   init, run, selectOne, selectAll,
   startSession, endSession, getOpenSession,
   getUserStats, getServerTotals, formatMs,
+  startStreamSession, endStreamSession, getStreamStats,
 };
