@@ -6,7 +6,7 @@
  * Key format: `${guildId}_${userId}`
  */
 
-const { startSession, getOpenSession } = require('./database');
+const { startSession, getOpenSession } = require('./vcSessions');
 
 const joinTimes   = new Map(); // guildId_userId → join timestamp (ms)
 const streamTimes = new Map(); // guildId_userId → stream start timestamp (ms)
@@ -43,7 +43,10 @@ function initGuild(guild) {
         } else {
           // No DB record — member joined while bot was offline
           joinTimes.set(key, Date.now());
-          startSession(member.user.id, guild.id, channel.id, channel.name);
+          startSession(member.user.id, guild.id, channel.id, channel.name, {
+            username: member.user.username,
+            avatarUrl: member.user.displayAvatarURL({ size: 128 }),
+          });
         }
       }
 
