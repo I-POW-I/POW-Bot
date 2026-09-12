@@ -12,7 +12,7 @@ module.exports = {
     const user      = member.user;
 
     // ── 1. Welcome image card ─────────────────────────────────────────────────
-    if (config.welcomeChannelId) {
+    if (config.welcomeChannelId && config.welcomeEnabled !== false) {
       try {
         const channel = await guild.channels.fetch(config.welcomeChannelId);
         if (channel?.isTextBased()) {
