@@ -93,24 +93,24 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
   ctx.fillText(name, W / 2, AVATAR_Y + AVATAR_R + 44);
   ctx.shadowBlur  = 0;
 
-  // ── Subtitle ──────────────────────────────────────────────────────────────────
-  ctx.font      = '22px sans-serif';
-  ctx.fillStyle = isLeave ? '#9ca3af' : '#d1d5db';
+  // ── Subtitle (leave cards only — welcome cards no longer show a subtitle) ──
+  if (isLeave) {
+    ctx.font      = '22px sans-serif';
+    ctx.fillStyle = '#9ca3af';
 
-  const subtitle = isLeave
-    ? `${displayName} has left the server`
-    : `You're member #${memberCount.toLocaleString()}`;
+    const subtitle = `${displayName} has left the server`;
 
-  // Truncate subtitle too
-  let sub = subtitle;
-  while (sub.length > 1 && ctx.measureText(sub).width > W - 80) {
-    sub = sub.slice(0, -1);
+    // Truncate subtitle too
+    let sub = subtitle;
+    while (sub.length > 1 && ctx.measureText(sub).width > W - 80) {
+      sub = sub.slice(0, -1);
+    }
+    if (sub !== subtitle) sub += '…';
+
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur  = 4;
+    ctx.fillText(sub, W / 2, AVATAR_Y + AVATAR_R + 82);
   }
-  if (sub !== subtitle) sub += '…';
-
-  ctx.shadowColor = 'rgba(0,0,0,0.8)';
-  ctx.shadowBlur  = 4;
-  ctx.fillText(sub, W / 2, AVATAR_Y + AVATAR_R + 82);
 
   return canvas.toBuffer('image/png');
 }
