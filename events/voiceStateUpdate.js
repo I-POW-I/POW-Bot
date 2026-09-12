@@ -7,7 +7,7 @@ const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { log }                      = require('../src/logger');
 const { getLogChannel }            = require('../src/guildConfig');
 const { joinTimes, streamTimes }   = require('../src/memberTracker');
-const { startSession, endSession } = require('../src/database');
+const { startSession, endSession } = require('../src/vcSessions');
 
 const C = {
   join:           0x57F287,
@@ -98,7 +98,7 @@ module.exports = {
     // ── Join ──────────────────────────────────────────────────────────────────
     if (!oldChannel && newChannel) {
       joinTimes.set(key, Date.now());
-      startSession(member.user.id, guild.id, newChannel.id, newChannel.name);
+      startSession(member.user.id, guild.id, newChannel.id, newChannel.name, { username: member.user.username, avatarUrl: member.user.displayAvatarURL({ size: 128 }) });
 
       await sendLog(guild, base(member, C.join, 'Member Joined Voice')
         .addFields(
@@ -143,7 +143,7 @@ module.exports = {
     // ── Move between channels ─────────────────────────────────────────────────
     if (oldChannel && newChannel && oldChannel.id !== newChannel.id) {
       endSession(member.user.id, guild.id);
-      startSession(member.user.id, guild.id, newChannel.id, newChannel.name);
+      startSession(member.user.id, guild.id, newChannel.id, newChannel.name, { username: member.user.username, avatarUrl: member.user.displayAvatarURL({ size: 128 }) });
       // Do NOT reset joinTimes — keep original so duration on leave shows total time
 
       const movedBy = await getMoveMod(guild, newChannel.id);
