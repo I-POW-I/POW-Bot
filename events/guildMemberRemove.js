@@ -28,7 +28,7 @@ module.exports = {
 
     // ── 1. Leave image card ───────────────────────────────────────────────────
     const leaveChannelId = config.leaveChannelId || config.welcomeChannelId;
-    if (leaveChannelId) {
+    if (leaveChannelId && config.leaveEnabled !== false) {
       try {
         const channel = await guild.channels.fetch(leaveChannelId);
         if (channel?.isTextBased()) {
