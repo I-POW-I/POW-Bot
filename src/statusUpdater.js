@@ -147,8 +147,6 @@ function buildPanelEmbed(guildId, guild = null) {
 }
 // ── Stats embed ─────────────────────────────────────────────
 
-const { ChannelType, EmbedBuilder } = require('discord.js');
-
 async function buildStatsEmbed(guildId, client) {
   const entry     = store.getEntry(guildId);
   const connected = isConnected(guildId);
@@ -262,6 +260,7 @@ async function buildStatsEmbed(guildId, client) {
 
   return embed;
 }
+
 
 // ── Member profile embed ──────────────────────────────────────────────────────
 
