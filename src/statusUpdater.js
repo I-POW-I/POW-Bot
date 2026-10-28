@@ -172,8 +172,7 @@ async function buildStatsEmbed(guildId, client) {
 
   try {
     if (process.env.DISCLOUD_TOKEN) {
-      // CORRECT ROUTE: Swapped to singular /app/ path as specified in the docs
-      const response = await fetch('https://api.discloud.app/v2/app/{appID}/status', {
+      const response = await fetch(`https://discloud.app{appId}/status`, {
         method: 'GET',
         headers: {
           'api-token': process.env.DISCLOUD_TOKEN,
@@ -183,7 +182,10 @@ async function buildStatsEmbed(guildId, client) {
 
       if (response.ok) {
         const data = await response.json();
-        const app = data.apps;
+        
+        // FIX: The status endpoint returns 'apps' as an array of status objects.
+        // We look at the first element in that array to parse metrics properly.
+        const app = Array.isArray(data.apps) ? data.apps[0] : data.apps;
 
         if (app) {
           if (app.memory) {
@@ -305,6 +307,7 @@ async function buildStatsEmbed(guildId, client) {
 
   return embed;
 }
+
 
 
 
