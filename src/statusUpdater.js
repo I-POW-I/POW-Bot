@@ -157,7 +157,7 @@ async function buildStatsEmbed(guildId, client) {
 
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
-  // ── 1. Fetching Discloud Live Memory via Native HTTP API ──
+  // ── 1. Fetching Discloud Live Memory Allocation (Dashboard Sync) ──
   let discloudMem = '`Loading...`';
   try {
     if (process.env.DISCLOUD_TOKEN) {
@@ -171,7 +171,6 @@ async function buildStatsEmbed(guildId, client) {
 
       if (response.ok) {
         const data = await response.json();
-        // Finds this bot instance inside your global app cluster array
         const app = data.user?.appsStatus?.find(a => a.id === client.user.id);
         if (app && app.ram) {
           discloudMem = `\`${app.ram} MB / 500 MB\``; 
@@ -188,28 +187,23 @@ async function buildStatsEmbed(guildId, client) {
     discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
   }
 
-  // ── 2. Collecting Global Server Metrics across ALL Guilds (Intent-Safe Setup) ──
-  const serverCount = client.guilds.cache.size; 
+  // ── 2. Pure Metadata Lookups (Guaranteed Non-Crashing Global Totals) ──
+  const serverCount         = client.guilds.cache.size; 
+  const serverChannels      = client.channels.cache.size || 0;
+  const serverVoiceChannels = client.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size || 0;
   
-  // Safe calculation: Loops through server caches to add up total channels
-  const serverChannels = client.guilds.cache.reduce((acc, g) => acc + (g.channels?.cache?.size || 0), 0);
+  // Safely adds up user totals across all cached server structures
+  const serverMemberCount   = client.guilds.cache.reduce((acc, g) => acc + (g.memberCount || 0), 0);
   
-  // Safe calculation: Safely isolates and counts Voice Channels
-  const serverVoiceChannels = client.guilds.cache.reduce((acc, g) => {
-    const vcCount = g.channels?.cache?.filter(c => c.type === ChannelType.GuildVoice)?.size || 0;
-    return acc + vcCount;
-  }, 0);
-  
-  // Safe calculation: Uses the native raw guild metadata counter instead of checking uninitialized user list caches
-  const serverMemberCount = client.guilds.cache.reduce((acc, g) => acc + (g.memberCount || 0), 0);
-
-
-  // Counts human listeners active across all server voice channels globally
+  // Calculates global listeners by mirroring the exact math loop used by totalActive
   const activeMembersInVc   = client.guilds.cache.reduce((acc, g) => {
-    const vcMembers = g.channels.cache
-      .filter(c => c.type === ChannelType.GuildVoice)
-      .reduce((sum, ch) => sum + ch.members.filter(m => !m.user.bot).size, 0);
-    return acc + vcMembers;
+    if (isConnected(g.id)) {
+      const activeEntry = store.getEntry(g.id);
+      const ch = g.channels?.cache?.get(activeEntry?.channelId);
+      const inVc = ch ? ch.members?.filter(m => !m.user.bot).size : 0;
+      return acc + (inVc || 0);
+    }
+    return acc;
   }, 0);
 
   const embed = new EmbedBuilder()
@@ -218,8 +212,9 @@ async function buildStatsEmbed(guildId, client) {
     .setTimestamp();
 
   if (connected && entry) {
-    const ch   = targetGuild?.channels.cache.get(entry.channelId);
-    const inVc = ch ? ch.members.filter(m => !m.user.bot).size : '—';
+    const targetGuild = client.guilds.cache.get(guildId);
+    const ch          = targetGuild?.channels.cache.get(entry.channelId);
+    const inVc        = ch ? ch.members.filter(m => !m.user.bot).size : '—';
 
     embed.addFields(
       // Row 1: Connection & Core State
@@ -227,7 +222,7 @@ async function buildStatsEmbed(guildId, client) {
       { name: 'VC Uptime', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
       { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
 
-      // Row 2: Performance Metrics (Updated with Discloud Memory slot via native fetch)
+      // Row 2: Performance Metrics
       { name: 'Web Socket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`Calculating...`', inline: true },
       { name: 'Discloud Memory', value: discloudMem, inline: true },
       { name: 'Members in VC', value: `\`${inVc}\``, inline: true },
@@ -269,6 +264,7 @@ async function buildStatsEmbed(guildId, client) {
 
   return embed;
 }
+
 
 
 // ── Member profile embed ──────────────────────────────────────────────────────
