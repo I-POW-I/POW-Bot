@@ -173,7 +173,7 @@ async function buildStatsEmbed(guildId, client) {
   try {
     if (process.env.DISCLOUD_TOKEN) {
       // CORRECT ROUTE: Swapped to singular /app/ path as specified in the docs
-      const response = await fetch(`https://discloud.app{appId}/status`, {
+      const response = await fetch('https://api.discloud.app/v2/app/{appID}/status', {
         method: 'GET',
         headers: {
           'api-token': process.env.DISCLOUD_TOKEN,
