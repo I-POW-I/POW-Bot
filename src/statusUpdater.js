@@ -188,19 +188,21 @@ async function buildStatsEmbed(guildId, client) {
     discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
   }
 
-   // ── 2. Collecting Global Server Metrics across ALL Guilds ──
+  // ── 2. Collecting Global Server Metrics across ALL Guilds (Intent-Safe Setup) ──
   const serverCount = client.guilds.cache.size; 
   
-  // Totals every single channel across all servers combined
-  const serverChannels = client.guilds.cache.reduce((acc, g) => acc + g.channels.cache.size, 0);
+  // Safe calculation: Loops through server caches to add up total channels
+  const serverChannels = client.guilds.cache.reduce((acc, g) => acc + (g.channels?.cache?.size || 0), 0);
   
-  // Totals every single Voice Channel across all servers combined
+  // Safe calculation: Safely isolates and counts Voice Channels
   const serverVoiceChannels = client.guilds.cache.reduce((acc, g) => {
-    return acc + g.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size;
+    const vcCount = g.channels?.cache?.filter(c => c.type === ChannelType.GuildVoice)?.size || 0;
+    return acc + vcCount;
   }, 0);
   
-  // Totals every single user across all servers combined
-  const serverMemberCount = client.guilds.cache.reduce((acc, g) => acc + g.memberCount, 0);
+  // Safe calculation: Uses the native raw guild metadata counter instead of checking uninitialized user list caches
+  const serverMemberCount = client.guilds.cache.reduce((acc, g) => acc + (g.memberCount || 0), 0);
+
 
   // Counts human listeners active across all server voice channels globally
   const activeMembersInVc   = client.guilds.cache.reduce((acc, g) => {
