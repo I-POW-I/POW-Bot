@@ -188,13 +188,20 @@ async function buildStatsEmbed(guildId, client) {
     discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
   }
 
-  // ── 2. Collecting Your New Requested Server Metrics ──
-  const targetGuild         = client.guilds.cache.get(guildId);
-  const serverCount         = client.guilds.cache.size; 
-  const serverChannels      = targetGuild ? targetGuild.channels.cache.size : 0;
-  const serverVoiceChannels = targetGuild ? targetGuild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size : 0;
-  const serverMemberCount   = targetGuild ? targetGuild.memberCount : 0;
+   // ── 2. Collecting Global Server Metrics across ALL Guilds ──
+  const serverCount = client.guilds.cache.size; 
   
+  // Totals every single channel across all servers combined
+  const serverChannels = client.guilds.cache.reduce((acc, g) => acc + g.channels.cache.size, 0);
+  
+  // Totals every single Voice Channel across all servers combined
+  const serverVoiceChannels = client.guilds.cache.reduce((acc, g) => {
+    return acc + g.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size;
+  }, 0);
+  
+  // Totals every single user across all servers combined
+  const serverMemberCount = client.guilds.cache.reduce((acc, g) => acc + g.memberCount, 0);
+
   // Counts human listeners active across all server voice channels globally
   const activeMembersInVc   = client.guilds.cache.reduce((acc, g) => {
     const vcMembers = g.channels.cache
