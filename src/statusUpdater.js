@@ -53,7 +53,7 @@ function buildRotationSlots(client) {
   const slots = [];
   for (const [, meta] of active) {
     slots.push({
-      name:          `🔊 ${meta.channelName} · ${store.formatUptime(meta.joinedAt)}`,
+      name:          `${meta.channelName} · ${store.formatUptime(meta.joinedAt)}`,
       discordStatus: 'dnd',
       type:          ActivityType.Custom,
     });
@@ -113,7 +113,7 @@ function buildPanelEmbed(guildId, guild = null) {
 
   } else if (isGhost) {
     colour      = 0xFEE75C;
-    statusLine  = '🟡 Stalled';
+    statusLine  = '🟡 Idle';
     channelLine = entry.channelName;
     vcUptime    = '—';
     processUp   = getProcessUptime();
@@ -129,11 +129,11 @@ function buildPanelEmbed(guildId, guild = null) {
 
   // Native responsive grid structure matching your exact sequence
   return new EmbedBuilder()
-    .setTitle('POW-Bot 🖤')
+    .setTitle('POW-Bot')
     .setColor(colour)
     .addFields(
       // Row 1: System Metrics
-      { name: '🚥 Status', value: statusLine, inline: true },
+      { name: 'Status', value: statusLine, inline: true },
       { name: 'Uptime', value: `\`${processUp}\``, inline: true },
       { name: 'Memory', value: `\`${memMB} MB\``, inline: true },
       
@@ -159,7 +159,7 @@ function buildStatsEmbed(guildId, client) {
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
   const embed = new EmbedBuilder()
-    .setTitle('POW-Bot 🖤 Server & Bot info')
+    .setTitle('Server & Bot info')
     .setColor(connected ? 0x57F287 : 0xED4245)
     .setTimestamp();
 
@@ -170,7 +170,7 @@ function buildStatsEmbed(guildId, client) {
 
     embed.addFields(
       // Row 1: Connection & Core State
-      { name: '🚥 Status', value: statusLabel, inline: true },
+      { name: 'Status', value: statusLabel, inline: true },
       { name: 'VC Uptime', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
       { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
 
@@ -181,7 +181,7 @@ function buildStatsEmbed(guildId, client) {
 
       // Row 3: Tracking History totals
       { name: 'Reconnects', value: `\`${entry.reconnectCount}\``, inline: true },
-      { name: '🔊 Active VCs', value: `\`${totalActive} server(s)\``, inline: true },
+      { name: 'Active VCs', value: `\`${totalActive} server(s)\``, inline: true },
       { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
 
       // Row 4: Wide Base Data
