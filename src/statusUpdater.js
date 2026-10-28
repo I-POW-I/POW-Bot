@@ -161,6 +161,7 @@ async function buildStatsEmbed(guildId, client) {
   let discloudMem = '`Loading...`';
   try {
     if (process.env.DISCLOUD_TOKEN) {
+      // Hits the official REST API endpoint containing live 'appsStatus' data
       const response = await fetch('https://discloud.app', {
         method: 'GET',
         headers: {
@@ -171,8 +172,9 @@ async function buildStatsEmbed(guildId, client) {
 
       if (response.ok) {
         const data = await response.json();
-        const app = data.user?.appsStatus?.find(a => a.id === client.user.id);
-        if (app && app.ram) {
+        // Coerces client ID to string to ensure an exact match with Discloud's data format
+        const app = data.user?.appsStatus?.find(a => a.id === String(client.user.id));
+        if (app && typeof app.ram !== 'undefined') {
           discloudMem = `\`${app.ram} MB / 500 MB\``; 
         } else {
           discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
