@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
 
 const client = new Client({
   intents: [
@@ -10,6 +10,10 @@ const client = new Client({
     GatewayIntentBits.GuildModeration,        // Audit log events
     GatewayIntentBits.GuildEmojisAndStickers, // Emoji add/remove logs
     GatewayIntentBits.GuildInvites,           // Invite create logs
+  ],
+  partials: [
+    Partials.Message,                         // CRITICAL: Forces tracking on old/uncached text drops
+    Partials.Channel,                         // Allows processing of historical text rooms
   ],
 });
 
