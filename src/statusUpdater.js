@@ -183,8 +183,7 @@ async function buildStatsEmbed(guildId, client) {
       if (response.ok) {
         const data = await response.json();
         
-        // FIX: The status endpoint returns 'apps' as an array of status objects.
-        // We look at the first element in that array to parse metrics properly.
+        // FIX: Safely grab the first status object out of the apps array wrapper
         const app = Array.isArray(data.apps) ? data.apps[0] : data.apps;
 
         if (app) {
