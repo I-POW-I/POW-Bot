@@ -158,6 +158,9 @@ async function buildStatsEmbed(guildId, client) {
 
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
+  // Define your exact application ID mapping variable
+  const appId = "1781964404816";
+
   // ── 1. Fetching Discloud Live Memory Allocation (Dashboard Sync) ──
   let discloudMem = '`Loading...`';
   let containerStatus = '`Unknown`';
@@ -169,8 +172,8 @@ async function buildStatsEmbed(guildId, client) {
 
   try {
     if (process.env.DISCLOUD_TOKEN) {
-      // Hits the single-app status endpoint using your explicit App ID
-      const response = await fetch('https://discloud.app', {
+      // CORRECT ROUTE: Swapped to singular /app/ path as specified in the docs
+      const response = await fetch(`https://discloud.app{appId}/status`, {
         method: 'GET',
         headers: {
           'api-token': process.env.DISCLOUD_TOKEN,
@@ -183,9 +186,8 @@ async function buildStatsEmbed(guildId, client) {
         const app = data.apps;
 
         if (app) {
-          // Parse out metrics directly from Discloud's status object structure
           if (app.memory) {
-            discloudMem = `\`${app.memory}\``; // Formats automatically to 'X MB / Y MB'
+            discloudMem = `\`${app.memory}\``; 
           }
           containerStatus = app.container ? `\`${app.container}\`` : containerStatus;
           containerCpu = app.cpu ? `\`${app.cpu}\`` : containerCpu;
@@ -196,7 +198,6 @@ async function buildStatsEmbed(guildId, client) {
             containerNetIO = `\`🔻 ${app.netIO.down || '0KB'} 🔺 ${app.netIO.up || '0KB'}\``;
           }
 
-          // Format ISO startedAt string cleanly to UK localized pattern (DD/MM/YYYY, HH:MM:SS)
           if (app.startedAt) {
             const dateObj = new Date(app.startedAt);
             if (!isNaN(dateObj.getTime())) {
@@ -221,10 +222,8 @@ async function buildStatsEmbed(guildId, client) {
   const serverChannels      = client.channels.cache.size || 0;
   const serverVoiceChannels = client.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size || 0;
   
-  // Safely adds up user totals across all cached server structures
   const serverMemberCount   = client.guilds.cache.reduce((acc, g) => acc + (g.memberCount || 0), 0);
   
-  // Calculates global listeners by mirroring the exact math loop used by totalActive
   const activeMembersInVc   = client.guilds.cache.reduce((acc, g) => {
     if (isConnected(g.id)) {
       const activeEntry = store.getEntry(g.id);
@@ -292,7 +291,6 @@ async function buildStatsEmbed(guildId, client) {
       },
     );
   } else {
-    // 6-Field grid when the bot is resting
     embed.setDescription('💤 *Not currently connected to any voice channel.*')
       .addFields(
         { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
