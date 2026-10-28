@@ -157,11 +157,10 @@ async function buildStatsEmbed(guildId, client) {
 
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
-  // ── 1. Fetching Discloud Live Memory Allocation (Dashboard Sync) ──
+    // ── 1. Fetching Discloud Live Memory Allocation (Dashboard Sync) ──
   let discloudMem = '`Loading...`';
   try {
     if (process.env.DISCLOUD_TOKEN) {
-      // Hits the official REST API endpoint containing live 'appsStatus' data
       const response = await fetch('https://discloud.app', {
         method: 'GET',
         headers: {
@@ -172,21 +171,24 @@ async function buildStatsEmbed(guildId, client) {
 
       if (response.ok) {
         const data = await response.json();
-        // Coerces client ID to string to ensure an exact match with Discloud's data format
-        const app = data.user?.appsStatus?.find(a => a.id === String(client.user.id));
+        
+        // Explicitly target your Discloud App ID shown on your dashboard
+        const app = data.user?.appsStatus?.find(a => a.id === "1781964404816");
+        
         if (app && typeof app.ram !== 'undefined') {
+          // Displays the real container usage alongside your 500 MB limit
           discloudMem = `\`${app.ram} MB / 500 MB\``; 
         } else {
-          discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
+          discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
         }
       } else {
-        discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
+        discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
       }
     } else {
-      discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
+      discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
     }
   } catch (error) {
-    discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
+    discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
   }
 
   // ── 2. Pure Metadata Lookups (Guaranteed Non-Crashing Global Totals) ──
