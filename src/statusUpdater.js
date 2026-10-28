@@ -145,6 +145,7 @@ function buildPanelEmbed(guildId, guild = null) {
     .setFooter({ text: 'Last updated' })
     .setTimestamp();
 }
+
 // ── Stats embed ─────────────────────────────────────────────
 
 async function buildStatsEmbed(guildId, client) {
@@ -157,10 +158,18 @@ async function buildStatsEmbed(guildId, client) {
 
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
-    // ── 1. Fetching Discloud Live Memory Allocation (Dashboard Sync) ──
+  // ── 1. Fetching Discloud Live Memory Allocation (Dashboard Sync) ──
   let discloudMem = '`Loading...`';
+  let containerStatus = '`Unknown`';
+  let containerCpu = '`0.00%`';
+  let containerSsd = '`—`';
+  let containerNetIO = '`🔻 0KB 🔺 0KB`';
+  let containerRestart = '`—`';
+  let containerStarted = '`—`';
+
   try {
     if (process.env.DISCLOUD_TOKEN) {
+      // Hits the single-app status endpoint using your explicit App ID
       const response = await fetch('https://discloud.app', {
         method: 'GET',
         headers: {
@@ -171,13 +180,29 @@ async function buildStatsEmbed(guildId, client) {
 
       if (response.ok) {
         const data = await response.json();
-        
-        // Explicitly target your Discloud App ID shown on your dashboard
-        const app = data.user?.appsStatus?.find(a => a.id === "1781964404816");
-        
-        if (app && typeof app.ram !== 'undefined') {
-          // Displays the real container usage alongside your 500 MB limit
-          discloudMem = `\`${app.ram} MB / 500 MB\``; 
+        const app = data.apps;
+
+        if (app) {
+          // Parse out metrics directly from Discloud's status object structure
+          if (app.memory) {
+            discloudMem = `\`${app.memory}\``; // Formats automatically to 'X MB / Y MB'
+          }
+          containerStatus = app.container ? `\`${app.container}\`` : containerStatus;
+          containerCpu = app.cpu ? `\`${app.cpu}\`` : containerCpu;
+          containerSsd = app.ssd ? `\`${app.ssd}\`` : containerSsd;
+          containerRestart = app.last_restart ? `\`${app.last_restart}\`` : containerRestart;
+
+          if (app.netIO) {
+            containerNetIO = `\`🔻 ${app.netIO.down || '0KB'} 🔺 ${app.netIO.up || '0KB'}\``;
+          }
+
+          // Format ISO startedAt string cleanly to UK localized pattern (DD/MM/YYYY, HH:MM:SS)
+          if (app.startedAt) {
+            const dateObj = new Date(app.startedAt);
+            if (!isNaN(dateObj.getTime())) {
+              containerStarted = `\`${dateObj.toLocaleString('en-GB', { timeZone: 'Europe/London' })}\``;
+            }
+          }
         } else {
           discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
         }
@@ -236,17 +261,28 @@ async function buildStatsEmbed(guildId, client) {
       { name: 'Active VCs', value: `\`${totalActive} server(s)\``, inline: true },
       { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
 
-      // Row 4: Your New Custom Metrics (Clean 3-item inline grid)
+      // Row 4: Base Container Infrastructure Metrics
+      { name: 'Container Cluster', value: '`ASTRA`', inline: true },
+      { name: 'Container State', value: containerStatus, inline: true },
+      { name: 'CPU Usage', value: containerCpu, inline: true },
+
+      // Row 5: Secondary Infrastructure Storage & I/O Metrics
+      { name: 'SSD Storage', value: containerSsd, inline: true },
+      { name: 'Network I/O', value: containerNetIO, inline: true },
+      { name: 'Last Restart', value: containerRestart, inline: true },
+
+      // Row 6: Global Discord Gateway Metadata Listings
       { name: 'Server Count', value: `\`${serverCount}\``, inline: true },
       { name: 'Server Channels', value: `\`${serverChannels}\``, inline: true },
       { name: 'Server Voice Channels', value: `\`${serverVoiceChannels}\``, inline: true },
 
-      // Row 5: Member Metrics & Grid Realignment Spacers
+      // Row 7: Member Metrics & Grid Realignment Spacers
       { name: 'Server Member Count', value: `\`${serverMemberCount.toLocaleString()}\``, inline: true },
       { name: 'Active Members In VC', value: `\`${activeMembersInVc}\``, inline: true },
-      { name: '\u200B', value: '\u200B', inline: true }, // Keeps your visual layout boxed perfectly
+      { name: '\u200B', value: '\u200B', inline: true },
 
-      // Row 6: Wide Base Data
+      // Row 8: Wide Base Data Fields
+      { name: 'Container Started At', value: containerStarted, inline: false },
       {
         name: 'Persisted Stats',
         value: saved.joinedAt
@@ -256,13 +292,16 @@ async function buildStatsEmbed(guildId, client) {
       },
     );
   } else {
-    // 4-Field grid when the bot is resting
+    // 6-Field grid when the bot is resting
     embed.setDescription('💤 *Not currently connected to any voice channel.*')
       .addFields(
         { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
         { name: 'Discloud Memory', value: discloudMem, inline: true },
         { name: 'Web Socket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`—`', inline: true },
-        { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true }
+        { name: 'Container State', value: containerStatus, inline: true },
+        { name: 'CPU Usage', value: containerCpu, inline: true },
+        { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
+        { name: 'Container Started At', value: containerStarted, inline: false }
       );
   }
 
