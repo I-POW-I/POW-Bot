@@ -9,8 +9,8 @@ module.exports = {
 
   async execute(interaction, client) {
     try {
-      // 1. Gather backend specifications directly from your existing tracker modules
-      const statsEmbed = buildStatsEmbed(interaction.guildId, client);
+      // 1. Gather backend specifications directly from your existing tracker modules (ADDED AWAIT)
+      const statsEmbed = await buildStatsEmbed(interaction.guildId, client);
 
       // 2. Transmit the information board privately so it doesn't clutter chat channels
       return interaction.reply({
