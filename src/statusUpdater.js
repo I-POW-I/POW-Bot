@@ -147,16 +147,63 @@ function buildPanelEmbed(guildId, guild = null) {
 }
 // ── Stats embed ─────────────────────────────────────────────
 
-function buildStatsEmbed(guildId, client) {
+const { ChannelType, EmbedBuilder } = require('discord.js');
+
+async function buildStatsEmbed(guildId, client) {
   const entry     = store.getEntry(guildId);
   const connected = isConnected(guildId);
   const saved     = getStats(guildId);
   const totals    = getServerTotals(guildId);
-  const memMB     = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
   const ping      = client.ws.ping;
   const totalActive = client.guilds.cache.filter(g => isConnected(g.id)).size;
 
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
+
+  // ── 1. Fetching Discloud Live Memory via Native HTTP API ──
+  let discloudMem = '`Loading...`';
+  try {
+    if (process.env.DISCLOUD_TOKEN) {
+      const response = await fetch('https://discloud.app', {
+        method: 'GET',
+        headers: {
+          'api-token': process.env.DISCLOUD_TOKEN,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Finds this bot instance inside your global app cluster array
+        const app = data.user?.appsStatus?.find(a => a.id === client.user.id);
+        if (app && app.ram) {
+          discloudMem = `\`${app.ram} MB / 500 MB\``; 
+        } else {
+          discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
+        }
+      } else {
+        discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
+      }
+    } else {
+      discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
+    }
+  } catch (error) {
+    discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB\``;
+  }
+
+  // ── 2. Collecting Your New Requested Server Metrics ──
+  const targetGuild         = client.guilds.cache.get(guildId);
+  const serverCount         = client.guilds.cache.size; 
+  const serverChannels      = targetGuild ? targetGuild.channels.cache.size : 0;
+  const serverVoiceChannels = targetGuild ? targetGuild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size : 0;
+  const serverMemberCount   = targetGuild ? targetGuild.memberCount : 0;
+  
+  // Counts human listeners active across all server voice channels globally
+  const activeMembersInVc   = client.guilds.cache.reduce((acc, g) => {
+    const vcMembers = g.channels.cache
+      .filter(c => c.type === ChannelType.GuildVoice)
+      .reduce((sum, ch) => sum + ch.members.filter(m => !m.user.bot).size, 0);
+    return acc + vcMembers;
+  }, 0);
 
   const embed = new EmbedBuilder()
     .setTitle('Server & Bot info')
@@ -164,9 +211,8 @@ function buildStatsEmbed(guildId, client) {
     .setTimestamp();
 
   if (connected && entry) {
-    const guild     = client.guilds.cache.get(guildId);
-    const ch        = guild?.channels.cache.get(entry.channelId);
-    const inVc      = ch ? ch.members.filter(m => !m.user.bot).size : '—';
+    const ch   = targetGuild?.channels.cache.get(entry.channelId);
+    const inVc = ch ? ch.members.filter(m => !m.user.bot).size : '—';
 
     embed.addFields(
       // Row 1: Connection & Core State
@@ -174,9 +220,9 @@ function buildStatsEmbed(guildId, client) {
       { name: 'VC Uptime', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
       { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
 
-      // Row 2: Performance Metrics
+      // Row 2: Performance Metrics (Updated with Discloud Memory slot via native fetch)
       { name: 'Web Socket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`Calculating...`', inline: true },
-      { name: 'Memory', value: `\`${memMB} MB\``, inline: true },
+      { name: 'Discloud Memory', value: discloudMem, inline: true },
       { name: 'Members in VC', value: `\`${inVc}\``, inline: true },
 
       // Row 3: Tracking History totals
@@ -184,7 +230,17 @@ function buildStatsEmbed(guildId, client) {
       { name: 'Active VCs', value: `\`${totalActive} server(s)\``, inline: true },
       { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
 
-      // Row 4: Wide Base Data
+      // Row 4: Your New Custom Metrics (Clean 3-item inline grid)
+      { name: 'Server Count', value: `\`${serverCount}\``, inline: true },
+      { name: 'Server Channels', value: `\`${serverChannels}\``, inline: true },
+      { name: 'Server Voice Channels', value: `\`${serverVoiceChannels}\``, inline: true },
+
+      // Row 5: Member Metrics & Grid Realignment Spacers
+      { name: 'Server Member Count', value: `\`${serverMemberCount.toLocaleString()}\``, inline: true },
+      { name: 'Active Members In VC', value: `\`${activeMembersInVc}\``, inline: true },
+      { name: '\u200B', value: '\u200B', inline: true }, // Keeps your visual layout boxed perfectly
+
+      // Row 6: Wide Base Data
       {
         name: 'Persisted Stats',
         value: saved.joinedAt
@@ -194,11 +250,11 @@ function buildStatsEmbed(guildId, client) {
       },
     );
   } else {
-    // Clean 4-Field grid when the bot is resting
+    // 4-Field grid when the bot is resting
     embed.setDescription('💤 *Not currently connected to any voice channel.*')
       .addFields(
         { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
-        { name: 'Memory', value: `\`${memMB} MB\``, inline: true },
+        { name: 'Discloud Memory', value: discloudMem, inline: true },
         { name: 'Web Socket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`—`', inline: true },
         { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true }
       );
@@ -206,6 +262,7 @@ function buildStatsEmbed(guildId, client) {
 
   return embed;
 }
+
 // ── Member profile embed ──────────────────────────────────────────────────────
 
 const KEY_PERMS = [
@@ -255,7 +312,7 @@ function buildMemberEmbed(member, guild) {
       vc.serverDeaf ? 'Server Deafened' : null
     ].filter(Boolean);
 
-    vcLine = `🔊 <#${vc.channel.id}> ${sessionMs ? `— \`${formatLive(sessionMs)}\`` : ''}`;
+    vcLine = `<#${vc.channel.id}> ${sessionMs ? `— \`${formatLive(sessionMs)}\`` : ''}`;
     if (indicators.length > 0) vcLine += `\n⚙️ ${indicators.join('  •  ')}`;
   } else {
     vcLine = '💤 Not in a VC';
