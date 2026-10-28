@@ -172,7 +172,7 @@ async function buildStatsEmbed(guildId, client) {
 
   try {
     if (process.env.DISCLOUD_TOKEN) {
-      const response = await fetch(`https://discloud.app{appId}/status`, {
+      const response = await fetch(`https://api.discloud.app/app/{appId}/status`, {
         method: 'GET',
         headers: {
           'api-token': process.env.DISCLOUD_TOKEN,
