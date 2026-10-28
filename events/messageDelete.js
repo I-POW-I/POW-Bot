@@ -32,6 +32,17 @@ module.exports = {
   once: false,
 
   async execute(message) {
+    // ── 1. Safe Partials Recovery Interception ──
+    if (message.partial) {
+      try {
+        await message.fetch();
+      } catch (err) {
+        // If Discord completely wiped the text from its routers, execute an intent-safe fallback summary
+        return handleColdTraceLog(message);
+      }
+    }
+
+    // Now it is safe to check for bot statuses or server configurations
     if (!message.guild || message.author?.bot) return;
 
     const guild = message.guild;
@@ -80,7 +91,7 @@ module.exports = {
     } else {
       embed.addFields({
         name:   'Content',
-        value:  '*Message not cached — sent before the bot last started*',
+        value:  '*[Message contained zero textual strings — purely embed structure or system update]*',
         inline: false,
       });
     }
@@ -99,3 +110,30 @@ module.exports = {
     }
   },
 };
+
+// ── 2. Fallback Logger for Expired Messages ──
+async function handleColdTraceLog(partialMessage) {
+  if (!partialMessage.guild) return;
+  
+  const channelId = getLogChannel(partialMessage.guild.id, 'messages');
+  if (!channelId) return;
+
+  try {
+    const logChannel = await partialMessage.guild.channels.fetch(channelId);
+    if (!logChannel?.isTextBased()) return;
+
+    const fallbackEmbed = new EmbedBuilder()
+      .setColor(0xED4245)
+      .setTitle('Message Deleted (Cold Cache Tracker)')
+      .setDescription('🗑️ *An older message was deleted. Its original text content was evicted from memory caches before the event fired.*')
+      .addFields(
+        { name: 'Channel Location', value: `<#${partialMessage.channelId}>`, inline: true },
+        { name: 'Message Reference ID', value: `\`${partialMessage.id}\``, inline: true }
+      )
+      .setTimestamp();
+
+    await logChannel.send({ embeds: [fallbackEmbed] });
+  } catch (err) {
+    log('WARN', 'Failed to process cold message delete fallback log', { error: err.message });
+  }
+}
