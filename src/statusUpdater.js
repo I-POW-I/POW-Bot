@@ -82,18 +82,48 @@ function startStatusUpdater(client) {
   setInterval(panelUpdate, PRESENCE_INTERVAL);
   log('INFO', 'Status updater started (20s rotation · 60s panel)');
 }
+
+// ────────── Asynchronous Helper for Shared Dashboard Memory ──────────
+/** Helper function to pull down the real container memory directly from Discloud */
+async function fetchDiscloudMemory() {
+  if (!process.env.DISCLOUD_TOKEN) return null;
+  try {
+    const response = await fetch("https://discloud.app", {
+      method: 'GET',
+      headers: {
+        'api-token': process.env.DISCLOUD_TOKEN,
+        'Accept': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.apps && data.apps.memory) {
+        return `\`${data.apps.memory}\``;
+      }
+    }
+  } catch (error) {
+    // Fail silently to trigger the default internal process memory fallback logic smoothly
+  }
+  return null;
+}
+
+
+
 // ── Panel embed ───────────────────────────────────────────────────────────────
 
 /**
  * @param {string} guildId
- * @param {import('discord.js').Guild|null} guild  — pass to show live member count
+ * @param {import('discord.js').Guild|null} guild — pass to show live member count
+ * @param {string|null} discloudMem — Pass the synchronized Discloud memory metric down here
  */
-function buildPanelEmbed(guildId, guild = null) {
+function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
   const entry     = store.getEntry(guildId);
   const connected = isConnected(guildId);
   const isGhost   = entry && !getVoiceConnection(guildId);
 
-  const memMB     = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
+  // Uses the real Discloud memory block if provided, otherwise drops back to the local heap
+  const memMB     = discloudMem || `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
   let colour, statusLine, channelLine, vcUptime, processUp, membersInVc;
 
   if (connected && entry) {
@@ -103,7 +133,7 @@ function buildPanelEmbed(guildId, guild = null) {
     vcUptime    = store.formatUptime(entry.joinedAt);
     processUp   = getProcessUptime();
 
-    // Live member count in the VC (excluding bots)
+  // Live member count in the VC (excluding bots)
     if (guild) {
       const ch = guild.channels.cache.get(entry.channelId);
       membersInVc = ch ? `${ch.members.filter(m => !m.user.bot).size}` : '0';
@@ -127,7 +157,6 @@ function buildPanelEmbed(guildId, guild = null) {
     membersInVc = '0';
   }
 
-  // Native responsive grid structure matching your exact sequence
   return new EmbedBuilder()
     .setTitle('POW-Bot')
     .setColor(colour)
@@ -135,7 +164,7 @@ function buildPanelEmbed(guildId, guild = null) {
       // Row 1: System Metrics
       { name: 'Status', value: statusLine, inline: true },
       { name: 'Uptime', value: `\`${processUp}\``, inline: true },
-      { name: 'Memory', value: `\`${memMB} MB\``, inline: true },
+      { name: 'Memory', value: discloudMem, inline: true }, // Plugs in the real data directly
       
       // Row 2: Voice Channel Session Details
       { name: 'Current VC', value: channelLine, inline: true },
@@ -158,9 +187,6 @@ async function buildStatsEmbed(guildId, client) {
 
   const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
 
-  // Define your exact application ID mapping variable
-  const appId = "1781964404816";
-
   // ── 1. Fetching Discloud Live Memory Allocation (Dashboard Sync) ──
   let discloudMem = '`Loading...`';
   let containerStatus = '`Unknown`';
@@ -182,9 +208,7 @@ async function buildStatsEmbed(guildId, client) {
 
       if (response.ok) {
         const data = await response.json();
-        
-        // FIX: Safely grab the first status object out of the apps array wrapper
-        const app = Array.isArray(data.apps) ? data.apps[0] : data.apps;
+        const app = data.apps;
 
         if (app) {
           if (app.memory) {
@@ -217,6 +241,7 @@ async function buildStatsEmbed(guildId, client) {
   } catch (error) {
     discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
   }
+
 
   // ── 2. Pure Metadata Lookups (Guaranteed Non-Crashing Global Totals) ──
   const serverCount         = client.guilds.cache.size; 
@@ -514,23 +539,34 @@ function buildUserSelectRow() {
 // ── Update panel ──────────────────────────────────────────────────────────────
 
 async function updatePanel(client) {
-  for (const guild of client.guilds.cache.values()) {
+  // Fetch real container memory to synchronize across all panels smoothly
+  const liveMemory = await fetchDiscloudMemory();
+
+  client.guilds.cache.forEach(async (guild) => {
     const config = getGuildConfig(guild.id);
-    if (!config.panelChannelId || !config.panelMessageId) continue;
+    
+    // SAFETY FIX: Prevents your bot from crashing if a server hasn't built a status panel yet
+    if (!config || !config.panelChannelId || !config.panelMessageId) return;
 
     try {
-      const channel = await guild.channels.fetch(config.panelChannelId);
-      if (!channel?.isTextBased()) continue;
+      const channel = await client.channels.fetch(config.panelChannelId);
+      if (!channel || !channel.isTextBased()) return;
+
       const message = await channel.messages.fetch(config.panelMessageId);
-      await message.edit({
-        embeds:     [buildPanelEmbed(guild.id, guild)],
-        components: buildPanelButtons(),
+      if (!message) return;
+
+      // Pass down the real synchronization data directly to the dashboard grid
+      const updatedEmbed = buildPanelEmbed(guild.id, guild, liveMemory);
+      await message.edit({ 
+        embeds: [updatedEmbed],
+        components: buildPanelButtons() // Keeps buttons interactive on update
       });
     } catch (err) {
-      log('WARN', 'Could not update panel', { guild: guild.name, error: err.message });
+      log('ERROR', `Failed to edit panel update for guild ${guild.id}: ${err.message}`);
     }
-  }
+  });
 }
+
 
 module.exports = {
   startStatusUpdater,
