@@ -83,7 +83,7 @@ function startStatusUpdater(client) {
   log('INFO', 'Status updater started (20s rotation · 60s panel)');
 }
 
-// ────────── Asynchronous Helper for Shared Dashboard Memory ──────────
+// ───────── Asynchronous Helper for Shared Dashboard Memory ─────────
 /** Helper function to pull down the real container memory directly from Discloud */
 async function fetchDiscloudMemory() {
   if (!process.env.DISCLOUD_TOKEN) return null;
