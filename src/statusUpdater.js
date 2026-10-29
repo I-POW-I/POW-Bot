@@ -88,7 +88,7 @@ function startStatusUpdater(client) {
 async function fetchDiscloudMemory() {
   if (!process.env.DISCLOUD_TOKEN) return null;
   try {
-    const response = await fetch("https://discloud.app", {
+    const response = await fetch("https://api.discloud.app/v2/app/1781964404816/status", {
       method: 'GET',
       headers: {
         'api-token': process.env.DISCLOUD_TOKEN,
