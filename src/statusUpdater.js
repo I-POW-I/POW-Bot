@@ -563,7 +563,7 @@ async function updatePanel(client) {
         components: buildPanelButtons() // Keeps buttons interactive on update
       });
     } catch (err) {
-      log('ERROR', `Failed to edit panel update for guild ${guild.id}: ${err.message}`);
+      log('ERROR', `Failed to edit panel update for the following guild(s) ${guild.id}: ${err.message}`);
     }
   });
 }
