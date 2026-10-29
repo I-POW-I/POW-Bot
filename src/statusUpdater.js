@@ -122,9 +122,10 @@ function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
   const connected = isConnected(guildId);
   const isGhost   = entry && !getVoiceConnection(guildId);
 
-  // Uses the real Discloud memory block if provided, otherwise drops back to the local heap
+  // REAL FIX: If discloudMem is null/undefined, safely fall back to a valid string instead of breaking Discord
   const memMB     = discloudMem || `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
   let colour, statusLine, channelLine, vcUptime, processUp, membersInVc;
+
 
   if (connected && entry) {
     colour      = 0x57F287;
@@ -164,7 +165,7 @@ function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
       // Row 1: System Metrics
       { name: 'Status', value: statusLine, inline: true },
       { name: 'Uptime', value: `\`${processUp}\``, inline: true },
-      { name: 'Memory', value: discloudMem, inline: true }, // Plugs in the real data directly
+      { name: 'Memory', value: memMB, inline: true },
       
       // Row 2: Voice Channel Session Details
       { name: 'Current VC', value: channelLine, inline: true },
