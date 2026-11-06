@@ -20,14 +20,18 @@ A Discord bot that sits in a voice channel and stays there 24/7. Keeps call time
 
 ## Commands
 
-| Command | What it does | Permission |
+| Command | What it does | Who |
 |---|---|---|
-| `/panel` | Post the live control panel in this channel | Manage Server |
-| `/setlogchannel` | Set which channel a log type posts to | Manage Server |
-| `/ping` | Show's current connection ping | Everyone |
-| `/clearcommands` | Force clear and re-register all slash commands | Administrator |
-| `/serverinfo` | Show's useful information about the server | Everyone |
-+ plenty more!!
+| `/setup` | One screen to set up the panel, logs, welcome cards, verification, alerts and more — with a checklist and permission check | Manage Server |
+| `/help` | What every command does, by topic | Everyone |
+| `/botinfo` | Status, latency, RAM, CPU, services, last error (owners also see system / usage / safety details) | Everyone |
+| `/serverinfo` | Detailed information about the server | Everyone |
+| `/members` | Overview, recent joins/leaves, unverified members and a per-member lookup | Manage Server |
+| `/streamers` | Go-live alerts for Twitch, Kick and YouTube | Manage Server |
+| `/free-games` | Free games on Epic + Steam: `now`, `setup`, `edit`, `remove`, `status` | Everyone (`now`) / Manage Server |
+| `/game-updates` | Steam patch note alerts: `add`, `edit`, `remove`, `list`, `test` | Manage Server |
+| `/purge` | Delete up to 100 messages | Manage Messages |
+| `/owner` | Bot-owner controls (status, restart, logs, servers, announce, maintenance, bans…) | `OWNER_IDS` / `ADMIN_IDS` only |
 
 ---
 
@@ -35,11 +39,10 @@ A Discord bot that sits in a voice channel and stays there 24/7. Keeps call time
 
 | Button | What it does | Permission |
 |---|---|---|
-|  Join | Joins your selected VC | Manage Server |
-|  Leave | Disconnect's from VC | Manage Server |
-|  Leave & Reset | Disconnect's from the current VC then wipes all previous state — fixes connection issues | Manage Server |
-|  Panel Refresh | Refreshes the panel embed | Everyone |
-|  User Info | Show's information about others. Post's time spent in the server, time spent in VC etc... | Everyone |
-|  My Info | Show's information about yourself. Post's time spent in the server, time spent in VC etc... | Everyone |
----
+| Join | Joins your voice channel | Manage Server |
+| Leave | Disconnects from the voice channel | Server owner / bot control role |
+| My Info | Your time in the server and in voice, streaks | Everyone |
+| User Lookup | The same, for someone you pick | Everyone |
+| Bot Info | Bot status and health | Everyone |
 
+---
