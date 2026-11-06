@@ -86,7 +86,7 @@ module.exports = {
       if (entry.reason) embed.addFields({ name: 'Reason', value: entry.reason, inline: false });
       await logChannel.send({ embeds: [embed] });
     } catch (err) {
-      log('WARN', 'Audit log send failed', { action: entry.action, error: err.message });
+      log('WARN', 'Audit log send failed', { action: entry.action, err });
     }
   },
 };

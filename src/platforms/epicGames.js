@@ -43,7 +43,7 @@ async function getFreeGames() {
     }
     return { current, upcoming };
   } catch (err) {
-    log('WARN', 'Epic Games API failed', { error: err.message });
+    log('WARN', 'Epic Games API failed', { err });
     return { current: [], upcoming: [] };
   }
 }

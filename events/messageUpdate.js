@@ -50,7 +50,7 @@ module.exports = {
     try {
       await logChannel.send({ embeds: [embed] });
     } catch (err) {
-      log('WARN', 'Failed to send message edit log', { error: err.message });
+      log('WARN', 'Failed to send message edit log', { err });
     }
   },
 };

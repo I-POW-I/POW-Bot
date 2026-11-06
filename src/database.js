@@ -52,6 +52,17 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_stream_user_guild ON stream_sessions (user_id, guild_id);
 
+      CREATE TABLE IF NOT EXISTS member_events (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id  TEXT    NOT NULL,
+        user_id   TEXT    NOT NULL,
+        event     TEXT    NOT NULL,
+        at        INTEGER NOT NULL,
+        data      TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_member_events_guild ON member_events (guild_id, at);
+      CREATE INDEX IF NOT EXISTS idx_member_events_user  ON member_events (guild_id, user_id);
+
       CREATE TABLE IF NOT EXISTS streamer_subscriptions (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id            TEXT    NOT NULL,
@@ -109,85 +120,180 @@ async function init() {
       try { db.run(m); save(); } catch (_) { /* column already exists */ }
     }
 
+    flush();  // write the schema to disk immediately (later writes are batched)
+
     log('INFO', 'SQLite database ready (data/pow-bot.db)');
   } catch (err) {
-    log('ERROR', 'SQLite init failed — tracking unavailable', { error: err.message });
+    log('ERROR', 'SQLite init failed — tracking unavailable', { err });
     db = null;
   }
 }
 
+// Saving used to export + rewrite the WHOLE database file on every single write
+// (≈10 ms and an 8 MB+ copy each time on a busy server, blocking the event loop).
+// Writes are now batched: the first write schedules one save a moment later, and
+// the file is written to a temp file then renamed so a crash mid-write can never
+// leave a half-written database behind.
+const SAVE_DELAY_MS = 2000;
+let saveTimer = null;
+let dirty     = false;
+
 function save() {
   if (!db) return;
+  dirty = true;
+  if (saveTimer) return;
+  saveTimer = setTimeout(flush, SAVE_DELAY_MS);
+  saveTimer.unref?.();
+}
+
+/** Write pending changes to disk immediately. Call on shutdown. */
+function flush() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (!db || !dirty) return;
+  dirty = false;
   try {
-    fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+    const tmp = DB_PATH + '.tmp';
+    fs.writeFileSync(tmp, Buffer.from(db.export()));
+    fs.renameSync(tmp, DB_PATH);
   } catch (err) {
-    log('ERROR', 'DB save failed', { error: err.message });
+    dirty = true; // try again on the next write / shutdown
+    log('ERROR', 'DB save failed', { err });
   }
 }
+
+process.on('exit', flush);
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 function run(sql, params = []) {
   if (!db) return;
+  let stmt;
   try {
-    const stmt = db.prepare(sql);
+    stmt = db.prepare(sql);
     stmt.run(params);
-    stmt.free();
     save();
   } catch (err) {
-    log('ERROR', 'DB run failed', { error: err.message, sql: sql.slice(0, 80) });
+    log('ERROR', 'DB run failed', { err, sql: sql.slice(0, 80) });
+  } finally {
+    if (stmt) stmt.free();   // always — a failed query used to leak its statement
   }
 }
 
 function selectOne(sql, params = []) {
   if (!db) return null;
+  let stmt;
   try {
-    const stmt = db.prepare(sql);
+    stmt = db.prepare(sql);
     stmt.bind(params);
-    const row = stmt.step() ? stmt.getAsObject() : null;
-    stmt.free();
-    return row;
+    return stmt.step() ? stmt.getAsObject() : null;
   } catch (err) {
-    log('ERROR', 'DB selectOne failed', { error: err.message });
+    log('ERROR', 'DB selectOne failed', { err });
     return null;
+  } finally {
+    if (stmt) stmt.free();
   }
 }
 
 function selectAll(sql, params = []) {
   if (!db) return [];
+  let stmt;
   try {
-    const stmt = db.prepare(sql);
+    stmt = db.prepare(sql);
     stmt.bind(params);
     const rows = [];
     while (stmt.step()) rows.push(stmt.getAsObject());
-    stmt.free();
     return rows;
   } catch (err) {
-    log('ERROR', 'DB selectAll failed', { error: err.message });
+    log('ERROR', 'DB selectAll failed', { err });
     return [];
+  } finally {
+    if (stmt) stmt.free();
   }
 }
 
 // ── Streak helper ─────────────────────────────────────────────────────────────
+//
+// A "streak" is the number of consecutive days (ending today, or yesterday if the
+// person hasn't been in voice yet today) on which they spent time in voice.
+//
+// Previously a day only counted if a *finished* session had *started* on it, so
+// the streak reset to 0 for anyone whose call ran past midnight, who stayed in
+// voice for more than a day, or who was still in a call that began yesterday.
+// Now every day a session overlaps counts, and a session that is still open counts
+// up to today — but only if the person really is in voice right now.
+//
+// Day boundaries use UTC by default; set STREAK_TIMEZONE (e.g. Europe/London) in
+// .env to roll the day over at local midnight instead.
+
+const MAX_SESSION_DAYS     = 400;  // sanity cap for one finished session
+const MAX_LIVE_OPEN_DAYS   = 14;   // an open session credits at most the last 14 days up to today
+
+let dayFormatter = null;
+
+function getDayFormatter() {
+  if (dayFormatter) return dayFormatter;
+  const make = (timeZone) => new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const tz = process.env.STREAK_TIMEZONE || 'UTC';
+  try {
+    dayFormatter = make(tz);
+  } catch {
+    log('WARN', `Invalid STREAK_TIMEZONE "${tz}" — falling back to UTC`);
+    dayFormatter = make('UTC');
+  }
+  return dayFormatter;
+}
+
+/** Calendar-day index (days since epoch) of a timestamp, in the streak timezone. */
+function dayNumber(ms) {
+  const parts = {};
+  for (const p of getDayFormatter().formatToParts(ms)) parts[p.type] = p.value;
+  return Math.floor(Date.UTC(+parts.year, +parts.month - 1, +parts.day) / 86400000);
+}
+
+/** Is this user connected to a voice channel in this guild right now? */
+function isInVoiceNow(userId, guildId) {
+  try {
+    const guild = require('./client').guilds.cache.get(guildId);
+    return !!guild?.voiceStates?.cache.get(userId)?.channelId;
+  } catch {
+    return false;
+  }
+}
 
 function calcStreak(userId, guildId) {
   const rows = selectAll(
-    `SELECT DISTINCT date(joined_at / 1000, 'unixepoch') AS day
-     FROM vc_sessions
-     WHERE user_id = ? AND guild_id = ? AND duration_ms IS NOT NULL
-     ORDER BY day DESC`,
+    'SELECT joined_at, left_at FROM vc_sessions WHERE user_id = ? AND guild_id = ?',
     [userId, guildId]
   );
   if (rows.length === 0) return 0;
-  const today     = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  if (rows[0].day !== today && rows[0].day !== yesterday) return 0;
-  let streak = 1;
-  for (let i = 1; i < rows.length; i++) {
-    const diff = Math.round((new Date(rows[i-1].day) - new Date(rows[i].day)) / 86400000);
-    if (diff === 1) streak++;
-    else break;
+
+  const now = Date.now();
+
+  // Only the newest unfinished row can be a real, current session. Older unfinished
+  // rows are leftovers from a crash/restart and must not be stretched up to today.
+  let newestOpen = -1;
+  for (const r of rows) if (r.left_at == null && r.joined_at > newestOpen) newestOpen = r.joined_at;
+  const liveNow = newestOpen >= 0 && isInVoiceNow(userId, guildId);
+
+  const days = new Set();
+  for (const r of rows) {
+    let end   = r.left_at;
+    let first = dayNumber(r.joined_at);
+
+    if (end == null) {
+      if (!(liveNow && r.joined_at === newestOpen)) continue;  // stale leftover — ignore
+      end   = now;
+      first = Math.max(first, dayNumber(now) - MAX_LIVE_OPEN_DAYS);
+    }
+
+    const last = Math.min(dayNumber(Math.max(end, r.joined_at)), first + MAX_SESSION_DAYS);
+    for (let d = first; d <= last; d++) days.add(d);
   }
+
+  const today = dayNumber(now);
+  let cursor  = days.has(today) ? today : today - 1;   // not in voice yet today? yesterday still counts
+  let streak  = 0;
+  while (days.has(cursor)) { streak++; cursor--; }
   return streak;
 }
 
@@ -280,7 +386,7 @@ function getStreamStats(userId, guildId) {
 }
 
 module.exports = {
-  init, run, selectOne, selectAll,
+  init, flush, run, selectOne, selectAll,
   startSession, endSession, getOpenSession,
   getUserStats, getServerTotals, formatMs,
   startStreamSession, endStreamSession, getStreamStats,

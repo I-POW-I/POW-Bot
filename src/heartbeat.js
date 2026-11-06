@@ -84,7 +84,7 @@ function startHeartbeat(client) {
         await updatePanel(client);
 
       } catch (err) {
-        log('ERROR', 'Auto-rejoin failed', { guild: meta.guildName, error: err.message });
+        log('ERROR', 'Auto-rejoin failed', { guild: meta.guildName, err });
         store.clearConnection(guildId);
       }
     }
@@ -97,7 +97,14 @@ function startHeartbeat(client) {
   }, HEARTBEAT_INTERVAL);
 }
 
+// joinVoiceChannel() hands back the SAME connection object when the bot is already in
+// that guild, so without this guard every re-join stacked another set of handlers on it.
+const handledConnections = new WeakSet();
+
 function attachDisconnectHandler(connection, guildName, channelName) {
+  if (handledConnections.has(connection)) return;
+  handledConnections.add(connection);
+
   connection.on(VoiceConnectionStatus.Disconnected, async () => {
     log('VOICE', 'Disconnected — attempting quick reconnect', { guild: guildName, channel: channelName });
     try {
@@ -113,7 +120,7 @@ function attachDisconnectHandler(connection, guildName, channelName) {
   });
 
   connection.on('error', (err) => {
-    log('ERROR', 'Voice connection error', { guild: guildName, channel: channelName, error: err.message });
+    log('ERROR', 'Voice connection error', { guild: guildName, channel: channelName, err });
   });
 }
 

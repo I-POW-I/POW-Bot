@@ -180,12 +180,13 @@ async function checkSteamSubscription(client, sub) {
     await channel.send({ content, embeds: [embed], components: [row] });
     run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [latest.gid, sub.id]);
   } catch (err) {
-    log('WARN', `Failed to post update for ${sub.game_name}`, { error: err.message });
+    log('WARN', `Failed to post update for ${sub.game_name}`, { err });
   }
 }
 
 // ── Check Epic free games ──────────────────────────────────────────────────────
 async function checkEpicGames(client) {
+  if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
   const subs = selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', ['epic']);
   if (!subs.length) return;
 
@@ -226,13 +227,14 @@ async function checkEpicGames(client) {
       run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [currentKey, sub.id]);
       log('INFO', `Posted ${current.length} Epic free game(s)`, { guild: sub.guild_id });
     } catch (err) {
-      log('WARN', 'Failed to post Epic free games', { error: err.message });
+      log('WARN', 'Failed to post Epic free games', { err });
     }
   }
 }
 
 // ── Check Steam free games ─────────────────────────────────────────────────────
 async function checkSteamFreeGames(client) {
+  if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
   const subs = selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', ['steam_free']);
   if (!subs.length) return;
 
@@ -261,13 +263,14 @@ async function checkSteamFreeGames(client) {
       run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [allSeen, sub.id]);
       log('INFO', `Posted ${newGames.length} Steam free game(s)`, { guild: sub.guild_id });
     } catch (err) {
-      log('WARN', 'Failed to post Steam free games', { error: err.message });
+      log('WARN', 'Failed to post Steam free games', { err });
     }
   }
 }
 
 // ── Poll all Steam game update subscriptions ───────────────────────────────────
 async function pollSteam(client) {
+  if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
   const subs = selectAll(
     "SELECT * FROM game_subscriptions WHERE app_id != 'epic' AND app_id != 'steam_free'",
     []

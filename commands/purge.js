@@ -111,12 +111,12 @@ module.exports = {
             });
           }
         } catch (err) {
-          log('WARN', 'Could not send purge log', { error: err.message });
+          log('WARN', 'Could not send purge log', { err });
         }
       }
 
     } catch (err) {
-      log('ERROR', 'Purge failed', { guild: guild.name, error: err.message });
+      log('ERROR', 'Purge failed', { guild: guild.name, err });
       return interaction.editReply({
         content: '❌ Failed — make sure I have the **Manage Messages** permission.',
       });

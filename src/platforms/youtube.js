@@ -44,7 +44,7 @@ async function resolveHandle(handle) {
     const byUser = await ytGet(`channels?part=id&forUsername=${encodeURIComponent(clean)}&key=${apiKey}`);
     return byUser.items?.[0]?.id || null;
   } catch (err) {
-    log('WARN', `YouTube handle resolve failed for ${handle}`, { error: err.message });
+    log('WARN', `YouTube handle resolve failed for ${handle}`, { err });
     return null;
   }
 }

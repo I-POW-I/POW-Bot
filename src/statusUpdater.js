@@ -82,50 +82,19 @@ function startStatusUpdater(client) {
   setInterval(panelUpdate, PRESENCE_INTERVAL);
   log('INFO', 'Status updater started (20s rotation · 60s panel)');
 }
-
-// ───────── Asynchronous Helper for Shared Dashboard Memory ─────────
-/** Helper function to pull down the real container memory directly from Discloud */
-async function fetchDiscloudMemory() {
-  if (!process.env.DISCLOUD_TOKEN) return null;
-  try {
-    const response = await fetch("https://api.discloud.app/v2/app/1781964404816/status", {
-      method: 'GET',
-      headers: {
-        'api-token': process.env.DISCLOUD_TOKEN,
-        'Accept': 'application/json'
-      }
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.apps && data.apps.memory) {
-        return `\`${data.apps.memory}\``;
-      }
-    }
-  } catch (error) {
-    // Fail silently to trigger the default internal process memory fallback logic smoothly
-  }
-  return null;
-}
-
-
-
 // ── Panel embed ───────────────────────────────────────────────────────────────
 
 /**
  * @param {string} guildId
- * @param {import('discord.js').Guild|null} guild — pass to show live member count
- * @param {string|null} discloudMem — Pass the synchronized Discloud memory metric down here
+ * @param {import('discord.js').Guild|null} guild  — pass to show live member count
  */
-function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
+function buildPanelEmbed(guildId, guild = null) {
   const entry     = store.getEntry(guildId);
   const connected = isConnected(guildId);
   const isGhost   = entry && !getVoiceConnection(guildId);
 
-  // REAL FIX: If discloudMem is null/undefined, safely fall back to a valid string instead of breaking Discord
-  const memMB     = discloudMem || `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
+  const memText  = require('./system').formatMemory();   // Discloud's own RAM reading (same as the dashboard)
   let colour, statusLine, channelLine, vcUptime, processUp, membersInVc;
-
 
   if (connected && entry) {
     colour      = 0x57F287;
@@ -134,7 +103,7 @@ function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
     vcUptime    = store.formatUptime(entry.joinedAt);
     processUp   = getProcessUptime();
 
-  // Live member count in the VC (excluding bots)
+    // Live member count in the VC (excluding bots)
     if (guild) {
       const ch = guild.channels.cache.get(entry.channelId);
       membersInVc = ch ? `${ch.members.filter(m => !m.user.bot).size}` : '0';
@@ -144,7 +113,7 @@ function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
 
   } else if (isGhost) {
     colour      = 0xFEE75C;
-    statusLine  = '🟡 Idle';
+    statusLine  = '🟡 Loading...';
     channelLine = entry.channelName;
     vcUptime    = '—';
     processUp   = getProcessUptime();
@@ -158,6 +127,7 @@ function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
     membersInVc = '0';
   }
 
+  // Native responsive grid structure matching your exact sequence
   return new EmbedBuilder()
     .setTitle('POW-Bot')
     .setColor(colour)
@@ -165,7 +135,7 @@ function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
       // Row 1: System Metrics
       { name: 'Status', value: statusLine, inline: true },
       { name: 'Uptime', value: `\`${processUp}\``, inline: true },
-      { name: 'Memory', value: memMB, inline: true },
+      { name: 'Memory', value: `\`${memText}\``, inline: true },
       
       // Row 2: Voice Channel Session Details
       { name: 'Current VC', value: channelLine, inline: true },
@@ -175,167 +145,11 @@ function buildPanelEmbed(guildId, guild = null, discloudMem = null) {
     .setFooter({ text: 'Last updated' })
     .setTimestamp();
 }
-
 // ── Stats embed ─────────────────────────────────────────────
 
-async function buildStatsEmbed(guildId, client) {
-  const entry     = store.getEntry(guildId);
-  const connected = isConnected(guildId);
-  const saved     = getStats(guildId);
-  const totals    = getServerTotals(guildId);
-  const ping      = client.ws.ping;
-  const totalActive = client.guilds.cache.filter(g => isConnected(g.id)).size;
-
-  const statusLabel = connected ? '🟢 Connected' : '🔴 Not connected';
-
-  // ── 1. Fetching Discloud Live Memory Allocation (Dashboard Sync) ──
-  let discloudMem = '`Loading...`';
-  let containerStatus = '`Unknown`';
-  let containerCpu = '`0.00%`';
-  let containerSsd = '`—`';
-  let containerNetIO = '`🔻 0KB 🔺 0KB`';
-  let containerRestart = '`—`';
-  let containerStarted = '`—`';
-
-  try {
-    if (process.env.DISCLOUD_TOKEN) {
-      const response = await fetch(`https://api.discloud.app/v2/app/1781964404816/status`, {
-        method: 'GET',
-        headers: {
-          'api-token': process.env.DISCLOUD_TOKEN,
-          'Accept': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const app = data.apps;
-
-        if (app) {
-          if (app.memory) {
-            discloudMem = `\`${app.memory}\``; 
-          }
-          containerStatus = app.container ? `\`${app.container}\`` : containerStatus;
-          containerCpu = app.cpu ? `\`${app.cpu}\`` : containerCpu;
-          containerSsd = app.ssd ? `\`${app.ssd}\`` : containerSsd;
-          containerRestart = app.last_restart ? `\`${app.last_restart}\`` : containerRestart;
-
-          if (app.netIO) {
-            containerNetIO = `\`🔻 ${app.netIO.down || '0KB'} 🔺 ${app.netIO.up || '0KB'}\``;
-          }
-
-          if (app.startedAt) {
-            const dateObj = new Date(app.startedAt);
-            if (!isNaN(dateObj.getTime())) {
-              containerStarted = `\`${dateObj.toLocaleString('en-GB', { timeZone: 'Europe/London' })}\``;
-            }
-          }
-        } else {
-          discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
-        }
-      } else {
-        discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
-      }
-    } else {
-      discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
-    }
-  } catch (error) {
-    discloudMem = `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB / 500 MB\``;
-  }
-
-
-  // ── 2. Pure Metadata Lookups (Guaranteed Non-Crashing Global Totals) ──
-  const serverCount         = client.guilds.cache.size; 
-  const serverChannels      = client.channels.cache.size || 0;
-  const serverVoiceChannels = client.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size || 0;
-  
-  const serverMemberCount   = client.guilds.cache.reduce((acc, g) => acc + (g.memberCount || 0), 0);
-  
-  const activeMembersInVc   = client.guilds.cache.reduce((acc, g) => {
-    if (isConnected(g.id)) {
-      const activeEntry = store.getEntry(g.id);
-      const ch = g.channels?.cache?.get(activeEntry?.channelId);
-      const inVc = ch ? ch.members?.filter(m => !m.user.bot).size : 0;
-      return acc + (inVc || 0);
-    }
-    return acc;
-  }, 0);
-
-  const embed = new EmbedBuilder()
-    .setTitle('Server & Bot info')
-    .setColor(connected ? 0x57F287 : 0xED4245)
-    .setTimestamp();
-
-  if (connected && entry) {
-    const targetGuild = client.guilds.cache.get(guildId);
-    const ch          = targetGuild?.channels.cache.get(entry.channelId);
-    const inVc        = ch ? ch.members.filter(m => !m.user.bot).size : '—';
-
-    embed.addFields(
-      // Row 1: Connection & Core State
-      { name: 'Status', value: statusLabel, inline: true },
-      { name: 'VC Uptime', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
-      { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
-
-      // Row 2: Performance Metrics
-      { name: 'Web Socket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`Calculating...`', inline: true },
-      { name: 'Discloud Memory', value: discloudMem, inline: true },
-      { name: 'Members in VC', value: `\`${inVc}\``, inline: true },
-
-      // Row 3: Tracking History totals
-      { name: 'Reconnects', value: `\`${entry.reconnectCount}\``, inline: true },
-      { name: 'Active VCs', value: `\`${totalActive} server(s)\``, inline: true },
-      { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
-
-      // Row 4: Base Container Infrastructure Metrics
-      { name: 'Container Cluster', value: '`ASTRA`', inline: true },
-      { name: 'Container State', value: containerStatus, inline: true },
-      { name: 'CPU Usage', value: containerCpu, inline: true },
-
-      // Row 5: Secondary Infrastructure Storage & I/O Metrics
-      { name: 'SSD Storage', value: containerSsd, inline: true },
-      { name: 'Network I/O', value: containerNetIO, inline: true },
-      { name: 'Last Restart', value: containerRestart, inline: true },
-
-      // Row 6: Global Discord Gateway Metadata Listings
-      { name: 'Server Count', value: `\`${serverCount}\``, inline: true },
-      { name: 'Server Channels', value: `\`${serverChannels}\``, inline: true },
-      { name: 'Server Voice Channels', value: `\`${serverVoiceChannels}\``, inline: true },
-
-      // Row 7: Member Metrics & Grid Realignment Spacers
-      { name: 'Server Member Count', value: `\`${serverMemberCount.toLocaleString()}\``, inline: true },
-      { name: 'Active Members In VC', value: `\`${activeMembersInVc}\``, inline: true },
-      { name: '\u200B', value: '\u200B', inline: true },
-
-      // Row 8: Wide Base Data Fields
-      { name: 'Container Started At', value: containerStarted, inline: false },
-      {
-        name: 'Persisted Stats',
-        value: saved.joinedAt
-          ? `Since <t:${Math.floor(new Date(saved.joinedAt).getTime() / 1000)}:R> · \`${saved.reconnectCount}\` reconnect(s)`
-          : '*None saved yet*',
-        inline: false,
-      },
-    );
-  } else {
-    embed.setDescription('💤 *Not currently connected to any voice channel.*')
-      .addFields(
-        { name: 'Bot Uptime', value: `\`${getProcessUptime()}\``, inline: true },
-        { name: 'Discloud Memory', value: discloudMem, inline: true },
-        { name: 'Web Socket Ping', value: ping >= 0 ? `\`${ping}ms\`` : '`—`', inline: true },
-        { name: 'Container State', value: containerStatus, inline: true },
-        { name: 'CPU Usage', value: containerCpu, inline: true },
-        { name: 'Total Sessions', value: `\`${totals.total_sessions.toLocaleString()}\``, inline: true },
-        { name: 'Container Started At', value: containerStarted, inline: false }
-      );
-  }
-
-  return embed;
+function buildStatsEmbed(guildId, client, opts) {
+  return require('./botInfo').buildBotInfoEmbed(guildId, client, opts);
 }
-
-
-
-
 // ── Member profile embed ──────────────────────────────────────────────────────
 
 const KEY_PERMS = [
@@ -460,7 +274,7 @@ function buildMemberEmbed(member, guild) {
 // ── Panel buttons ─────────────────────────────────────────────────────────────
 
 function buildPanelButtons() {
-  // Row 1: Connection Basics
+  // Row 1: Connection
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bot_join')
@@ -471,27 +285,12 @@ function buildPanelButtons() {
     new ButtonBuilder()
       .setCustomId('bot_leave')
       .setLabel('Leave')
-      .setEmoji('🟧')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  // Row 2: Management & Maintenance
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('bot_forceleave')
-      .setLabel('Leave & Reset')
       .setEmoji('🟥')
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId('bot_refresh')
-      .setLabel('Panel Refresh')
-      .setEmoji('▫️')
       .setStyle(ButtonStyle.Secondary)
   );
 
-  // Row 3: Identity & Discovery
-  const row3 = new ActionRowBuilder().addComponents(
+  // Row 2: Identity & Discovery
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bot_myinfo')
       .setLabel('My Info')
@@ -505,17 +304,16 @@ function buildPanelButtons() {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  // 🛠️ NEW Row 4: Administration Custom Tools
-  const row4 = new ActionRowBuilder().addComponents(
+  // Row 3: Bot information (a second button can be added here later)
+  const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('bot_admin_drag_init') // 🛠️ Updated customId
-      .setLabel('Move Users')
+      .setCustomId('bot_info')
+      .setLabel('Bot Info')
       .setEmoji('▫️')
       .setStyle(ButtonStyle.Secondary)
   );
 
-
-  return [row1, row2, row3, row4];
+  return [row1, row2, row3];
 }
 
 // ── Select menus ──────────────────────────────────────────────────────────────
@@ -540,34 +338,23 @@ function buildUserSelectRow() {
 // ── Update panel ──────────────────────────────────────────────────────────────
 
 async function updatePanel(client) {
-  // Fetch real container memory to synchronize across all panels smoothly
-  const liveMemory = await fetchDiscloudMemory();
-
-  client.guilds.cache.forEach(async (guild) => {
+  for (const guild of client.guilds.cache.values()) {
     const config = getGuildConfig(guild.id);
-    
-    // SAFETY FIX: Prevents your bot from crashing if a server hasn't built a status panel yet
-    if (!config || !config.panelChannelId || !config.panelMessageId) return;
+    if (!config.panelChannelId || !config.panelMessageId) continue;
 
     try {
-      const channel = await client.channels.fetch(config.panelChannelId);
-      if (!channel || !channel.isTextBased()) return;
-
+      const channel = await guild.channels.fetch(config.panelChannelId);
+      if (!channel?.isTextBased()) continue;
       const message = await channel.messages.fetch(config.panelMessageId);
-      if (!message) return;
-
-      // Pass down the real synchronization data directly to the dashboard grid
-      const updatedEmbed = buildPanelEmbed(guild.id, guild, liveMemory);
-      await message.edit({ 
-        embeds: [updatedEmbed],
-        components: buildPanelButtons() // Keeps buttons interactive on update
+      await message.edit({
+        embeds:     [buildPanelEmbed(guild.id, guild)],
+        components: buildPanelButtons(),
       });
     } catch (err) {
-      log('ERROR', `Failed to edit panel update for the following guild(s) ${guild.id}: ${err.message}`);
+      log('WARN', 'Could not update panel', { guild: guild.name, err });
     }
-  });
+  }
 }
-
 
 module.exports = {
   startStatusUpdater,

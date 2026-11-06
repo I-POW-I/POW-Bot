@@ -15,13 +15,16 @@ const { log }                     = require('../src/logger');
 const store                       = require('../src/connectionStore');
 const { attachDisconnectHandler } = require('../src/heartbeat');
 const {
-  updatePanel, buildMemberEmbed,
+  updatePanel, buildMemberEmbed, buildStatsEmbed,
   buildChannelSelectRow, buildUserSelectRow,
 } = require('../src/statusUpdater');
 const { setLastChannel, clearLastChannel, setStats, getVerifyRoleId, getBotControlRoleId } = require('../src/guildConfig');
 const { attachSilencePlayer, stopSilencePlayer } = require('../src/audioPlayer');
 const { run, selectOne, selectAll } = require('../src/database');
 const { joinTimes }               = require('../src/memberTracker');
+const diagnostics                = require('../src/diagnostics');
+const globalConfig               = require('../src/globalConfig');
+const { isBotAdmin }             = require('../src/permissions');
 
 const HEALTHY = [
   VoiceConnectionStatus.Ready,
@@ -87,11 +90,28 @@ async function joinChannel(targetChannel, guild, member, client, interaction) {
 }
 
 
-module.exports = {
-  name: Events.InteractionCreate,
-  once: false,
+// Modules that own their own buttons / menus / modals. Each returns true when it handled the interaction.
+const DELEGATES = [
+  () => require('../src/ownerMonitor').handleComponent,   // alert-DM buttons + restart confirmation
+  () => require('../commands/owner').handleComponent,     // /owner panels, announcements, bans
+  () => require('../src/setup').handleInteraction,        // /setup screens
+  () => require('../src/verification').handleInteraction, // verify button, human check, "Why?"
+  () => require('../commands/help').handleComponent,      // /help category menu
+];
 
-  async execute(interaction, client) {
+async function handle(interaction, client) {
+
+    // ── Autocomplete (used by /owner) ─────────────────────────────────────────
+    if (interaction.isAutocomplete()) {
+      const cmd = client.commands.get(interaction.commandName);
+      if (cmd?.autocomplete) { try { await cmd.autocomplete(interaction, client); } catch { /* suggestions are best-effort */ } }
+      return;
+    }
+
+    // ── Components owned by other modules ─────────────────────────────────────
+    for (const load of DELEGATES) {
+      if (await load()(interaction, client)) return;
+    }
 
     // ── Slash commands ────────────────────────────────────────────────────────
     if (interaction.isChatInputCommand()) {
@@ -142,11 +162,8 @@ module.exports = {
       try {
         await command.execute(interaction, client);
       } catch (err) {
-        log('WARN', `Error in /${interaction.commandName}`, { error: err.message });
-        const reply = { content: 'Something went wrong.', flags: [MessageFlags.Ephemeral] };
-        interaction.replied || interaction.deferred
-          ? await interaction.followUp(reply)
-          : await interaction.reply(reply);
+        log('ERROR', `Error in /${interaction.commandName}`, { guild: interaction.guild?.name || 'DM', user: interaction.user.tag, err });
+        await replyFailure(interaction);
       }
       return;
     }
@@ -194,7 +211,7 @@ module.exports = {
         });
       }
 
-      const { GAME_COLOURS } = require('../commands/gamealerts');
+      const { GAME_COLOURS } = require('../commands/game-updates');
       const color = GAME_COLOURS?.[parseInt(appId)] || null;
 
       run(
@@ -261,7 +278,7 @@ module.exports = {
       const sub   = selectOne('SELECT * FROM game_subscriptions WHERE id = ?', [subId]);
       if (!sub) return interaction.update({ content: '❌ Not found.', components: [] });
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-      const { runTest } = require('../commands/gamealerts');
+      const { runTest } = require('../commands/game-updates');
       return runTest(interaction, sub, true);
     }
 
@@ -280,6 +297,7 @@ module.exports = {
 
       run('DELETE FROM streamer_subscriptions WHERE id = ?', [subId]);
       log('INFO', 'Streamer removed', { guild: guild.name, platform: sub.platform, username: sub.username, by: member.user.tag });
+      if (sub.platform === 'twitch') require('../src/platforms/twitchEventSub').requestSync();
 
       return interaction.update({
         content:    `✅ No longer watching **${sub.display_name || sub.username}** on **${PLATFORM_NAMES[sub.platform]}**.`,
@@ -294,7 +312,7 @@ module.exports = {
     const { guild, member } = interaction;
 
     // ── Log button use to console and command log channel ─────────────────────
-    if (interaction.customId !== 'bot_admin_drag_init' && interaction.customId !== 'drag_execute_confirm') {
+    { // log every button press
       log('INFO', `Button: ${interaction.customId}`, {
         user:  interaction.user.tag,
         guild: interaction.guild?.name || 'DM',
@@ -309,9 +327,8 @@ module.exports = {
             if (btnCh?.isTextBased()) {
               const BUTTON_LABELS = {
                 bot_join: '🔊 Join', bot_leave: '👋 Leave',
-                bot_forceleave: '🔌 Force Leave', bot_refresh: '🔄 Refresh',
                 bot_myinfo: '👤 My Info', bot_lookup: '🔍 Lookup',
-                bot_verify: '✅ Verify'
+                bot_info: 'ℹ️ Bot Info',
               };
               const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
               await btnCh.send({
@@ -334,34 +351,12 @@ module.exports = {
     }
     const isAdmin = member.permissions.has(PermissionFlagsBits.ManageGuild);
 
-    // ── Verify button ─────────────────────────────────────────────────────────
-    if (interaction.customId === 'bot_verify') {
-      const roleId = getVerifyRoleId(guild.id);
-      if (!roleId) {
-        return interaction.reply({ content: 'Verification not set up. An admin needs to run `/verify setup` first.', flags: [MessageFlags.Ephemeral] });
-      }
-      const role = guild.roles.cache.get(roleId);
-      if (!role) {
-        return interaction.reply({ content: 'The verify role no longer exists — contact an admin.', flags: [MessageFlags.Ephemeral] });
-      }
-      if (member.roles.cache.has(roleId)) {
-        return interaction.reply({ content: 'You are already verified.', flags: [MessageFlags.Ephemeral] });
-      }
-      try {
-        await member.roles.add(role, 'Verified via button');
-        log('INFO', 'Member verified', { guild: guild.name, user: member.user.tag, role: role.name });
-        return interaction.reply({ content: `✅ You've been verified and given the **${role.name}** role.`, flags: [MessageFlags.Ephemeral] });
-      } catch (err) {
-        log('WARN', 'Failed to assign verify role', { guild: guild.name, error: err.message });
-        return interaction.reply({ content: 'Failed to assign role — make sure my role is above the verify role in Server Settings → Roles.', flags: [MessageFlags.Ephemeral] });
-      }
-    }
-
     // ── Open to everyone ──────────────────────────────────────────────────────
 
-    if (interaction.customId === 'bot_refresh') {
-      await updatePanel(client);
-      return interaction.reply({ content: 'Panel refreshed.', flags: [MessageFlags.Ephemeral] });
+    if (interaction.customId === 'bot_info') {
+      const embeds = [buildStatsEmbed(guild.id, client)];
+      if (isBotAdmin(interaction.user.id)) embeds.push(...await require('../src/botInfo').buildOwnerEmbeds(client));   // owner-only extras
+      return interaction.reply({ embeds, flags: [MessageFlags.Ephemeral] });
     }
 
     if (interaction.customId === 'bot_myinfo') {
@@ -379,175 +374,6 @@ module.exports = {
         flags:      [MessageFlags.Ephemeral],
       });
     }
-
-    // ── 🎛️ Mass User Migration Panel Handler (Active Humans Only) ──────────────
-    if (interaction.customId === 'bot_admin_drag_init') {
-      const { StringSelectMenuBuilder } = require('discord.js');
-
-      if (!interaction.member.permissions.has(PermissionFlagsBits.MoveMembers)) {
-        return interaction.reply({ 
-          content: '❌ **Access Denied:** You lack the `Move Members` permission required to activate this.', 
-          flags: [MessageFlags.Ephemeral] 
-        });
-      }
-
-      const entry = store.getEntry(guild.id);
-      if (!entry || !entry.channelId) {
-        return interaction.reply({ 
-          content: '❌ **Abuse Prevention:** The application connection state is dormant. Secure the bot inside a voice channel first.', 
-          flags: [MessageFlags.Ephemeral] 
-        });
-      }
-
-      const modVoiceChannel = interaction.member.voice?.channelId;
-      if (modVoiceChannel !== entry.channelId) {
-        return interaction.reply({ 
-          content: `❌ **Access Denied:** You must be present inside the bot's current voice channel (<#${entry.channelId}>) to use this interface!`, 
-          flags: [MessageFlags.Ephemeral] 
-        });
-      }
-
-      const activeVoiceRoom = guild.channels.cache.get(entry.channelId);
-      if (!activeVoiceRoom) {
-        return interaction.reply({ content: '❌ Could not find the active voice channel.', flags: [MessageFlags.Ephemeral] });
-      }
-
-      const activeHumans = activeVoiceRoom.members.filter(m => !m.user.bot);
-
-      if (activeHumans.size === 0) {
-        return interaction.reply({
-          content: '⚠️ **Operation Aborted:** There are users currently connected in this voice channel to move!',
-          flags: [MessageFlags.Ephemeral]
-        });
-      }
-
-      const dropdownOptions = activeHumans.map(m => ({
-        label: m.user.globalName || m.user.username,
-        description: `@${m.user.username}`,
-        value: m.user.id
-      })).slice(0, 25);
-
-      const userSelect = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId('drag_select_users')
-          .setPlaceholder('Select users to move...')
-          .setMinValues(1)
-          .setMaxValues(dropdownOptions.length)
-          .addOptions(dropdownOptions)
-      );
-
-      const channelSelect = new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('drag_select_target')
-          .setPlaceholder('🔊 Select voice channel...')
-          .addChannelTypes(ChannelType.GuildVoice)
-      );
-
-      const actionButtons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('drag_execute_confirm')
-          .setLabel('Move Users')
-          .setStyle(ButtonStyle.Secondary)
-      );
-
-      const menuMessage = await interaction.reply({
-        content: `🎛️ **Mass Move**\nDetected **${activeHumans.size}** Users in <#${entry.channelId}>.\n\n1. Select the users.\n2. Choose the voice channel.\n3. Click move to execute.`,
-        components: [userSelect, channelSelect, actionButtons],
-        flags: [MessageFlags.Ephemeral],
-        withResponse: true
-      });
-
-      let selectedUserIds = [];
-      let targetChannelId = null;
-
-      const collector = menuMessage.resource.message.createMessageComponentCollector({
-        time: 180000
-      });
-
-      collector.on('collect', async (componentInteraction) => {
-        if (componentInteraction.user.id !== interaction.user.id) {
-          return componentInteraction.reply({ content: '❌ Access Denied.', flags: [MessageFlags.Ephemeral] });
-        }
-
-        if (componentInteraction.customId === 'drag_select_users') {
-          selectedUserIds = componentInteraction.values;
-          await componentInteraction.deferUpdate();
-        }
-
-        if (componentInteraction.customId === 'drag_select_target') {
-          targetChannelId = componentInteraction.channels.first()?.id || null;
-          await componentInteraction.deferUpdate();
-        }
-
-        if (componentInteraction.customId === 'drag_execute_confirm') {
-          if (selectedUserIds.length === 0 || !targetChannelId) {
-            return componentInteraction.reply({
-              content: '⚠️ **Configuration Error:** You must choose the users & voice channel first!',
-              flags: [MessageFlags.Ephemeral]
-            });
-          }
-
-          await componentInteraction.deferReply({ flags: [MessageFlags.Ephemeral] });
-
-          let movedCount = 0;
-          let failedCount = 0;
-
-          for (const userId of selectedUserIds) {
-            try {
-              const memberToMove = await interaction.guild.members.fetch(userId);
-              if (!memberToMove.voice.channelId) {
-                failedCount++;
-                continue;
-              }
-              await memberToMove.voice.setChannel(targetChannelId);
-              movedCount++;
-            } catch (err) {
-              failedCount++;
-            }
-          }
-
-          log('INFO', `Move Executed: Moved ${movedCount} users`, {
-            user:  interaction.user.tag,
-            guild: interaction.guild.name,
-          });
-
-          try {
-            const { getLogChannel: _glc } = require('../src/guildConfig');
-            const { EmbedBuilder: _EB2 } = require('discord.js');
-            const btnLogId = _glc(interaction.guild.id, 'commands');
-            if (btnLogId) {
-              const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
-              if (btnCh?.isTextBased()) {
-                await btnCh.send({
-
-                  embeds: [
-                    new _EB2()
-                      .setColor(0x2F3136)
-                      .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
-                      .setTitle('Moved Users Executed')
-                      .addFields(
-                        { name: 'Moderator', value: `${interaction.member}`, inline: true },
-                        { name: 'Destination', value: `<#${targetChannelId}>`, inline: true },
-                        { name: 'Results', value: `Moved: \`${movedCount}\` · Skipped/Failed: \`${failedCount}\``, inline: false }
-                      )
-                      .setTimestamp(),
-                  ],
-                });
-              }
-            }
-          } catch { /* non-critical */ }
-
-          await componentInteraction.editReply({
-            content: `✅ **Move Successful!**\nMoved **${movedCount}** users over to <#${targetChannelId}>.\n*(Skipped ${failedCount} users)*`
-          });
-
-          collector.stop();
-        }
-      });
-      return;
-    }
-
-
 
     // ── Role/owner gated ──────────────────────────────────────────────────────
     const botControlRoleId = getBotControlRoleId(guild.id);
@@ -589,27 +415,68 @@ module.exports = {
       await updatePanel(client);
       return interaction.reply({ content: `Disconnected from **${entry?.channelName || 'the voice channel'}**.`, flags: [MessageFlags.Ephemeral] });
     }
+}
 
-    // ── Force Leave — role/owner gated ────────────────────────────────────────
-    if (interaction.customId === 'bot_forceleave') {
-      if (!canControl) {
-        return interaction.reply({
-          content: botControlRoleId ? `You need the <@&${botControlRoleId}> role.` : 'Only the server owner can use this.',
-          flags: [MessageFlags.Ephemeral],
-        });
+// ── Safety net, global gates, and the exported handler ───────────────────────
+
+/** Tell the user something went wrong without ever throwing from here. */
+async function replyFailure(interaction) {
+  try {
+    const reply = { content: 'Something went wrong. The bot owner has been notified.', flags: [MessageFlags.Ephemeral] };
+    if (interaction.replied || interaction.deferred) await interaction.followUp(reply);
+    else await interaction.reply(reply);
+  } catch { /* the interaction may have expired — nothing more we can do */ }
+}
+
+function describeInteraction(i) {
+  if (i.isChatInputCommand()) {
+    const group = i.options.getSubcommandGroup(false), sub = i.options.getSubcommand(false);
+    return `/${i.commandName}${group ? ' ' + group : ''}${sub ? ' ' + sub : ''}`;
+  }
+  if (i.isButton())      return `Button: ${i.customId}`;
+  if (i.isModalSubmit()) return `Modal: ${i.customId}`;
+  if (i.isAutocomplete()) return `Autocomplete: /${i.commandName}`;
+  if (i.isAnySelectMenu?.()) return `Menu: ${i.customId}`;
+  return 'Interaction';
+}
+
+/** Blocked users/servers and maintenance mode. The bot owner and bot admins always pass. */
+async function passesGlobalGates(interaction) {
+  const uid = interaction.user?.id;
+  if (!uid || isBotAdmin(uid)) return true;
+
+  let message = null;
+  if (interaction.guildId && globalConfig.isGuildBanned(interaction.guildId)) message = 'This server has been blocked from using this bot.';
+  else if (globalConfig.isUserBanned(uid)) message = 'You have been blocked from using this bot.';
+  else if (globalConfig.isMaintenance()) message = globalConfig.get().maintenance.message || 'The bot is in maintenance mode. Please try again shortly.';
+  if (!message) return true;
+
+  try {
+    if (interaction.isAutocomplete()) await interaction.respond([]);
+    else await interaction.reply({ content: `🔧 ${message}`, flags: [MessageFlags.Ephemeral] });
+  } catch { /* already answered / expired */ }
+  return false;
+}
+
+module.exports = {
+  name: Events.InteractionCreate,
+  once: false,
+
+  async execute(interaction, client) {
+    if (!(await passesGlobalGates(interaction))) return;
+
+    const label = describeInteraction(interaction);
+    if (interaction.isChatInputCommand()) { diagnostics.bump('commands'); diagnostics.addBreadcrumb('command', `${label} (${interaction.user.tag} · ${interaction.guild?.name || 'DM'})`); }
+    else if (interaction.isButton())      { diagnostics.bump('buttons');  diagnostics.addBreadcrumb('button',  `${label} (${interaction.user.tag} · ${interaction.guild?.name || 'DM'})`); }
+
+    // Everything below runs "inside" this label, so any log line or crash says what triggered it.
+    await diagnostics.runWithContext(diagnostics.interactionContext(interaction, label), async () => {
+      try {
+        await handle(interaction, client);
+      } catch (err) {
+        log('ERROR', `Unhandled error in ${label}`, { guild: interaction.guild?.name || 'DM', user: interaction.user?.tag, err });
+        await replyFailure(interaction);
       }
-      const conn     = getVoiceConnection(guild.id);
-      const hadEntry = store.getEntry(guild.id);
-      if (conn) { try { conn.destroy(); } catch (_) {} }
-      stopSilencePlayer(guild.id);
-      store.clearConnection(guild.id);
-      clearLastChannel(guild.id);
-      log('VOICE', 'Force leave via panel', { guild: guild.name, by: member.user.tag });
-      await updatePanel(client);
-      return interaction.reply({
-        content: !conn && hadEntry ? 'Cache cleared, Bot state now reset & ready to go.' : '🔴 Force disconnected the from voice channel.',
-        flags: [MessageFlags.Ephemeral],
-      });
-    }
+    });
   },
 };

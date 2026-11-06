@@ -10,7 +10,7 @@ async function searchGames(term) {
   try {
     const data = await steamFetch(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&l=english&cc=US`);
     return (data.items || []).slice(0, 5).map(i => ({ appid: i.id, name: i.name, tinyImage: i.tiny_image }));
-  } catch (err) { log('WARN', 'Steam search failed', { error: err.message }); return []; }
+  } catch (err) { log('WARN', 'Steam search failed', { err }); return []; }
 }
 
 async function getAppDetails(appId) {
@@ -41,7 +41,7 @@ async function getGameNews(appId, count=5) {
   try {
     const data = await steamFetch(`https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/?appid=${appId}&count=${count}&maxlength=5000&format=json`);
     return (data?.appnews?.newsitems||[]).filter(isActualUpdate);
-  } catch (err) { log('WARN', `Steam news failed for ${appId}`, { error: err.message }); return []; }
+  } catch (err) { log('WARN', `Steam news failed for ${appId}`, { err }); return []; }
 }
 
 async function getSteamFreeGames() {
@@ -67,7 +67,7 @@ async function getSteamFreeGames() {
       });
     } catch {}
     return [...freeGames.values()];
-  } catch (err) { log('WARN', 'Steam free games check failed', { error: err.message }); return []; }
+  } catch (err) { log('WARN', 'Steam free games check failed', { err }); return []; }
 }
 
 function getHeaderImage(appId) { return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`; }

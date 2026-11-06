@@ -11,6 +11,11 @@
 
 const { log } = require('../logger');
 
+const apiBase = () => process.env.TWITCH_API_URL   || 'https://api.twitch.tv/helix';
+const idBase  = () => process.env.TWITCH_OAUTH_URL || 'https://id.twitch.tv';
+
+const hasCredentials = () => !!(process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET);
+
 let accessToken    = null;
 let tokenExpiresAt = 0;
 let tokenFailed    = false; // Stop retrying if credentials are wrong
@@ -26,10 +31,10 @@ async function getToken() {
     throw new Error('TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET not set in Discloud Variables');
   }
 
-  const res = await fetch('https://id.twitch.tv/oauth2/token', {
+  const res = await fetch(`${idBase()}/oauth2/token`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body:    `client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`,
+    body:    new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: 'client_credentials' }),
     signal:  AbortSignal.timeout(10000),
   });
 
@@ -49,18 +54,39 @@ async function getToken() {
   return accessToken;
 }
 
-async function twitchGet(path) {
-  const token = await getToken();
-  const res   = await fetch(`https://api.twitch.tv/helix/${path}`, {
-    headers: {
-      'Client-ID':     process.env.TWITCH_CLIENT_ID,
-      'Authorization': `Bearer ${token}`,
-    },
-    signal: AbortSignal.timeout(10000),
-  });
+/**
+ * Low-level Helix request. Returns { status, data } and does NOT throw on HTTP
+ * errors, so callers (EventSub) can react to specific statuses. A 401 means the
+ * cached app token was revoked/expired early, so it is dropped and the call retried
+ * once — previously a bad cached token kept failing until it expired.
+ */
+async function helixRequest(method, path, body) {
+  const send = async () => {
+    const token = await getToken();
+    const res = await fetch(`${apiBase()}/${path}`, {
+      method,
+      headers: {
+        'Client-ID':     process.env.TWITCH_CLIENT_ID,
+        'Authorization': `Bearer ${token}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body:   body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(10000),
+    });
+    let data = null;
+    if (res.status !== 204) { try { data = await res.json(); } catch { /* empty body */ } }
+    return { status: res.status, data };
+  };
 
-  if (!res.ok) throw new Error(`Twitch API ${res.status} for ${path}`);
-  return res.json();
+  let out = await send();
+  if (out.status === 401) { accessToken = null; out = await send(); }
+  return out;
+}
+
+async function twitchGet(path) {
+  const { status, data } = await helixRequest('GET', path);
+  if (status < 200 || status >= 300) throw new Error(`Twitch API ${status} for ${path}`);
+  return data;
 }
 
 async function getStreamStatus(username) {
@@ -107,4 +133,4 @@ async function validateCredentials() {
   }
 }
 
-module.exports = { getStreamStatus, getDisplayName, validateCredentials };
+module.exports = { getStreamStatus, getDisplayName, validateCredentials, helixRequest, hasCredentials };

@@ -1,6 +1,6 @@
 {
   "name": "POW-bot",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Discord bot that stays in voice channels 24/7 with auto-rejoin, voice logging, and VC time tracking.",
   "main": "index.js",
   "scripts": {
@@ -15,5 +15,8 @@
     "libsodium-wrappers": "^0.7.13",
     "opusscript": "^0.1.1",
     "sql.js": "^1.12.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

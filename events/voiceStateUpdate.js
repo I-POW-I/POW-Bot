@@ -78,7 +78,7 @@ async function sendLog(guild, embed) {
     const ch = await guild.channels.fetch(channelId);
     if (ch?.isTextBased()) await ch.send({ embeds: [embed] });
   } catch (err) {
-    log('WARN', 'Failed to send voice log', { error: err.message });
+    log('WARN', 'Failed to send voice log', { err });
   }
 }
 

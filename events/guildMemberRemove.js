@@ -26,6 +26,10 @@ module.exports = {
     const config    = getGuildConfig(guild.id);
     const kick      = await getKicker(guild, member.id);
 
+    // Keep the member history up to date (feeds /members and the verification log)
+    try { require('../src/verification').onMemberLeave(member); }
+    catch (err) { log('WARN', 'Could not record member leave', { guild: guild.name, err }); }
+
     // ── 1. Leave image card ───────────────────────────────────────────────────
     const leaveChannelId = config.leaveChannelId || config.welcomeChannelId;
     if (leaveChannelId && config.leaveEnabled !== false) {
@@ -38,7 +42,7 @@ module.exports = {
           await channel.send({ files: [new AttachmentBuilder(buffer, { name: 'leave.png' })] });
         }
       } catch (err) {
-        log('WARN', 'Failed to send leave card', { error: err.message });
+        log('WARN', 'Failed to send leave card', { err });
       }
     }
 
@@ -91,7 +95,7 @@ module.exports = {
 
       await logChannel.send({ embeds: [embed] });
     } catch (err) {
-      log('WARN', 'Failed to send member leave log', { error: err.message });
+      log('WARN', 'Failed to send member leave log', { err });
     }
   },
 };

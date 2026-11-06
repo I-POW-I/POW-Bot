@@ -14,6 +14,7 @@ const {
   AudioPlayerStatus,
   NoSubscriberBehavior,
   StreamType,
+  VoiceConnectionStatus,
 } = require('@discordjs/voice');
 const { Readable } = require('stream');
 
@@ -27,6 +28,7 @@ class SilenceStream extends Readable {
 }
 
 // One player per guild — tracked here so we can stop cleanly on leave
+// guildId → { player, subscription }
 const players = new Map();
 
 /**
@@ -52,10 +54,21 @@ function attachSilencePlayer(connection, guildId) {
 
   // Loop continuously — when one resource ends, start another
   player.on(AudioPlayerStatus.Idle, play);
+  // An unhandled 'error' event on an EventEmitter would throw — restart instead
+  player.on('error', () => { try { play(); } catch (_) {} });
   play();
 
-  connection.subscribe(player);
-  players.set(guildId, player);
+  const subscription = connection.subscribe(player);
+  players.set(guildId, { player, subscription });
+
+  // If this connection is destroyed (timeout, kicked, channel deleted…) make sure
+  // its player doesn't keep spinning in the background with nobody listening.
+  if (typeof connection.once === 'function') {
+    connection.once(VoiceConnectionStatus.Destroyed, () => {
+      const current = players.get(guildId);
+      if (current && current.player === player) stopSilencePlayer(guildId);
+    });
+  }
 }
 
 /**
@@ -64,11 +77,21 @@ function attachSilencePlayer(connection, guildId) {
  * @param {string} guildId
  */
 function stopSilencePlayer(guildId) {
-  const player = players.get(guildId);
-  if (player) {
-    try { player.stop(true); } catch (_) {}
-    players.delete(guildId);
-  }
+  const entry = players.get(guildId);
+  if (!entry) return;
+  players.delete(guildId);
+
+  const { player, subscription } = entry;
+
+  // IMPORTANT: remove the Idle→play() loop *before* stopping. player.stop(true)
+  // moves the player to Idle, and the loop listener would immediately start a
+  // brand-new silence resource, so the "stopped" player kept running forever
+  // (one leaked player + opus encoder per rejoin).
+  player.removeAllListeners();
+  player.on('error', () => {}); // swallow any late errors from the dying resource
+
+  try { subscription?.unsubscribe(); } catch (_) {}
+  try { player.stop(true); } catch (_) {}
 }
 
 module.exports = { attachSilencePlayer, stopSilencePlayer };

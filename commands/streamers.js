@@ -132,6 +132,7 @@ async function addStreamer(interaction) {
   );
 
   log('INFO', 'Streamer added', { guild: guild.name, platform, username, displayName, by: member.user.tag });
+  if (platform === 'twitch') require('../src/platforms/twitchEventSub').requestSync();   // instant-alert subscription (no-op if EventSub is off)
 
   const roleStr = role ? ` · pinging <@&${role.id}>` : '';
   return interaction.editReply({

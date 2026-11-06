@@ -30,7 +30,7 @@ module.exports = {
       await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commandData });
       log('INFO', `Registered ${commandData.length} global slash command(s)`);
     } catch (err) {
-      log('ERROR', 'Failed to register slash commands', { error: err.message });
+      log('ERROR', 'Failed to register slash commands', { err });
     }
 
     // ── Auto-rejoin ───────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ module.exports = {
         });
         rejoined++;
       } catch (err) {
-        log('ERROR', 'Auto-rejoin failed', { guild: guild.name, error: err.message });
+        log('ERROR', 'Auto-rejoin failed', { guild: guild.name, err });
       }
     }
 
@@ -96,5 +96,7 @@ module.exports = {
     await updatePanel(client);
 
     log('INFO', 'Bot fully ready');
+    require('../src/ownerMonitor').onReady(client);   // startup notice, back-online report, digest + memory watch
+    require('../src/verification').startSweeper(client);   // removes members who never verify (only if enabled in /setup)
   },
 };

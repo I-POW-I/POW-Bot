@@ -1,28 +1,23 @@
-const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { buildStatsEmbed } = require('../src/statusUpdater');
+const { SlashCommandBuilder, MessageFlags, InteractionContextType } = require('discord.js');
+const { buildBotInfoEmbed, buildOwnerEmbeds } = require('../src/botInfo');
+const { isBotAdmin } = require('../src/permissions');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('botinfo')
-    .setDescription('View Server info, Bot Uptime, & Stats.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.MoveMembers), // Restricts command usage to staff only
+    .setDescription('Show the bot\'s status, latency and resource usage')
+    .setContexts(InteractionContextType.Guild),
 
   async execute(interaction, client) {
-    try {
-      // 1. Gather backend specifications directly from your existing tracker modules (ADDED AWAIT)
-      const statsEmbed = await buildStatsEmbed(interaction.guildId, client);
+    // Time between Discord creating the interaction and the bot receiving it (this replaces /ping)
+    const responseMs = Math.max(0, Date.now() - interaction.createdTimestamp);
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-      // 2. Transmit the information board privately so it doesn't clutter chat channels
-      return interaction.reply({
-        embeds: [statsEmbed],
-        flags: [MessageFlags.Ephemeral]
-      });
-    } catch (error) {
-      // 3. Prevent crashing if state cache modules are offline or uninitialized
-      return interaction.reply({
-        content: '❌ **Engine Error:** Unable to show bot info. Verify the bot is online & working.',
-        flags: [MessageFlags.Ephemeral]
-      });
-    }
+    const embeds = [buildBotInfoEmbed(interaction.guildId, client, { responseMs })];
+
+    // The bot owner and selected bot admins also get system, usage and safety details
+    if (isBotAdmin(interaction.user.id)) embeds.push(...await buildOwnerEmbeds(client));
+
+    return interaction.editReply({ embeds });
   },
 };
