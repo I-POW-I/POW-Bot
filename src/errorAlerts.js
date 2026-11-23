@@ -42,16 +42,26 @@ const seen        = new Map();
 
 // ── Config (read lazily so Discloud variables are always loaded first) ────────
 
+function saved() { try { return require('./globalConfig').get().alerts || {}; } catch { return {}; } }
+const envSet = (name) => process.env[name] !== undefined && String(process.env[name]).trim() !== '';
+
+/** Discloud variables win; otherwise whatever was saved by /owner alerts → Set up. */
 function config() {
-  const levels = (process.env.ERROR_ALERT_LEVELS || 'ERROR,AUDIT')
+  const sv = saved();
+  const levels = (envSet('ERROR_ALERT_LEVELS') ? process.env.ERROR_ALERT_LEVELS : (Array.isArray(sv.levels) && sv.levels.length ? sv.levels.join(',') : 'ERROR,AUDIT'))
     .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
   return {
-    webhookUrl: (process.env.ERROR_ALERT_WEBHOOK_URL || '').trim(),
+    webhookUrl: (process.env.ERROR_ALERT_WEBHOOK_URL || sv.webhookUrl || '').trim(),
     channelId:  (process.env.ERROR_ALERT_CHANNEL_ID  || '').trim(),
-    dm:         String(process.env.ERROR_ALERT_DM || '').toLowerCase() === 'true',
+    dm:         envSet('ERROR_ALERT_DM') ? String(process.env.ERROR_ALERT_DM).toLowerCase() === 'true' : sv.dm === true,
     pingUserId: (process.env.ERROR_ALERT_PING_USER_ID || '').trim(),
     levels:     new Set(levels),
     startup:    String(process.env.ERROR_ALERT_STARTUP || 'true').toLowerCase() !== 'false',
+    from: {
+      webhook: process.env.ERROR_ALERT_WEBHOOK_URL ? 'Discloud variable' : (sv.webhookUrl ? 'setup' : null),
+      dm:      envSet('ERROR_ALERT_DM') ? 'Discloud variable' : 'setup',
+      levels:  envSet('ERROR_ALERT_LEVELS') ? 'Discloud variable' : 'setup',
+    },
   };
 }
 
@@ -72,6 +82,7 @@ function redact(text) {
   for (const [key, value] of Object.entries(process.env)) {
     if (value && value.length >= 8 && SECRET_ENV.test(key)) out = out.split(value).join('[redacted]');
   }
+  const savedUrl = saved().webhookUrl; if (savedUrl) out = out.split(savedUrl).join('[redacted]');
   out = out.replace(/[MNO][A-Za-z0-9_-]{23,26}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}/g, '[redacted-token]');
   out = out.replace(/https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+/g, '[redacted-webhook]');
   return out;
@@ -344,7 +355,7 @@ const isMuted = () => Date.now() < mutedUntil;
 /** For the owner status page: where alerts go right now. */
 function describeDestinations() {
   const c = config();
-  return { webhook: !!c.webhookUrl, channel: !!c.channelId, dm: c.dm && ownerIds().length > 0, levels: [...c.levels], muted: isMuted(), mutedUntil };
+  return { webhook: !!c.webhookUrl, channel: !!c.channelId, dm: c.dm && ownerIds().length > 0, levels: [...c.levels], muted: isMuted(), mutedUntil, from: c.from };
 }
 
 /** Call once after the client exists. */

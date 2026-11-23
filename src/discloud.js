@@ -1,21 +1,34 @@
 /**
  * Discloud API client — https://api.discloud.app/v2
  *
- * Needs two Discloud variables:
- *   DISCLOUD_API_TOKEN  your Discloud API token (Discloud dashboard → API)
- *   DISCLOUD_APP_ID     the ID of this application
+ * Needs:
+ *   DISCLOUD_TOKEN (or DISCLOUD_API_TOKEN)  your Discloud API token
+ *   DISCLOUD_APP_ID  the application ID — optional: if it isn't set, the `ID=` line of this
+ *                    project's discloud.config is used
  *
  * The token is only ever sent to the Discloud API and is scrubbed from alerts.
  */
 
+const fs   = require('fs');
+const path = require('path');
+
 const baseUrl = () => process.env.DISCLOUD_API_URL || 'https://api.discloud.app/v2';
-const token   = () => (process.env.DISCLOUD_API_TOKEN || '').trim();
-const appId   = () => (process.env.DISCLOUD_APP_ID || '').trim();
+const token   = () => (process.env.DISCLOUD_TOKEN || process.env.DISCLOUD_API_TOKEN || '').trim();
+
+/** App ID: the variable if set, otherwise the ID= line in discloud.config. */
+function appId() {
+  const fromEnv = (process.env.DISCLOUD_APP_ID || '').trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const cfg = fs.readFileSync(path.join(__dirname, '..', 'discloud.config'), 'utf8');
+    return (/^\s*ID\s*=\s*(\S+)/m.exec(cfg) || [])[1] || '';
+  } catch { return ''; }
+}
 
 const isConfigured = () => !!(token() && appId());
 
 async function request(method, path) {
-  if (!isConfigured()) throw new Error('Discloud API not configured — set DISCLOUD_API_TOKEN and DISCLOUD_APP_ID');
+  if (!isConfigured()) throw new Error('Discloud API not configured — set DISCLOUD_TOKEN (and DISCLOUD_APP_ID if discloud.config has no ID= line)');
 
   const res = await fetch(`${baseUrl()}/app/${encodeURIComponent(appId())}${path}`, {
     method,

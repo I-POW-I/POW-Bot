@@ -193,95 +193,6 @@ async function handle(interaction, client) {
       });
     }
 
-    // ── Game alert: add (game selected from search results) ──────────────────
-    if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_add_select') {
-      const { guild, member } = interaction;
-      const [appId, channelId, roleId] = interaction.values[0].split('|||');
-      const gameName = interaction.component.options.find(o => o.value === interaction.values[0])?.label || `App ${appId}`;
-
-      const existing = selectOne(
-        'SELECT id FROM game_subscriptions WHERE guild_id = ? AND app_id = ?',
-        [guild.id, appId]
-      );
-
-      if (existing) {
-        return interaction.update({
-          content: `> **${gameName}** is already being tracked in this server.`,
-          components: [],
-        });
-      }
-
-      const { GAME_COLOURS } = require('../commands/game-updates');
-      const color = GAME_COLOURS?.[parseInt(appId)] || null;
-
-      run(
-        'INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id, color) VALUES (?, ?, ?, ?, ?, ?)',
-        [guild.id, appId, gameName, channelId, roleId || null, color || null]
-      );
-
-      log('INFO', 'Game alert added', { guild: guild.name, game: gameName, appId, by: member.user.tag });
-
-      const roleStr = roleId ? ` · pinging <@&${roleId}>` : '';
-      return interaction.update({
-        content: `✅ Now tracking **${gameName}** — updates will post in <#${channelId}>${roleStr}.`,
-        components: [],
-      });
-    }
-
-    // ── Game alert: edit (change channel/role) ───────────────────────────────
-    if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_edit_select') {
-      const { guild, member } = interaction;
-      const [subId, channelId, roleId] = interaction.values[0].split('|||');
-      const sub = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
-
-      if (!sub) {
-        return interaction.update({ content: '❌ Not found — may have already been removed.', components: [] });
-      }
-
-      run('UPDATE game_subscriptions SET channel_id = ?, role_id = ? WHERE id = ?',
-        [channelId, roleId || null, sub.id]);
-
-      log('INFO', 'Game alert channel updated', { guild: guild.name, game: sub.game_name, by: member.user.tag });
-
-      const NAMES = { epic: 'Epic Free Games', steam_free: 'Steam Free Games' };
-      const name  = NAMES[sub.app_id] || sub.game_name || sub.app_id;
-      const roleStr = roleId ? ` · pinging <@&${roleId}>` : '';
-
-      return interaction.update({
-        content:    `✅ **${name}** will now post in <#${channelId}>${roleStr}.`,
-        components: [],
-      });
-    }
-
-    // ── Game alert: remove ────────────────────────────────────────────────────
-    if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_remove_select') {
-      const { guild, member } = interaction;
-      const subId    = interaction.values[0];
-      const sub      = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
-
-      if (!sub) {
-        return interaction.update({ content: 'Not found — may have already been removed.', components: [] });
-      }
-
-      run('DELETE FROM game_subscriptions WHERE id = ?', [subId]);
-      log('INFO', 'Game alert removed', { guild: guild.name, game: sub.game_name, by: member.user.tag });
-
-      return interaction.update({
-        content: `✅ No longer tracking **${sub.game_name}**.`,
-        components: [],
-      });
-    }
-
-    // ── Game alert: test (game selected) ─────────────────────────────────────
-    if (interaction.isStringSelectMenu() && interaction.customId === 'gamealert_test_select') {
-      const subId = interaction.values[0];
-      const sub   = selectOne('SELECT * FROM game_subscriptions WHERE id = ?', [subId]);
-      if (!sub) return interaction.update({ content: '❌ Not found.', components: [] });
-      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-      const { runTest } = require('../commands/game-updates');
-      return runTest(interaction, sub, true);
-    }
-
     // ── Remove streamer select ────────────────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'remove_streamer_select') {
       const { guild, member } = interaction;
@@ -354,7 +265,9 @@ async function handle(interaction, client) {
     // ── Open to everyone ──────────────────────────────────────────────────────
 
     if (interaction.customId === 'bot_info') {
-      const embeds = [buildStatsEmbed(guild.id, client)];
+      // Container / infrastructure rows are for staff (Move Members) and bot admins; everyone else gets the public view
+      const staff = member.permissions.has(PermissionFlagsBits.MoveMembers) || isBotAdmin(interaction.user.id);
+      const embeds = [buildStatsEmbed(guild.id, client, { detailed: staff })];
       if (isBotAdmin(interaction.user.id)) embeds.push(...await require('../src/botInfo').buildOwnerEmbeds(client));   // owner-only extras
       return interaction.reply({ embeds, flags: [MessageFlags.Ephemeral] });
     }

@@ -97,6 +97,7 @@ module.exports = {
 
     log('INFO', 'Bot fully ready');
     require('../src/ownerMonitor').onReady(client);   // startup notice, back-online report, digest + memory watch
+    require('../src/messageStore').start();                 // deletes stored messages after 7 days
     require('../src/verification').startSweeper(client);   // removes members who never verify (only if enabled in /setup)
   },
 };

@@ -98,10 +98,30 @@ function sampleCpu() {
   return cpu.pct;
 }
 
+/** The cached Discloud reading as plain fields (sync — refreshed in the background). */
+function discloudView() {
+  const s = cache.status || {}, i = cache.info || {};
+  return {
+    configured:  discloud.isConfigured(),
+    error:       cache.error,
+    container:   s.container ?? null,
+    cpu:         s.cpu ?? null,
+    memory:      s.memory ?? null,
+    ssd:         s.ssd ?? null,
+    net:         s.netIO ? `🔻 ${s.netIO.down || '0KB'} 🔺 ${s.netIO.up || '0KB'}` : null,
+    lastRestart: s.last_restart ?? null,
+    startedAt:   s.startedAt ?? null,
+    cluster:     i.cluster ?? null,
+    online:      i.online ?? null,
+    ramKilled:   i.ramKilled ?? null,
+    exitCode:    i.exitCode ?? null,
+    allocatedMb: Number(i.ram) || null,
+  };
+}
+
 async function getSnapshot({ force = false } = {}) {
   if (discloud.isConfigured() && (force || Date.now() - cache.at > REFRESH_MS)) await refreshDiscloud();
 
-  const s = cache.status || {}, i = cache.info || {};
   const snap = {
     memory:      getMemoryInfo(),
     cpuPercent:  sampleCpu(),
@@ -110,21 +130,7 @@ async function getSnapshot({ force = false } = {}) {
     node:        process.version,
     discordjs:   require('discord.js').version,
     platform:    `${process.platform} ${process.arch}`,
-    discloud: {
-      configured:  discloud.isConfigured(),
-      error:       cache.error,
-      container:   s.container ?? null,
-      cpu:         s.cpu ?? null,
-      memory:      s.memory ?? null,
-      ssd:         s.ssd ?? null,
-      net:         s.netIO ? `↑ ${s.netIO.up ?? '?'} / ↓ ${s.netIO.down ?? '?'}` : null,
-      lastRestart: s.last_restart ?? null,
-      startedAt:   s.startedAt ?? null,
-      online:      i.online ?? null,
-      ramKilled:   i.ramKilled ?? null,
-      exitCode:    i.exitCode ?? null,
-      allocatedMb: Number(i.ram) || null,
-    },
+    discloud:    discloudView(),
   };
   loop.reset();
   return snap;
@@ -133,4 +139,4 @@ async function getSnapshot({ force = false } = {}) {
 /** Test helper */
 function _setCache(c) { cache = { at: Date.now(), error: null, status: null, info: null, ...c }; }
 
-module.exports = { getCpuPercent: () => sampleCpu(), start, stop, refreshDiscloud, getMemoryInfo, formatMemory, parseMemoryString, getSnapshot, _setCache };
+module.exports = { getCpuPercent: () => sampleCpu(), start, stop, refreshDiscloud, getMemoryInfo, formatMemory, parseMemoryString, getSnapshot, discloudView, _setCache };

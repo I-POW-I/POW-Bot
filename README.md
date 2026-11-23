@@ -11,7 +11,7 @@ A Discord bot that sits in a voice channel and stays there 24/7. Keeps call time
 - Instantly Auto-rejoins the last known VC if the bot's host connection drops or discord breaks
 - Instantly Auto-rejoins the last known VC on restart, so worrying about it leaving during a restart, update or change isn't a issue.
 - Logs all voice activity to a chosen channel
-- Logs deleted messages
+- Logs deleted and edited messages (message text is kept for 7 days so this always works)
 - Live control panel embed with buttons
 - Updates its Discord status with the channel name and uptime
 - Persists uptime stats across restarts
@@ -29,7 +29,7 @@ A Discord bot that sits in a voice channel and stays there 24/7. Keeps call time
 | `/members` | Overview, recent joins/leaves, unverified members and a per-member lookup | Manage Server |
 | `/streamers` | Go-live alerts for Twitch, Kick and YouTube | Manage Server |
 | `/free-games` | Free games on Epic + Steam: `now`, `setup`, `edit`, `remove`, `status` | Everyone (`now`) / Manage Server |
-| `/game-updates` | Steam patch note alerts: `add`, `edit`, `remove`, `list`, `test` | Manage Server |
+| `/game-updates` | Patch note alerts for Steam, Minecraft (Java + Bedrock), Riot, Fortnite, Blizzard and any RSS/Atom feed: `add`, `edit`, `remove`, `list`, `test` | Manage Server |
 | `/purge` | Delete up to 100 messages | Manage Messages |
 | `/owner` | Bot-owner controls (status, restart, logs, servers, announce, maintenance, bans…) | `OWNER_IDS` / `ADMIN_IDS` only |
 
@@ -46,3 +46,5 @@ A Discord bot that sits in a voice channel and stays there 24/7. Keeps call time
 | Bot Info | Bot status and health | Everyone |
 
 ---
+
+

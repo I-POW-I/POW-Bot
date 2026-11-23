@@ -1,7 +1,7 @@
 /**
  * Game alerts polling engine.
  *
- * Steam updates    — every 15 minutes
+ * Game updates     — every 15 minutes (Steam, Minecraft, Riot, Fortnite, Blizzard, RSS — see src/updates/)
  * Epic free games  — every 6 hours
  * Steam free games — every 3 hours (increased from 6 to catch short-window promos)
  */
@@ -9,13 +9,13 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { log }            = require('./logger');
 const { selectAll, run } = require('./database');
-const {
-  getGameNews, getAppDetails, getHeaderImage,
-  parseSteamContent, getSteamFreeGames,
-} = require('./platforms/steam');
+const { getAppDetails, getSteamFreeGames } = require('./platforms/steam');
+const { getGiveaways, buildGiveawayEmbed } = require('./platforms/giveaways');
+const { fetchLatest, isUpdateKey } = require('./updates/sources');
+const { buildUpdateCard } = require('./updates/format');
 const { getFreeGames } = require('./platforms/epicGames');
 
-const STEAM_INTERVAL      = 15 * 60 * 1000;
+const UPDATE_INTERVAL     = 15 * 60 * 1000;
 const EPIC_INTERVAL       =  6 * 60 * 60 * 1000;
 const STEAM_FREE_INTERVAL =  3 * 60 * 60 * 1000; // 3h — catches shorter promotions
 
@@ -39,30 +39,6 @@ async function fetchChannel(client, channelId) {
 }
 
 // ── Steam game update embed ────────────────────────────────────────────────────
-function buildSteamUpdateEmbed(item, appId, gameName, details, color) {
-  const { text, imageUrl, youtubeUrl } = parseSteamContent(item.contents, 1000);
-  const headerImg = details?.headerImage || getHeaderImage(appId);
-
-  const embed = new EmbedBuilder()
-    .setColor(color || 0x1B2838)
-    .setAuthor({
-      name:    gameName,
-      iconURL: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/capsule_sm_120.jpg`,
-      url:     `https://store.steampowered.com/app/${appId}`,
-    })
-    .setTitle(item.title)
-    .setURL(item.url)
-    .setThumbnail(headerImg)
-    .setTimestamp(new Date(item.date * 1000))
-    .setFooter({ text: 'Steam • Game Update' });
-
-  if (text) embed.setDescription(text);
-  embed.setImage(imageUrl || headerImg);
-
-  return { embed, youtubeUrl };
-}
-
-// ── Epic free game embed — one per game ───────────────────────────────────────
 function buildEpicGameEmbed(game) {
   const endsAt    = game.endsAt
     ? `<t:${Math.floor(new Date(game.endsAt).getTime() / 1000)}:D>`
@@ -149,42 +125,54 @@ function buildSteamFreeEmbed(game, details) {
 }
 
 // ── Check a Steam game subscription ───────────────────────────────────────────
-async function checkSteamSubscription(client, sub) {
-  const news = await getGameNews(sub.app_id, 5);
-  if (!news?.length) return;
+// ── Game updates (every source) ────────────────────────────────────────────────
 
-  const latest = news[0];
-  if (latest.gid === sub.last_post_id) return;
+/** Post one update card to a subscription's channel. */
+async function postUpdate(client, sub, update) {
+  const channel = await fetchChannel(client, sub.channel_id);
+  if (!channel) return false;
+  const card = buildUpdateCard({ ...update, game: sub.game_name || update.game });
+  await channel.send({ content: sub.role_id ? `<@&${sub.role_id}>` : undefined, ...card });
+  return true;
+}
 
-  log('INFO', `New update for ${sub.game_name}`);
-  try {
-    const channel = await fetchChannel(client, sub.channel_id);
-    if (!channel) {
-      log('WARN', `Cannot find channel for ${sub.game_name}`, { channelId: sub.channel_id });
-      return;
+const warnedAt = new Map();
+const warnOnce = (key, message, ctx) => {
+  if (Date.now() - (warnedAt.get(key) || 0) < 3600_000) return;
+  warnedAt.set(key, Date.now());
+  log('WARN', message, ctx);
+};
+
+/** Check every game-update subscription (one fetch per game, shared by all servers watching it). */
+async function pollUpdates(client) {
+  if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
+  const subs = selectAll("SELECT * FROM game_subscriptions WHERE app_id != 'epic' AND app_id != 'steam_free'", []);
+  const fetched = new Map();   // app_id → update | null | Error
+
+  for (const sub of subs) {
+    if (!isUpdateKey(sub.app_id)) continue;
+
+    if (!fetched.has(sub.app_id)) {
+      try { fetched.set(sub.app_id, await fetchLatest(sub)); }
+      catch (err) { fetched.set(sub.app_id, err); warnOnce(sub.app_id, `Could not read updates for ${sub.game_name}`, { source: sub.app_id, err }); }
+      await new Promise(r => setTimeout(r, 1000));
     }
+    const update = fetched.get(sub.app_id);
+    if (!update || update instanceof Error) continue;
 
-    const details = await getAppDetails(sub.app_id).catch(() => null);
-    const { embed, youtubeUrl } = buildSteamUpdateEmbed(latest, sub.app_id, sub.game_name, details, sub.color);
+    const id = String(update.id);
+    if (sub.last_post_id === id) continue;
+    if (!sub.last_post_id) { run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [id, sub.id]); continue; }   // no baseline yet: remember, don't spam
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel('Read Full Notes').setURL(latest.url).setStyle(ButtonStyle.Link).setEmoji('📋')
-    );
-    if (youtubeUrl) {
-      row.addComponents(
-        new ButtonBuilder().setLabel('Watch Video').setURL(youtubeUrl).setStyle(ButtonStyle.Link).setEmoji('▶️')
-      );
-    }
-
-    const content = sub.role_id ? `<@&${sub.role_id}>` : undefined;
-    await channel.send({ content, embeds: [embed], components: [row] });
-    run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [latest.gid, sub.id]);
-  } catch (err) {
-    log('WARN', `Failed to post update for ${sub.game_name}`, { err });
+    try {
+      if (await postUpdate(client, sub, update)) {
+        run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [id, sub.id]);
+        log('INFO', `Posted update: ${update.title}`, { game: sub.game_name, guild: sub.guild_id });
+      }
+    } catch (err) { log('WARN', 'Failed to post a game update', { game: sub.game_name, err }); }
   }
 }
 
-// ── Check Epic free games ──────────────────────────────────────────────────────
 async function checkEpicGames(client) {
   if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
   const subs = selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', ['epic']);
@@ -238,28 +226,37 @@ async function checkSteamFreeGames(client) {
   const subs = selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', ['steam_free']);
   if (!subs.length) return;
 
-  const freeGames = await getSteamFreeGames();
-  if (!freeGames.length) return;
+  // 1) GamerPower (tracks Steam free-to-keep promotions reliably)   2) fall back to the old Steam store check
+  let games;
+  const giveaways = await getGiveaways('steam');
+  if (giveaways) {
+    games = giveaways.map(g => ({ key: g.id, build: async () => buildGiveawayEmbed(g, 'Steam') }));
+  } else {
+    warnOnce('gamerpower', 'GamerPower unreachable — using the direct Steam check for free games', {});
+    games = (await getSteamFreeGames().catch(() => [])).map(g => ({
+      key: String(g.appid),
+      build: async () => buildSteamFreeEmbed(g, await getAppDetails(g.appid).catch(() => null)),
+    }));
+  }
+  if (!games.length) return;
 
   for (const sub of subs) {
     const seenIds  = (sub.last_post_id || '').split(',').filter(Boolean);
-    const newGames = freeGames.filter(g => !seenIds.includes(String(g.appid)));
+    const newGames = games.filter(g => !seenIds.includes(g.key));
     if (!newGames.length) continue;
 
     try {
       const channel = await fetchChannel(client, sub.channel_id);
       if (!channel) continue;
-
       const content = sub.role_id ? `<@&${sub.role_id}>` : undefined;
 
       for (let i = 0; i < newGames.length; i++) {
-        const details = await getAppDetails(newGames[i].appid).catch(() => null);
-        const { embed, row } = buildSteamFreeEmbed(newGames[i], details);
+        const { embed, row } = await newGames[i].build();
         await channel.send({ content: i === 0 ? content : undefined, embeds: [embed], components: [row] });
         if (i < newGames.length - 1) await new Promise(r => setTimeout(r, 1000));
       }
 
-      const allSeen = [...new Set([...seenIds, ...freeGames.map(g => String(g.appid))])].join(',');
+      const allSeen = [...new Set([...seenIds, ...games.map(g => g.key)])].slice(-200).join(',');
       run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [allSeen, sub.id]);
       log('INFO', `Posted ${newGames.length} Steam free game(s)`, { guild: sub.guild_id });
     } catch (err) {
@@ -268,27 +265,14 @@ async function checkSteamFreeGames(client) {
   }
 }
 
-// ── Poll all Steam game update subscriptions ───────────────────────────────────
-async function pollSteam(client) {
-  if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
-  const subs = selectAll(
-    "SELECT * FROM game_subscriptions WHERE app_id != 'epic' AND app_id != 'steam_free'",
-    []
-  );
-  for (const sub of subs) {
-    await checkSteamSubscription(client, sub);
-    await new Promise(r => setTimeout(r, 1000));
-  }
-}
-
 // ── Start ──────────────────────────────────────────────────────────────────────
 function startGamePoller(client) {
   log('INFO', 'Game poller started');
 
-  // Steam game updates — every 15 minutes
+  // Game updates (Steam, Minecraft, Riot, Fortnite, Blizzard, RSS) — every 15 minutes
   setTimeout(() => {
-    pollSteam(client);
-    setInterval(() => pollSteam(client), STEAM_INTERVAL);
+    pollUpdates(client);
+    setInterval(() => pollUpdates(client), UPDATE_INTERVAL);
   }, 20000);
 
   // Epic free games — every 6 hours
@@ -304,4 +288,4 @@ function startGamePoller(client) {
   }, 40000);
 }
 
-module.exports = { startGamePoller };
+module.exports = { startGamePoller, pollUpdates, checkSteamFreeGames, postUpdate };

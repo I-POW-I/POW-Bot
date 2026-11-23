@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { log }           = require('../src/logger');
 const { getLogChannel } = require('../src/guildConfig');
+const store             = require('../src/messageStore');
 
 module.exports = {
   name: Events.MessageUpdate,
@@ -8,12 +9,24 @@ module.exports = {
 
   async execute(oldMessage, newMessage) {
     if (!newMessage.guild) return;
+
+    // Edited messages may be partial after a restart — load the full message
+    if (newMessage.partial) { try { newMessage = await newMessage.fetch(); } catch { return; } }
     if (newMessage.author?.bot) return;
-    if (oldMessage.content === newMessage.content) return;
 
     const guild     = newMessage.guild;
     const channelId = getLogChannel(guild.id, 'messages');
     if (!channelId) return;
+
+    // "Before" = the cached old message, or else the copy kept in the database
+    const stored     = store.get(newMessage.id);
+    const before     = oldMessage.partial ? (stored?.content ?? null) : (oldMessage.content ?? stored?.content ?? null);
+    const newContent = newMessage.content || '';
+    if (before !== null && before === newContent) { return; }             // link previews etc. — not a real edit
+    // Unknown "before": only log if Discord says this really was an edit a moment ago (not a link preview)
+    if (before === null && !(newMessage.editedTimestamp && Date.now() - newMessage.editedTimestamp < 15_000)) { store.updateContent(newMessage, newContent); return; }
+
+    store.updateContent(newMessage, newContent);
 
     let logChannel;
     try {
@@ -22,8 +35,7 @@ module.exports = {
     } catch { return; }
 
     const author     = newMessage.author;
-    const oldContent = oldMessage.content || '*Not cached*';
-    const newContent = newMessage.content || '*Empty*';
+    const oldContent = before || '*Wasn\'t recorded (sent before logging was switched on)*';
 
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
@@ -42,7 +54,7 @@ module.exports = {
         },
         {
           name:   'After',
-          value:  newContent.length > 1024 ? newContent.slice(0, 1021) + '...' : newContent,
+          value:  (newContent || '*Empty*').length > 1024 ? newContent.slice(0, 1021) + '...' : (newContent || '*Empty*'),
           inline: false,
         },
       );

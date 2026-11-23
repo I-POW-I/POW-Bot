@@ -32,11 +32,22 @@ const minUptimeSec = () => num(process.env.MEMORY_RESTART_MIN_UPTIME_SEC, 10 * 6
 const NEEDS_ATTENTION_MS = 60 * 60_000;
 const CONFIRM_TTL_MS     = 5 * 60_000;
 
-let digestTimer = null, memoryTimer = null;
+let digestTimer = null, memoryTimer = null, clientRef = null;
 let overCount = 0, lastAttentionAt = 0, lastHighWarnAt = 0;
 let digestState = { tail: null };
 
 const stripAnsi = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
+
+/** Digest interval, memory auto-restart %, and the daily cap — Discloud variable > /owner alerts setup > default. */
+function getSettings() {
+  let sv = {}; try { sv = globalConfig.get().alerts || {}; } catch { /* defaults */ }
+  const has = (k) => process.env[k] !== undefined && String(process.env[k]).trim() !== '';
+  return {
+    digestMinutes: has('LOG_DIGEST_MINUTES')     ? num(process.env.LOG_DIGEST_MINUTES, 60)     : (sv.digestMinutes ?? 60),
+    memoryPercent: has('MEMORY_RESTART_PERCENT') ? num(process.env.MEMORY_RESTART_PERCENT, 90) : (sv.memoryPercent ?? 90),
+    maxPerDay:     num(process.env.MEMORY_RESTART_MAX_PER_DAY, 3),
+  };
+}
 const mb  = (n) => `${Math.round(n)} MB`;
 const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 
@@ -134,6 +145,13 @@ async function consoleFile(lines = 400) {
 
 // ── Hourly digest ─────────────────────────────────────────────────────────────
 
+// Discloud puts an ISO timestamp in front of every console line; the digest drops it (clutter) and
+// only shows a short [HH:MM] on lines that matter (errors / warnings).
+const TS_RE = /^\s*\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})[\d:.]*Z?\s+/;
+const splitLine = (line) => { const m = TS_RE.exec(line); return m ? { time: `${m[1]}:${m[2]}`, text: line.slice(m[0].length).trim() } : { time: null, text: line.trim() }; };
+const ISSUE = /\b(ERROR|WARN|GHOST)\b/;
+const showLine = (l) => (ISSUE.test(l.text) && l.time ? `[${l.time}] ` : '') + l.text;
+
 async function runDigest() {
   if (!discloud.isConfigured() || !alerts.isEnabled()) return false;
 
@@ -152,15 +170,32 @@ async function runDigest() {
   }
   if (lines.length) digestState.tail = lines[lines.length - 1];
 
-  const count = (re) => fresh.filter(l => re.test(l)).length;
+  const parsed = fresh.map(splitLine);
+  const heart  = parsed.filter(l => /\bHEART\b/.test(l.text));
+  const rest   = parsed.filter(l => !/\bHEART\b/.test(l.text));
+  const summary = [...heart].reverse().find(l => /Hourly summary/i.test(l.text));
+  const voice   = summary ? summary.text.replace(/^.*Hourly summary\s*[—-]\s*/i, '').trim() : null;
+
+  const count = (re) => parsed.filter(l => re.test(l.text)).length;
   const errors = count(/\bERROR\b/), warns = count(/\bWARN\b/), changes = count(/\bAUDIT\b/), starts = count(/Bot fully ready/);
 
   const snap = await system.getSnapshot({ force: true });
-  const now  = new Date(), from = new Date(now.getTime() - num(process.env.LOG_DIGEST_MINUTES, 60) * 60_000);
+  const mins = getSettings().digestMinutes || 60;
+  const now  = new Date(), from = new Date(now.getTime() - mins * 60_000);
   const hm   = (d) => d.toISOString().slice(11, 16);
 
-  const tailLines = fresh.slice(-6).map(l => l.length > 150 ? l.slice(0, 149) + '…' : l);
+  const tailLines = rest.slice(-6).map(showLine).map(l => l.length > 150 ? l.slice(0, 149) + '…' : l);
   const stamp = now.toISOString().replace(/[:T]/g, '-').slice(0, 13);
+
+  // The attached file: window header, then the lines (time only on errors/warnings), heartbeat summarised once
+  const fileText = [
+    `Console log — ${hm(from)} to ${hm(now)} UTC`,
+    `${rest.length} lines${heart.length ? ` + ${heart.length} routine heartbeat lines (summarised at the end)` : ''}`,
+    '',
+    ...rest.map(showLine),
+    '',
+    heart.length ? `Heartbeat: ${heart.length} routine checks${voice ? ` — ${voice}` : ''}` : '',
+  ].join('\n').trim();
 
   return alerts.notify({
     level: 'DIGEST',
@@ -168,18 +203,19 @@ async function runDigest() {
     description: [
       `${errors} error${errors === 1 ? '' : 's'} · ${warns} warning${warns === 1 ? '' : 's'} · ${changes} change${changes === 1 ? '' : 's'} · ${starts} start${starts === 1 ? '' : 's'}`,
       rolled ? '_Console buffer rolled over or the bot restarted since the last digest — some lines may be missing._' : null,
-      fresh.length === 0 ? '_No new console output._' : null,
+      fresh.length === 0 ? '_No new console output._' : (rest.length === 0 ? '_Only routine heartbeat lines this period._' : null),
     ].filter(Boolean).join('\n'),
     fields: [
       { name: 'RAM',       value: system.formatMemory(snap.memory) },
       { name: 'CPU',       value: snap.discloud.cpu || `${snap.cpuPercent.toFixed(1)}%` },
       { name: 'Container', value: snap.discloud.container || 'n/a' },
+      { name: 'Voice',     value: voice || 'n/a' },
       { name: 'Uptime',    value: formatDuration(snap.uptimeSec * 1000) },
-      { name: 'Lines',     value: `${fresh.length} new of ${lines.length}` },
-      ...(url ? [{ name: 'Live console', value: url, inline: false }] : []),
+      { name: 'New lines', value: `${rest.length}${heart.length ? ` (+${heart.length} heartbeat)` : ''}` },
+      ...(url ? [{ name: 'Live console', value: `[Open live console](${url})`, inline: false }] : []),
     ],
-    codeBlocks: tailLines.length ? [{ label: `Latest ${tailLines.length} line(s)`, text: tailLines.join('\n'), max: 1100 }] : [],
-    files: fresh.length ? [{ name: `console-${stamp}h.txt`, data: fresh.join('\n') }] : [],
+    codeBlocks: tailLines.length ? [{ label: `Latest ${tailLines.length} line(s) — routine heartbeat hidden`, text: tailLines.join('\n'), max: 1100 }] : [],
+    files: fresh.length ? [{ name: `console-${stamp}h.txt`, data: fileText }] : [],
     dm: 'fallback',
   });
 }
@@ -187,7 +223,7 @@ async function runDigest() {
 // ── Memory watch + auto-restart ───────────────────────────────────────────────
 
 async function checkMemory(client) {
-  const threshold = num(process.env.MEMORY_RESTART_PERCENT, 90);
+  const threshold = getSettings().memoryPercent;
   if (!threshold) return;
 
   const m = system.getMemoryInfo();
@@ -199,7 +235,7 @@ async function checkMemory(client) {
   overCount++;
   if (overCount < 2) return;                          // needs two checks in a row — ignore brief spikes
 
-  const max   = num(process.env.MEMORY_RESTART_MAX_PER_DAY, 3);
+  const max   = getSettings().maxPerDay;
   const used  = globalConfig.get().restarts.filter(t => Date.now() - t < 24 * 3600e3).length;
   const fields = [
     { name: 'RAM',          value: `${mb(m.usedMb)} / ${mb(limit)} (${Math.round(percent)}%)` },
@@ -277,18 +313,22 @@ async function onReady(client) {
     }
   }
 
-  const digestMin = num(process.env.LOG_DIGEST_MINUTES, 60);
-  if (digestMin > 0 && !digestTimer) {
-    digestTimer = setInterval(() => runDigest().catch(() => {}), digestMin * 60_000);
-    digestTimer.unref?.();
-  }
+  clientRef = client;
+  reschedule();
   if (!memoryTimer) {
     memoryTimer = setInterval(() => checkMemory(client).catch(err => log('WARN', 'Memory check failed', { err })), MEMORY_CHECK_MS);
     memoryTimer.unref?.();
   }
 }
 
-function stop() { clearInterval(digestTimer); clearInterval(memoryTimer); digestTimer = memoryTimer = null; }
+/** (Re)start the digest timer from the current setting — called at startup and after /owner alerts changes it. */
+function reschedule() {
+  clearInterval(digestTimer); digestTimer = null;
+  const mins = getSettings().digestMinutes;
+  if (mins > 0 && clientRef) { digestTimer = setInterval(() => runDigest().catch(() => {}), mins * 60_000); digestTimer.unref?.(); }
+}
+
+function stop() { clearInterval(digestTimer); clearInterval(memoryTimer); digestTimer = memoryTimer = null; clientRef = null; }
 
 // ── Button handling (alert DMs + /owner restart confirmation) ─────────────────
 
@@ -348,7 +388,7 @@ async function handleComponent(interaction, client) {
 }
 
 module.exports = {
-  onReady, stop, requestRestart, buildRestartConfirm, handleComponent,
+  onReady, stop, reschedule, getSettings, requestRestart, buildRestartConfirm, handleComponent,
   runDigest, consoleFile, fetchConsole, checkMemory, formatDuration, voiceConnectionCount,
   _state: () => ({ overCount, digestState }), _resetState: () => { overCount = 0; lastAttentionAt = 0; digestState = { tail: null }; },
 };

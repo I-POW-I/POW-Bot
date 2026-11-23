@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { log }           = require('../src/logger');
 const { getLogChannel } = require('../src/guildConfig');
+const store             = require('../src/messageStore');
 
 async function getDeleter(guild, targetUserId, channelId, windowMs = 5000) {
   try {
@@ -31,12 +32,25 @@ module.exports = {
   name: Events.MessageDelete,
   once: false,
 
-  async execute(message) {
-    if (!message.guild || message.author?.bot) return;
-
+  async execute(message, client) {
+    if (!message.guild) return;
     const guild = message.guild;
+
+    // What we know: the live message if it was cached, otherwise the copy kept in the database
+    const stored = store.get(message.id);
+    if (message.author?.bot) { if (stored) store.remove(message.id); return; }
+
     const channelId = getLogChannel(guild.id, 'messages');
     if (!channelId) return;
+
+    const authorId = message.author?.id || stored?.author_id;
+    const content  = message.content || stored?.content || null;
+    const attachments = message.attachments?.size
+      ? [...message.attachments.values()].map(a => ({ name: a.name, url: a.url, type: a.contentType }))
+      : (stored?.attachments || []);
+
+    // Nothing is known about it (a bot's message, or sent before logging was switched on) — don't log noise
+    if (!authorId && !content && !attachments.length) return;
 
     let logChannel;
     try {
@@ -44,11 +58,12 @@ module.exports = {
       if (!logChannel?.isTextBased()) return;
     } catch { return; }
 
-    const author      = message.author;
-    const content     = message.content || null;
-    const attachments = [...(message.attachments?.values() || [])];
-    const messageAge  = getMessageAge(message.createdAt);
-    const deletedBy   = author ? await getDeleter(guild, author.id, message.channelId) : null;
+    let author = message.author;
+    if (!author && authorId) author = await (client || require('../src/client')).users.fetch(authorId).catch(() => null);
+    const authorLabel = author ? `${message.member || author} — ${author.tag}` : `<@${authorId}>${stored?.author_tag ? ` — ${stored.author_tag}` : ''}`;
+    const channelName = guild.channels.cache.get(message.channelId)?.name;
+    const sentAt      = message.createdAt || (stored ? new Date(stored.created_at) : null);
+    const deletedBy   = authorId ? await getDeleter(guild, authorId, message.channelId) : null;
 
     const embed = new EmbedBuilder()
       .setColor(0xED4245)
@@ -62,33 +77,25 @@ module.exports = {
     }
 
     embed.addFields(
-      { name: 'Author',  value: author ? `${message.member || author} — ${author.tag}` : 'Unknown', inline: true },
-      { name: 'Channel', value: `<#${message.channelId}>`,                                           inline: true },
-      { name: 'Sent',    value: messageAge || '—',                                                   inline: true },
+      { name: 'Author',  value: authorLabel,                                                                  inline: true },
+      { name: 'Channel', value: `<#${message.channelId}>${channelName ? ` (#${channelName})` : ''}`,          inline: true },
+      { name: 'Sent',    value: getMessageAge(sentAt) || '—',                                                 inline: true },
     );
 
-    if (deletedBy) {
-      embed.addFields({ name: 'Deleted By', value: deletedBy, inline: false });
-    }
+    if (deletedBy) embed.addFields({ name: 'Deleted By', value: deletedBy, inline: false });
 
-    if (content) {
-      embed.addFields({
-        name:   'Content',
-        value:  content.length > 1024 ? content.slice(0, 1021) + '...' : content,
-        inline: false,
-      });
-    } else {
-      embed.addFields({
-        name:   'Content',
-        value:  '*Message not cached — sent before the bot last started*',
-        inline: false,
-      });
-    }
+    embed.addFields({
+      name:   'Content',
+      value:  content
+        ? (content.length > 1024 ? content.slice(0, 1021) + '...' : content)
+        : (attachments.length ? '*No text — attachment only*' : '*Text wasn\'t recorded*'),
+      inline: false,
+    });
 
     if (attachments.length > 0) {
       const list = attachments.map(a => `[${a.name}](${a.url})`).join('\n');
-      embed.addFields({ name: `Attachments (${attachments.length})`, value: list, inline: false });
-      const firstImage = attachments.find(a => a.contentType?.startsWith('image/'));
+      embed.addFields({ name: `Attachments (${attachments.length})`, value: list.slice(0, 1024), inline: false });
+      const firstImage = attachments.find(a => a.type?.startsWith('image/'));
       if (firstImage) embed.setImage(firstImage.url);
     }
 
@@ -97,5 +104,6 @@ module.exports = {
     } catch (err) {
       log('WARN', 'Failed to send message delete log', { err });
     }
+    store.remove(message.id);   // logged — no reason to keep the text any longer
   },
 };

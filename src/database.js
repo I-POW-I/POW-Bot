@@ -63,6 +63,20 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_member_events_guild ON member_events (guild_id, at);
       CREATE INDEX IF NOT EXISTS idx_member_events_user  ON member_events (guild_id, user_id);
 
+      CREATE TABLE IF NOT EXISTS message_store (
+        id           TEXT PRIMARY KEY,
+        guild_id     TEXT    NOT NULL,
+        channel_id   TEXT    NOT NULL,
+        author_id    TEXT    NOT NULL,
+        author_tag   TEXT,
+        content      TEXT,
+        attachments  TEXT,
+        created_at   INTEGER NOT NULL,
+        edited_at    INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_message_store_created ON message_store (created_at);
+      CREATE INDEX IF NOT EXISTS idx_message_store_guild   ON message_store (guild_id);
+
       CREATE TABLE IF NOT EXISTS streamer_subscriptions (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id            TEXT    NOT NULL,

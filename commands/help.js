@@ -35,7 +35,7 @@ const CATEGORIES = [
     text: [
       '**`/streamers add | remove | list`** — go-live alerts for Twitch, Kick and YouTube. *(Manage Server)*',
       '**`/free-games now | setup | edit | remove | status`** — free games on Epic and Steam. `now` is open to everyone; the rest need *Manage Server*.',
-      '**`/game-updates add | edit | remove | list | test`** — patch notes for Steam games. *(Manage Server)*',
+      '**`/game-updates add | edit | remove | list | test`** — patch notes for Steam, Minecraft (Java + Bedrock), Riot, Fortnite, Blizzard or any RSS feed, shown as a short readable card. *(Manage Server)*',
     ],
   },
   {
@@ -44,6 +44,7 @@ const CATEGORIES = [
       '**Verification** — set it up in **`/setup` → Verification**: verified role, human check, optional quarantine role, minimum account age and auto-remove. Staff get a detailed log with Approve / Kick buttons.',
       '**`/members overview | recent | pending | lookup`** — who is in the server and what\'s happening. *(Manage Server)*',
       '**`/purge`** — delete up to 100 messages. *(Manage Messages)*',
+      '**Message logs** — set in **`/setup` → Logs**. To log deleted and edited messages, new messages are kept for 7 days, then deleted automatically.',
       '',
       'Verification only uses what Discord shows about an account — no emails, IPs or locations.',
     ],

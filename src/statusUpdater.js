@@ -82,19 +82,22 @@ function startStatusUpdater(client) {
   setInterval(panelUpdate, PRESENCE_INTERVAL);
   log('INFO', 'Status updater started (20s rotation · 60s panel)');
 }
+
 // ── Panel embed ───────────────────────────────────────────────────────────────
 
 /**
  * @param {string} guildId
- * @param {import('discord.js').Guild|null} guild  — pass to show live member count
+ * @param {import('discord.js').Guild|null} guild — pass to show live member count
  */
 function buildPanelEmbed(guildId, guild = null) {
   const entry     = store.getEntry(guildId);
   const connected = isConnected(guildId);
   const isGhost   = entry && !getVoiceConnection(guildId);
 
-  const memText  = require('./system').formatMemory();   // Discloud's own RAM reading (same as the dashboard)
+  // Same RAM reading as the Discloud dashboard (see src/system.js); falls back to the process's own RSS
+  const memMB     = `\`${require('./system').formatMemory()}\``;
   let colour, statusLine, channelLine, vcUptime, processUp, membersInVc;
+
 
   if (connected && entry) {
     colour      = 0x57F287;
@@ -103,7 +106,7 @@ function buildPanelEmbed(guildId, guild = null) {
     vcUptime    = store.formatUptime(entry.joinedAt);
     processUp   = getProcessUptime();
 
-    // Live member count in the VC (excluding bots)
+  // Live member count in the VC (excluding bots)
     if (guild) {
       const ch = guild.channels.cache.get(entry.channelId);
       membersInVc = ch ? `${ch.members.filter(m => !m.user.bot).size}` : '0';
@@ -113,7 +116,7 @@ function buildPanelEmbed(guildId, guild = null) {
 
   } else if (isGhost) {
     colour      = 0xFEE75C;
-    statusLine  = '🟡 Loading...';
+    statusLine  = '🟡 Idle';
     channelLine = entry.channelName;
     vcUptime    = '—';
     processUp   = getProcessUptime();
@@ -127,7 +130,6 @@ function buildPanelEmbed(guildId, guild = null) {
     membersInVc = '0';
   }
 
-  // Native responsive grid structure matching your exact sequence
   return new EmbedBuilder()
     .setTitle('POW-Bot')
     .setColor(colour)
@@ -135,7 +137,7 @@ function buildPanelEmbed(guildId, guild = null) {
       // Row 1: System Metrics
       { name: 'Status', value: statusLine, inline: true },
       { name: 'Uptime', value: `\`${processUp}\``, inline: true },
-      { name: 'Memory', value: `\`${memText}\``, inline: true },
+      { name: 'Memory', value: memMB, inline: true },
       
       // Row 2: Voice Channel Session Details
       { name: 'Current VC', value: channelLine, inline: true },
@@ -145,11 +147,13 @@ function buildPanelEmbed(guildId, guild = null) {
     .setFooter({ text: 'Last updated' })
     .setTimestamp();
 }
+
 // ── Stats embed ─────────────────────────────────────────────
 
 function buildStatsEmbed(guildId, client, opts) {
   return require('./botInfo').buildBotInfoEmbed(guildId, client, opts);
 }
+
 // ── Member profile embed ──────────────────────────────────────────────────────
 
 const KEY_PERMS = [
@@ -274,7 +278,7 @@ function buildMemberEmbed(member, guild) {
 // ── Panel buttons ─────────────────────────────────────────────────────────────
 
 function buildPanelButtons() {
-  // Row 1: Connection
+  // Row 1: Connection Basics
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bot_join')
@@ -285,7 +289,7 @@ function buildPanelButtons() {
     new ButtonBuilder()
       .setCustomId('bot_leave')
       .setLabel('Leave')
-      .setEmoji('🟥')
+      .setEmoji('🟧')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -338,23 +342,31 @@ function buildUserSelectRow() {
 // ── Update panel ──────────────────────────────────────────────────────────────
 
 async function updatePanel(client) {
-  for (const guild of client.guilds.cache.values()) {
+  client.guilds.cache.forEach(async (guild) => {
     const config = getGuildConfig(guild.id);
-    if (!config.panelChannelId || !config.panelMessageId) continue;
+    
+    // SAFETY FIX: Prevents your bot from crashing if a server hasn't built a status panel yet
+    if (!config || !config.panelChannelId || !config.panelMessageId) return;
 
     try {
-      const channel = await guild.channels.fetch(config.panelChannelId);
-      if (!channel?.isTextBased()) continue;
+      const channel = await client.channels.fetch(config.panelChannelId);
+      if (!channel || !channel.isTextBased()) return;
+
       const message = await channel.messages.fetch(config.panelMessageId);
-      await message.edit({
-        embeds:     [buildPanelEmbed(guild.id, guild)],
-        components: buildPanelButtons(),
+      if (!message) return;
+
+      // Pass down the real synchronization data directly to the dashboard grid
+      const updatedEmbed = buildPanelEmbed(guild.id, guild);
+      await message.edit({ 
+        embeds: [updatedEmbed],
+        components: buildPanelButtons() // Keeps buttons interactive on update
       });
     } catch (err) {
       log('WARN', 'Could not update panel', { guild: guild.name, err });
     }
-  }
+  });
 }
+
 
 module.exports = {
   startStatusUpdater,

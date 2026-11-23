@@ -1,267 +1,205 @@
 /**
- * /game-updates — patch-note alerts for Steam games.
+ * /game-updates — patch note / news alerts for games.
+ *
+ * Sources: Steam · Minecraft (Java + Bedrock) · Riot Games · Fortnite · Blizzard · any RSS/Atom feed
  * (Free game alerts for Epic + Steam live in /free-games.)
  *
- * Subcommands:
- *   add    — subscribe to patch notes for a specific Steam game
- *   edit   — change the channel or role for an existing alert
- *   remove — remove an alert
- *   list   — show all configured game alerts
- *   test   — post the latest update for a game right now
+ *   add     — watch a game and post its updates in a channel
+ *   edit    — change the channel or ping role
+ *   remove  — stop watching
+ *   list    — everything being watched here
+ *   test    — post the latest update right now
  */
 
 const {
-  SlashCommandBuilder, EmbedBuilder, MessageFlags,
-  ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder,
-  ButtonStyle, ChannelType, PermissionFlagsBits,
+  SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags, ChannelType, InteractionContextType,
 } = require('discord.js');
-const { log }                       = require('../src/logger');
-const { run, selectOne, selectAll } = require('../src/database');
-const {
-  searchGames, getGameNews, getAppDetails,
-  getHeaderImage, parseSteamContent,
-} = require('../src/platforms/steam');
+const { selectAll, selectOne, run } = require('../src/database');
+const { searchGames } = require('../src/platforms/steam');
+const { SOURCES, parseKey, makeKey, isUpdateKey, fetchLatest, fetchLatestFor } = require('../src/updates/sources');
+const { audit } = require('../src/diagnostics');
+const { log }   = require('../src/logger');
 
-const GAME_COLOURS = {
-  730: 0xF4A14C, 570: 0xD8473E, 440: 0xCF6A32, 578080: 0x1D5C8B,
-  1172470: 0xAB3024, 1245620: 0x00AAFF, 252490: 0x4B1C0F,
-  1086940: 0x2D6A2D, 271590: 0x1A6B2A, 1091500: 0xE8D5A3,
-};
-module.exports.GAME_COLOURS = GAME_COLOURS;
+const MAX_PER_SERVER = 20;
+const ephemeral = [MessageFlags.Ephemeral];
+const NOT_UPDATES = "('epic', 'steam_free')";
 
-module.exports = {
-  GAME_COLOURS,
-
-  data: new SlashCommandBuilder()
-    .setName('game-updates')
-    .setDescription('Get patch note alerts for Steam games')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-
-    .addSubcommand(sub =>
-      sub.setName('add')
-        .setDescription('Subscribe to patch note alerts for a Steam game')
-        .addStringOption(opt =>
-          opt.setName('game').setDescription('Game name to search — e.g. "Counter-Strike 2"').setRequired(true)
-        )
-        .addChannelOption(opt =>
-          opt.setName('channel').setDescription('Channel to post updates in').addChannelTypes(ChannelType.GuildText).setRequired(true)
-        )
-        .addRoleOption(opt =>
-          opt.setName('role').setDescription('Role to ping when an update drops (optional)').setRequired(false)
-        )
-    )
-
-    .addSubcommand(sub =>
-      sub.setName('edit')
-        .setDescription('Change the channel or role for an existing game alert')
-        .addChannelOption(opt =>
-          opt.setName('channel').setDescription('New channel to post in').addChannelTypes(ChannelType.GuildText).setRequired(true)
-        )
-        .addRoleOption(opt =>
-          opt.setName('role').setDescription('New role to ping — leave empty to remove the ping').setRequired(false)
-        )
-    )
-
-    .addSubcommand(sub => sub.setName('remove').setDescription('Remove a game alert'))
-    .addSubcommand(sub => sub.setName('list').setDescription('Show all configured game alerts for this server'))
-    .addSubcommand(sub => sub.setName('test').setDescription('Post the latest update for a subscribed game right now')),
-
-  async execute(interaction) {
-    const { guild } = interaction;
-    const sub = interaction.options.getSubcommand();
-
-    // ── Game updates ───────────────────────────────────────────────────────────
-    if (sub === 'add') {
-      const query   = interaction.options.getString('game');
-      const channel = interaction.options.getChannel('channel');
-      const role    = interaction.options.getRole('role');
-
-      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-      await interaction.editReply({ content: `🔍 Searching Steam for **${query}**...` });
-
-      const results = await searchGames(query);
-      if (!results.length) {
-        return interaction.editReply({ content: `❌ No results found for **${query}**. Try a different name.` });
-      }
-
-      const options = results.map(r => ({
-        label:       r.name.slice(0, 100),
-        value:       `${r.appid}|||${channel.id}|||${role?.id || ''}`,
-        description: `App ID: ${r.appid}`,
-      }));
-
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId('gamealert_add_select')
-        .setPlaceholder('Pick the correct game from the results...')
-        .addOptions(options);
-
-      return interaction.editReply({
-        content:    `Found **${results.length}** result(s) for **${query}** — pick the right one:`,
-        components: [new ActionRowBuilder().addComponents(menu)],
-      });
-    }
-
-    // ── Edit existing alert ────────────────────────────────────────────────────
-    if (sub === 'edit') {
-      const channel = interaction.options.getChannel('channel');
-      const role    = interaction.options.getRole('role');
-      const subs    = selectAll('SELECT * FROM game_subscriptions WHERE guild_id = ? AND app_id NOT IN (\'epic\', \'steam_free\')', [guild.id]);
-
-      if (!subs.length) {
-        return interaction.reply({
-          content: '📭 No game update alerts configured. Add one with `/game-updates add` first.',
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-
-      const NAMES = { epic: '🎮 Epic Free Games', steam_free: '🎯 Steam Free Games' };
-      const options = subs.map(s => ({
-        label:       (NAMES[s.app_id] || s.game_name || s.app_id).slice(0, 100),
-        value:       `${s.id}|||${channel.id}|||${role?.id || ''}`,
-        description: `Currently posting to channel ID ${s.channel_id}`,
-        emoji:       s.app_id === 'epic' || s.app_id === 'steam_free' ? '🎮' : '🎯',
-      }));
-
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId('gamealert_edit_select')
-        .setPlaceholder('Which alert do you want to update?')
-        .addOptions(options);
-
-      return interaction.reply({
-        content:    `Pick which alert to move to <#${channel.id}>:`,
-        components: [new ActionRowBuilder().addComponents(menu)],
-        flags:      [MessageFlags.Ephemeral],
-      });
-    }
-
-    // ── Remove ─────────────────────────────────────────────────────────────────
-    if (sub === 'remove') {
-      const subs = selectAll('SELECT * FROM game_subscriptions WHERE guild_id = ? AND app_id NOT IN (\'epic\', \'steam_free\')', [guild.id]);
-      if (!subs.length) {
-        return interaction.reply({ content: '📭 No game update alerts configured.', flags: [MessageFlags.Ephemeral] });
-      }
-
-      const NAMES = { epic: '🎮 Epic Free Games', steam_free: '🎯 Steam Free Games' };
-      const options = subs.map(s => ({
-        label:       (NAMES[s.app_id] || s.game_name || s.app_id).slice(0, 100),
-        value:       `${s.id}`,
-        description: `Posts to channel ID: ${s.channel_id}`,
-        emoji:       '🗑️',
-      }));
-
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId('gamealert_remove_select')
-        .setPlaceholder('Pick an alert to remove...')
-        .addOptions(options);
-
-      return interaction.reply({
-        content:    'Select the alert you want to remove:',
-        components: [new ActionRowBuilder().addComponents(menu)],
-        flags:      [MessageFlags.Ephemeral],
-      });
-    }
-
-    // ── List ───────────────────────────────────────────────────────────────────
-    if (sub === 'list') {
-      const subs = selectAll('SELECT * FROM game_subscriptions WHERE guild_id = ? AND app_id NOT IN (\'epic\', \'steam_free\')', [guild.id]);
-      if (!subs.length) {
-        return interaction.reply({ content: '📭 No game update alerts configured.', flags: [MessageFlags.Ephemeral] });
-      }
-
-      const ICONS = { epic: '🎮', steam_free: '🎯' };
-      const NAMES = { epic: 'Epic Free Games', steam_free: 'Steam Free Games' };
-      const lines = subs.map(s =>
-        `${ICONS[s.app_id] || '🎯'} **${NAMES[s.app_id] || s.game_name}** → <#${s.channel_id}>${s.role_id ? ` · <@&${s.role_id}>` : ''}`
-      );
-
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x5865F2)
-            .setTitle('🎮 Game update alerts')
-            .setDescription(lines.join('\n'))
-            .setFooter({ text: `${subs.length} alert(s) · Use /game-updates edit to change a channel` })
-            .setTimestamp(),
-        ],
-        flags: [MessageFlags.Ephemeral],
-      });
-    }
-
-    // ── Test ───────────────────────────────────────────────────────────────────
-    if (sub === 'test') {
-      const subs = selectAll(
-        "SELECT * FROM game_subscriptions WHERE guild_id = ? AND app_id != 'epic' AND app_id != 'steam_free'",
-        [guild.id]
-      );
-
-      if (!subs.length) {
-        return interaction.reply({
-          content: '📭 No Steam game update alerts configured. Add one with `/game-updates add` first.',
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-
-      if (subs.length === 1) return runTest(interaction, subs[0], false);
-
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId('gamealert_test_select')
-        .setPlaceholder('Which game do you want to test?')
-        .addOptions(subs.map(s => ({ label: (s.game_name || s.app_id).slice(0, 100), value: `${s.id}` })));
-
-      return interaction.reply({
-        content:    'Pick a game to test:',
-        components: [new ActionRowBuilder().addComponents(menu)],
-        flags:      [MessageFlags.Ephemeral],
-      });
-    }
-  },
+const subsOf = (guildId) => selectAll(`SELECT * FROM game_subscriptions WHERE guild_id = ? AND app_id NOT IN ${NOT_UPDATES} ORDER BY game_name`, [guildId]);
+const labelOf = (sub) => {
+  const { source } = parseKey(sub.app_id);
+  return `${sub.game_name || sub.app_id} (${SOURCES[source]?.label || 'Steam'})`;
 };
 
-async function runTest(interaction, sub, alreadyDeferred = false) {
-  if (!alreadyDeferred) await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+const sourceChoices = Object.entries(SOURCES).map(([value, s]) => ({ name: `${s.label}${s.beta ? ' (beta)' : ''}`, value }));
 
-  const news = await getGameNews(sub.app_id, 5);
-  if (!news?.length) {
-    return interaction.editReply({
-      content: `❌ No patch notes found for **${sub.game_name}**.\nSteam may not have any matching updates yet — try after the next game update.`,
-    });
+const data = new SlashCommandBuilder()
+  .setName('game-updates')
+  .setDescription('Patch note alerts for Steam, Minecraft, Riot, Fortnite, Blizzard and RSS feeds')
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  .setContexts(InteractionContextType.Guild)
+  .addSubcommand(sub => sub.setName('add').setDescription('Watch a game and post its updates in a channel')
+    .addStringOption(o => o.setName('source').setDescription('Where the updates come from').setRequired(true).addChoices(...sourceChoices))
+    .addStringOption(o => o.setName('game').setDescription('The game — or the feed URL when the source is RSS').setRequired(true).setAutocomplete(true))
+    .addChannelOption(o => o.setName('channel').setDescription('Channel for the updates').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(true))
+    .addRoleOption(o => o.setName('role').setDescription('Role to ping (optional)')))
+  .addSubcommand(sub => sub.setName('edit').setDescription('Change the channel or ping role of an alert')
+    .addStringOption(o => o.setName('alert').setDescription('Which alert').setRequired(true).setAutocomplete(true))
+    .addChannelOption(o => o.setName('channel').setDescription('New channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
+    .addRoleOption(o => o.setName('role').setDescription('New ping role'))
+    .addBooleanOption(o => o.setName('remove_ping').setDescription('Stop pinging a role')))
+  .addSubcommand(sub => sub.setName('remove').setDescription('Stop watching a game')
+    .addStringOption(o => o.setName('alert').setDescription('Which alert').setRequired(true).setAutocomplete(true)))
+  .addSubcommand(sub => sub.setName('list').setDescription('Show every game being watched here'))
+  .addSubcommand(sub => sub.setName('test').setDescription('Post the latest update right now')
+    .addStringOption(o => o.setName('alert').setDescription('Which alert').setRequired(true).setAutocomplete(true)));
+
+// ── Autocomplete ──────────────────────────────────────────────────────────────
+
+async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused(true);
+  const term = String(focused.value || '').trim();
+  let choices = [];
+
+  if (focused.name === 'game') {
+    const source = interaction.options.getString('source');
+    if (source === 'steam') {
+      if (term.length >= 2) choices = (await searchGames(term)).map(g => ({ name: `${g.name} (${g.appid})`.slice(0, 100), value: String(g.appid) }));
+    } else if (source === 'rss') {
+      if (/^https?:\/\//i.test(term)) choices = [{ name: `Use this feed: ${term}`.slice(0, 100), value: term.slice(0, 100) }];
+    } else if (SOURCES[source]?.games) {
+      choices = SOURCES[source].games.filter(g => g.name.toLowerCase().includes(term.toLowerCase())).map(g => ({ name: g.name, value: g.value }));
+    }
+  } else if (focused.name === 'alert' && interaction.guildId) {
+    choices = subsOf(interaction.guildId)
+      .filter(s => labelOf(s).toLowerCase().includes(term.toLowerCase()))
+      .map(s => ({ name: `${labelOf(s)} → #${interaction.guild.channels.cache.get(s.channel_id)?.name || 'deleted-channel'}`.slice(0, 100), value: String(s.id) }));
+  }
+  return interaction.respond(choices.slice(0, 25));
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const reply = (i, content) => i.reply({ content, flags: ephemeral });
+
+function missingPerms(channel, guild) {
+  const p = channel.permissionsFor(guild.members.me);
+  return ['ViewChannel', 'SendMessages', 'EmbedLinks'].filter(x => !p?.has(PermissionFlagsBits[x])).map(x => x.replace(/([a-z])([A-Z])/g, '$1 $2'));
+}
+
+/** Work out { source, value, name } from what the admin typed. Throws a friendly Error. */
+async function resolveChoice(source, typed) {
+  const text = String(typed || '').trim();
+  if (source === 'steam') {
+    if (/^\d+$/.test(text)) return { source, value: text, name: (await searchGames(text).catch(() => [])).find(g => String(g.appid) === text)?.name || `Steam app ${text}` };
+    const hit = (await searchGames(text))[0];
+    if (!hit) throw new Error(`Steam has no game matching "${text}". Start typing and pick one from the list.`);
+    return { source, value: String(hit.appid), name: hit.name };
+  }
+  if (source === 'rss') {
+    if (!/^https?:\/\/\S+$/i.test(text)) throw new Error('For RSS, paste the full feed URL (starting with https://) into **game**.');
+    return { source, value: text, name: null };
+  }
+  const game = SOURCES[source]?.games?.find(g => g.value === text || g.name.toLowerCase() === text.toLowerCase());
+  if (!game) throw new Error(`Pick a ${SOURCES[source]?.label || source} game from the list.`);
+  return { source, value: game.value, name: game.name };
+}
+
+// ── Execute ───────────────────────────────────────────────────────────────────
+
+async function addAlert(interaction) {
+  const { guild } = interaction;
+  const channel = interaction.options.getChannel('channel'), role = interaction.options.getRole('role');
+  const missing = missingPerms(channel, guild);
+  if (missing.length) return reply(interaction, `I can't post in <#${channel.id}> — I'm missing: **${missing.join(', ')}**. Fix that and try again.`);
+  if (subsOf(guild.id).length >= MAX_PER_SERVER) return reply(interaction, `This server already watches ${MAX_PER_SERVER} games — remove one first.`);
+
+  await interaction.deferReply({ flags: ephemeral });
+  let choice;
+  try { choice = await resolveChoice(interaction.options.getString('source'), interaction.options.getString('game')); }
+  catch (err) { return interaction.editReply({ content: `❌ ${err.message}` }); }
+
+  const key = makeKey(choice.source, choice.value);
+  if (selectOne('SELECT id FROM game_subscriptions WHERE guild_id = ? AND app_id = ?', [guild.id, key])) {
+    return interaction.editReply({ content: '❌ This server already watches that — use `/game-updates edit` to change it.' });
   }
 
+  // Read the current newest update: it becomes the starting point so only FUTURE updates are posted
+  let latest = null, note = '';
+  try { latest = await fetchLatestFor(choice.source, choice.value, choice.name); }
+  catch (err) {
+    if (!SOURCES[choice.source].beta) return interaction.editReply({ content: `❌ I couldn't read that source: ${err.message}` });
+    note = `\n⚠️ I couldn't read **${choice.name || choice.value}** just now (${err.message}). It's saved, and I'll keep trying — use \`/game-updates test\` to check.`;
+  }
+  const name = choice.name || latest?.game || choice.value;
+
+  run('INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id, last_post_id) VALUES (?, ?, ?, ?, ?, ?)',
+    [guild.id, key, name, channel.id, role?.id || null, latest ? String(latest.id) : null]);
+  audit({ action: 'Game update alert added', actor: interaction.user, guild, details: `${name} (${SOURCES[choice.source].label}) → #${channel.name}` });
+
+  return interaction.editReply({
+    content: [`✅ Now watching **${name}** (${SOURCES[choice.source].label}) in <#${channel.id}>${role ? ` · pinging <@&${role.id}>` : ''}.`,
+      latest ? `Latest right now: *${latest.title}* — only newer updates will be posted. Use \`/game-updates test\` to preview the look.` : 'No updates found yet — the next one will be posted automatically.',
+      note].filter(Boolean).join('\n'),
+  });
+}
+
+async function editAlert(interaction) {
+  const sub = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [interaction.options.getString('alert'), interaction.guildId]);
+  if (!sub || !isUpdateKey(sub.app_id)) return reply(interaction, '❌ I can\'t find that alert.');
+  const channel = interaction.options.getChannel('channel'), role = interaction.options.getRole('role'), clear = interaction.options.getBoolean('remove_ping');
+  if (!channel && !role && !clear) return reply(interaction, 'Choose a new **channel**, a new **role**, or **remove_ping**.');
+  if (channel) { const m = missingPerms(channel, interaction.guild); if (m.length) return reply(interaction, `I can't post in <#${channel.id}> — missing **${m.join(', ')}**.`); }
+
+  const newChannel = channel?.id || sub.channel_id, newRole = clear ? null : (role?.id || sub.role_id);
+  run('UPDATE game_subscriptions SET channel_id = ?, role_id = ? WHERE id = ?', [newChannel, newRole, sub.id]);
+  audit({ action: 'Game update alert changed', actor: interaction.user, guild: interaction.guild, details: `${sub.game_name} → <#${newChannel}>` });
+  return reply(interaction, `✅ **${sub.game_name}** now posts in <#${newChannel}>${newRole ? ` · pinging <@&${newRole}>` : ' · no ping'}.`);
+}
+
+function removeAlert(interaction) {
+  const sub = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [interaction.options.getString('alert'), interaction.guildId]);
+  if (!sub || !isUpdateKey(sub.app_id)) return reply(interaction, '❌ I can\'t find that alert — it may already be removed.');
+  run('DELETE FROM game_subscriptions WHERE id = ?', [sub.id]);
+  audit({ action: 'Game update alert removed', actor: interaction.user, guild: interaction.guild, details: sub.game_name });
+  return reply(interaction, `🗑️ Stopped watching **${sub.game_name}**.`);
+}
+
+function listAlerts(interaction) {
+  const subs = subsOf(interaction.guildId);
+  if (!subs.length) return reply(interaction, '📭 No game update alerts yet. Add one with `/game-updates add`.');
+  const lines = subs.map(s => `**${s.game_name || s.app_id}** · ${SOURCES[parseKey(s.app_id).source]?.label || 'Steam'}\n└ <#${s.channel_id}>${s.role_id ? ` · <@&${s.role_id}>` : ''}`);
+  return interaction.reply({
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle(`🎮 Game update alerts (${subs.length})`).setDescription(lines.join('\n').slice(0, 3900))
+      .setFooter({ text: '/game-updates edit · remove · test' })],
+    flags: ephemeral,
+  });
+}
+
+async function testAlert(interaction, client) {
+  const sub = selectOne('SELECT * FROM game_subscriptions WHERE id = ? AND guild_id = ?', [interaction.options.getString('alert'), interaction.guildId]);
+  if (!sub || !isUpdateKey(sub.app_id)) return reply(interaction, '❌ I can\'t find that alert.');
+  await interaction.deferReply({ flags: ephemeral });
   try {
-    const item      = news[0];
-    const details   = await getAppDetails(sub.app_id).catch(() => null);
-    const { text, imageUrl, youtubeUrl } = parseSteamContent(item.contents, 1000);
-    const headerImg = details?.headerImage || getHeaderImage(sub.app_id);
-
-    const embed = new EmbedBuilder()
-      .setColor(sub.color || GAME_COLOURS[parseInt(sub.app_id)] || 0x1B2838)
-      .setAuthor({
-        name:    sub.game_name,
-        iconURL: `https://cdn.cloudflare.steamstatic.com/steam/apps/${sub.app_id}/capsule_sm_120.jpg`,
-        url:     `https://store.steampowered.com/app/${sub.app_id}`,
-      })
-      .setTitle(item.title)
-      .setURL(item.url)
-      .setThumbnail(headerImg)
-      .setTimestamp(new Date(item.date * 1000))
-      .setFooter({ text: 'Steam • Game Update' });
-
-    if (text) embed.setDescription(text);
-    embed.setImage(imageUrl || headerImg);
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel('Read Full Notes').setURL(item.url).setStyle(ButtonStyle.Link).setEmoji('📋')
-    );
-    if (youtubeUrl) {
-      row.addComponents(
-        new ButtonBuilder().setLabel('Watch Video').setURL(youtubeUrl).setStyle(ButtonStyle.Link).setEmoji('▶️')
-      );
-    }
-
-    return interaction.editReply({ content: `✅ Latest **${sub.game_name}** update:`, embeds: [embed], components: [row] });
+    const update = await fetchLatest(sub);
+    if (!update) return interaction.editReply({ content: `No updates found for **${sub.game_name}** yet.` });
+    const { postUpdate } = require('../src/gamePoller');
+    const ok = await postUpdate(client || interaction.client, { ...sub, role_id: null }, update);   // a test never pings the role
+    return interaction.editReply({ content: ok ? `✅ Posted the latest update (*${update.title}*) in <#${sub.channel_id}>.` : `❌ I couldn't post in <#${sub.channel_id}> — check my permissions there.` });
   } catch (err) {
-    return interaction.editReply({ content: `❌ Test failed: ${err.message}` });
+    log('WARN', 'Game update test failed', { game: sub.game_name, err });
+    return interaction.editReply({ content: `❌ I couldn't read the updates: ${err.message}` });
   }
 }
 
-module.exports.runTest = runTest;
+async function execute(interaction, client) {
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return reply(interaction, 'You need **Manage Server** to change game alerts.');
+  switch (interaction.options.getSubcommand()) {
+    case 'add':    return addAlert(interaction);
+    case 'edit':   return editAlert(interaction);
+    case 'remove': return removeAlert(interaction);
+    case 'list':   return listAlerts(interaction);
+    case 'test':   return testAlert(interaction, client);
+  }
+}
+
+module.exports = { data, execute, autocomplete };

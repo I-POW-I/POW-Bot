@@ -7,6 +7,7 @@ module.exports = {
 
   async execute(guild) {
     if (guild.available === false) return;   // a Discord outage, not a removal
+    try { require('../src/messageStore').purgeGuild(guild.id); } catch (_) {}   // stored messages go with the server
     audit({ action: 'Left / removed from a server', guild: { name: guild.name || guild.id }, details: `${guild.memberCount ?? '?'} members` });
   },
 };

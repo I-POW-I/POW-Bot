@@ -7,9 +7,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,           // Member info in voice logs
     GatewayIntentBits.GuildMessages,          // Message delete events
     GatewayIntentBits.MessageContent,         // Read deleted message content (privileged)
-    GatewayIntentBits.GuildModeration,        // Audit log events
-    GatewayIntentBits.GuildEmojisAndStickers, // Emoji add/remove logs
-    GatewayIntentBits.GuildInvites,           // Invite create logs
+    GatewayIntentBits.GuildModeration,        // Audit log events (also covers emoji / invite logs)
   ],
   partials: [
     Partials.Message,                         // CRITICAL: Forces tracking on old/uncached text drops

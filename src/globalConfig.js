@@ -6,6 +6,7 @@
  *   features:    { streamerAlerts, gameAlerts },        // global kill switches (default on)
  *   blacklist:   { users: { id: {reason, at, by} }, guilds: { id: {reason, at, by} } },
  *   audit:       [ { at, action, actor, guild, details } ],   // last 200 changes
+ *   alerts:      { webhookUrl, webhookId, dm, levels, digestMinutes, memoryPercent },   // set by /owner alerts → Set up (Discloud variables override these)
  *   restarts:    [ ms timestamps of automatic restarts ],
  *   pendingRestart: { reason, by, requestedAt, memory… }      // read after the restart
  * }
@@ -22,6 +23,7 @@ const DEFAULTS = () => ({
   features:    { streamerAlerts: true, gameAlerts: true },
   blacklist:   { users: {}, guilds: {} },
   audit:       [],
+  alerts:      { webhookUrl: null, webhookId: null, dm: null, levels: null, digestMinutes: null, memoryPercent: null },
   restarts:    [],
   pendingRestart: null,
 });
@@ -39,6 +41,7 @@ function load() {
     features:    { ...d.features,    ...(raw.features    || {}) },
     blacklist:   { users: { ...(raw.blacklist?.users || {}) }, guilds: { ...(raw.blacklist?.guilds || {}) } },
     audit:       Array.isArray(raw.audit) ? raw.audit : [],
+    alerts:      { ...d.alerts, ...(raw.alerts || {}) },
     restarts:    Array.isArray(raw.restarts) ? raw.restarts : [],
   };
   return state;

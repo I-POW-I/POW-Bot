@@ -10,7 +10,7 @@
  */
 
 const {
-  SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder,
+  SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, StringSelectMenuBuilder, ChannelSelectMenuBuilder,
   TextInputBuilder, TextInputStyle, AttachmentBuilder, MessageFlags, InteractionContextType,
   ChannelType, PermissionFlagsBits, REST, Routes,
 } = require('discord.js');
@@ -66,7 +66,7 @@ const data = new SlashCommandBuilder()
   .addSubcommand(s => s.setName('digest').setDescription('Send the console log digest now'))
   .addSubcommand(s => s.setName('alerts').setDescription('Test, mute or unmute your private alerts')
     .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
-      .addChoices({ name: 'Send a test alert', value: 'test' }, { name: 'Mute errors', value: 'mute' }, { name: 'Unmute', value: 'unmute' }))
+      .addChoices({ name: 'Set up / change where alerts go', value: 'setup' }, { name: 'Send a test alert', value: 'test' }, { name: 'Mute errors', value: 'mute' }, { name: 'Unmute', value: 'unmute' }))
     .addIntegerOption(o => o.setName('minutes').setDescription('Mute length (default 60)').setMinValue(5).setMaxValue(1440)))
   .addSubcommand(s => s.setName('audit').setDescription('Recent changes made through the bot')
     .addIntegerOption(o => o.setName('count').setDescription('How many (default 15)').setMinValue(1).setMaxValue(40)))
@@ -105,14 +105,60 @@ function findGuild(client, query) {
   return client.guilds.cache.get(query) || client.guilds.cache.find(g => g.name.toLowerCase() === String(query).toLowerCase()) || null;
 }
 
-function postableChannel(guild) {
-  const me = guild.members.me;
+const isPostable = (guild, ch) => !!ch && ch.type === ChannelType.GuildText
+  && !!ch.permissionsFor(guild.members.me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks]);
+
+/** Where an announcement goes in one server: your choice → its announcement channel → its panel channel → system channel. */
+function resolveTarget(guild, state) {
   const cfg = getGuildConfig(guild.id);
-  const ok = (c) => c && c.type === ChannelType.GuildText && c.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks]);
-  const configured = cfg.announceChannelId && guild.channels.cache.get(cfg.announceChannelId);
-  if (ok(configured)) return configured;
-  if (ok(guild.systemChannel)) return guild.systemChannel;
-  return guild.channels.cache.filter(ok).sort((a, b) => a.rawPosition - b.rawPosition).first() || null;
+  const tries = [[state?.overrides?.get(guild.id), 'chosen by you'], [cfg.announceChannelId, 'announcement channel'], [cfg.panelChannelId, 'panel channel']];
+  for (const [id, how] of tries) {
+    const ch = id && guild.channels.cache.get(id);
+    if (isPostable(guild, ch)) return { channel: ch, how };
+  }
+  return isPostable(guild, guild.systemChannel) ? { channel: guild.systemChannel, how: 'system channel' } : null;
+}
+
+const announceGuilds = (client) => [...client.guilds.cache.values()].filter(g => !globalConfig.isGuildBanned(g.id)).sort((a, b) => b.memberCount - a.memberCount);
+
+/** The announcement screen: preview, where it goes per server, who to skip, change a channel, send. */
+function announceView(client, nonce, p) {
+  const guilds = announceGuilds(client);
+  let willSend = 0;
+  const lines = guilds.map((g) => {
+    if (p.excluded.has(g.id)) return `⏭️ **${g.name}** — skipped`;
+    const t = resolveTarget(g, p);
+    if (!t) return `⚠️ **${g.name}** — no usable channel (will be skipped)`;
+    willSend++;
+    return `✅ **${g.name}** → #${t.channel.name} *(${t.how})*`;
+  });
+  const shown = guilds.slice(0, 25);
+
+  const preview = new EmbedBuilder().setColor(BLUE).setTitle(p.title).setDescription(p.body).setFooter({ text: 'Message from the bot owner' });
+  const where = new EmbedBuilder().setColor(0x5865F2).setTitle(`Where it will be sent (${willSend} of ${guilds.length} servers)`)
+    .setDescription(lines.join('\n').slice(0, 3900) || 'No servers.')
+    .setFooter({ text: guilds.length > 25 ? 'The menus list the 25 largest servers; the rest follow the automatic choice.' : 'Automatic order: announcement channel → panel channel → system channel' });
+
+  const skip = new StringSelectMenuBuilder().setCustomId(`owner:ann_skip:${nonce}`).setPlaceholder('Servers to SKIP (optional)').setMinValues(0).setMaxValues(Math.max(1, shown.length))
+    .addOptions(shown.map(g => ({ label: g.name.slice(0, 100), value: g.id, default: p.excluded.has(g.id), description: `${n(g.memberCount)} members` })));
+  const change = new StringSelectMenuBuilder().setCustomId(`owner:ann_chg:${nonce}`).setPlaceholder('Change the channel for one server…')
+    .addOptions(shown.map(g => ({ label: g.name.slice(0, 100), value: g.id, description: 'Choose a different channel' })));
+  const rows = [new ActionRowBuilder().addComponents(skip), new ActionRowBuilder().addComponents(change)];
+  const buttons = confirmRow(nonce, willSend ? `Send to ${willSend} server(s)` : 'Nothing to send');
+  if (!willSend) buttons.components[0].setDisabled(true);
+  rows.push(buttons);
+  return { embeds: [preview, where], components: rows };
+}
+
+/** Step 2: pick a channel in one server. */
+function channelPickView(guild, nonce, p) {
+  const options = [{ label: 'Automatic (announcement → panel → system channel)', value: '__auto' }];
+  const channels = [...guild.channels.cache.values()].filter(c => isPostable(guild, c)).sort((a, b) => a.rawPosition - b.rawPosition).slice(0, 24);
+  for (const c of channels) options.push({ label: `#${c.name}`.slice(0, 100), value: c.id, default: p.overrides.get(guild.id) === c.id });
+  return {
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle(`Channel for ${guild.name}`).setDescription(channels.length ? 'Pick where this server should receive the announcement.' : 'I can\'t post in any channel there — it will be skipped.')],
+    components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`owner:ann_ch:${nonce}:${guild.id}`).setPlaceholder('Choose a channel…').addOptions(options))],
+  };
 }
 
 const reply = (interaction, content) => interaction.reply({ content, flags: ephemeral });
@@ -141,8 +187,106 @@ async function digest(interaction) {
   return interaction.editReply({ content: sent === false ? 'Could not send a digest — check that the Discloud API and an alert destination (webhook / channel / DM) are configured.' : 'Digest sent to your private alerts.' });
 }
 
+// ── Private alerts setup (webhook / DMs / levels / digest / memory restart) ───
+
+const LEVEL_PRESETS = [
+  { value: 'ERROR',                  label: 'Errors only',                       levels: ['ERROR'] },
+  { value: 'ERROR,AUDIT',            label: 'Errors + changes (recommended)',    levels: ['ERROR', 'AUDIT'] },
+  { value: 'ERROR,AUDIT,WARN',       label: 'Errors, changes + warnings',        levels: ['ERROR', 'AUDIT', 'WARN'] },
+  { value: 'ERROR,AUDIT,WARN,GHOST', label: 'Everything',                        levels: ['ERROR', 'AUDIT', 'WARN', 'GHOST'] },
+];
+const DIGEST_OPTIONS = [['0', 'Console digest: off'], ['30', 'Console digest: every 30 minutes'], ['60', 'Console digest: every hour (recommended)'], ['120', 'Console digest: every 2 hours'], ['360', 'Console digest: every 6 hours']];
+const MEMORY_OPTIONS = [['0', 'Memory auto-restart: off'], ['80', 'Memory auto-restart: at 80%'], ['90', 'Memory auto-restart: at 90% (recommended)'], ['95', 'Memory auto-restart: at 95%']];
+
+function alertSetupView(note) {
+  const d = alerts.describeDestinations(), st = monitor.getSettings();
+  const lvlKey = [...d.levels].sort().join(',');
+  const preset = LEVEL_PRESETS.find(p => [...p.levels].sort().join(',') === lvlKey);
+  const embed = new EmbedBuilder().setColor(BLUE).setTitle('Private alerts — setup').setDescription([note,
+    `**Webhook** — ${d.webhook ? `✅ connected${d.from?.webhook === 'Discloud variable' ? ' *(set by a Discloud variable, which overrides this screen)*' : ''}` : '❌ not set — pick a private channel below and I\'ll create it'}`,
+    `**DMs to you** — ${d.dm ? '✅ on (with Restart / Logs / Mute buttons)' : 'off'}`,
+    `**What is sent** — ${preset ? preset.label : d.levels.join(', ')}`,
+    `**Console digest** — ${st.digestMinutes ? `every ${st.digestMinutes} minutes` : 'off'}`,
+    `**Memory auto-restart** — ${st.memoryPercent ? `at ${st.memoryPercent}% of the limit` : 'off'}`,
+    '', '_Pick a channel only you can see. Everything here is private to you._'].filter(Boolean).join('\n'));
+
+  const channelPick = new ChannelSelectMenuBuilder().setCustomId('owner:al_ch').setPlaceholder('Create the alerts webhook in this channel…').setChannelTypes(ChannelType.GuildText).setMinValues(1).setMaxValues(1);
+  const pick = (id, ph, opts, cur) => new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(ph).addOptions(opts.map(([value, label]) => ({ label, value, default: String(cur) === value }))));
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(channelPick),
+      pick('owner:al_lvl', 'What to send…', LEVEL_PRESETS.map(p => [p.value, p.label]), preset?.value),
+      pick('owner:al_dig', 'Console digest…', DIGEST_OPTIONS, st.digestMinutes),
+      pick('owner:al_mem', 'Memory auto-restart…', MEMORY_OPTIONS, st.memoryPercent),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('owner:al_dm').setLabel(`DMs: ${d.dm ? 'ON' : 'OFF'}`).setStyle(d.dm ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('owner:al_test').setLabel('Send test').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('owner:al_rm').setLabel('Remove webhook').setStyle(ButtonStyle.Danger).setDisabled(!globalConfig.get().alerts.webhookUrl),
+      ),
+    ],
+  };
+}
+
+/** Handles the setup screen. Returns true when it was one of its controls. */
+async function handleAlertSetup(interaction) {
+  const id = interaction.customId;
+  const sv = () => globalConfig.get().alerts;
+  const show = (note) => interaction.update(alertSetupView(note));
+
+  if (interaction.isChannelSelectMenu() && id === 'owner:al_ch') {
+    const channel = interaction.channels.first();
+    try {
+      const hook = await channel.createWebhook({ name: 'POW Bot Alerts', reason: `Private alerts set up by ${interaction.user.tag}` });
+      globalConfig.update(s => { s.alerts.webhookUrl = hook.url; s.alerts.webhookId = hook.id; });
+      audit({ action: 'Alerts webhook created', actor: interaction.user, details: `#${channel.name}` });
+      await alerts.notify({ level: 'INFO', title: 'Alerts connected', description: `Set up by ${interaction.user.tag}. Errors and changes will appear in this channel.` });
+      await show(`✅ Webhook created in ${channel} and a test message was sent. Make sure only you can see that channel.`);
+    } catch (err) {
+      await show(`❌ I couldn't create a webhook in ${channel}. I need the **Manage Webhooks** permission there. (${err.message})`);
+    }
+    return true;
+  }
+  if (interaction.isStringSelectMenu() && /^owner:al_(lvl|dig|mem)$/.test(id)) {
+    const v = interaction.values[0];
+    if (id === 'owner:al_lvl') globalConfig.update(s => { s.alerts.levels = LEVEL_PRESETS.find(p => p.value === v)?.levels || ['ERROR', 'AUDIT']; });
+    if (id === 'owner:al_dig') { globalConfig.update(s => { s.alerts.digestMinutes = Number(v); }); monitor.reschedule(); }
+    if (id === 'owner:al_mem') globalConfig.update(s => { s.alerts.memoryPercent = Number(v); });
+    audit({ action: `Alert setting changed (${id.slice(9)})`, actor: interaction.user, details: v });
+    await show('✅ Saved.');
+    return true;
+  }
+  if (interaction.isButton() && id === 'owner:al_dm') {
+    const now = alerts.describeDestinations().dm;
+    if (!now && !require('../src/permissions').ownerIds().length) { await show('❌ Set `OWNER_IDS` in your Discloud variables first, so I know who to DM.'); return true; }
+    globalConfig.update(s => { s.alerts.dm = !now; });
+    audit({ action: `Alert DMs ${!now ? 'enabled' : 'disabled'}`, actor: interaction.user });
+    await show(`✅ DMs ${!now ? 'on' : 'off'}.`);
+    return true;
+  }
+  if (interaction.isButton() && id === 'owner:al_test') {
+    if (!alerts.isEnabled()) { await show('❌ Nothing is set up yet — pick a channel or turn on DMs first.'); return true; }
+    await alerts.notify({ level: 'INFO', title: 'Test alert', description: `Requested by ${interaction.user.tag}. If you can read this, alerts work.`, dm: true, buttons: true });
+    await show('✅ Test alert sent.');
+    return true;
+  }
+  if (interaction.isButton() && id === 'owner:al_rm') {
+    const hookUrl = sv().webhookUrl, m = /webhooks\/(\d+)\/([\w-]+)/.exec(hookUrl || '');
+    if (m) { try { await interaction.client.deleteWebhook(m[1], { token: m[2], reason: 'Removed from /owner alerts setup' }); } catch { /* it may already be gone */ } }
+    globalConfig.update(s => { s.alerts.webhookUrl = null; s.alerts.webhookId = null; });
+    audit({ action: 'Alerts webhook removed', actor: interaction.user });
+    await show('✅ Webhook removed.');
+    return true;
+  }
+  return false;
+}
+
 async function alertsCmd(interaction) {
   const action = interaction.options.getString('action');
+  if (action === 'setup') {
+    if (!isOwner(interaction.user.id)) return reply(interaction, 'Setting up alerts is for the bot owner only.');
+    return interaction.reply({ ...alertSetupView(), flags: ephemeral });
+  }
   if (action === 'mute') {
     const minutes = interaction.options.getInteger('minutes') ?? 60;
     alerts.mute(minutes * 60_000);
@@ -319,16 +463,16 @@ async function runReregister(client, by) {
 
 async function runAnnounce(interaction, client, p) {
   const embed = new EmbedBuilder().setColor(BLUE).setTitle(p.title).setDescription(p.body).setFooter({ text: 'Message from the bot owner' }).setTimestamp();
-  let sent = 0; const failed = [];
-  for (const guild of client.guilds.cache.values()) {
-    if (globalConfig.isGuildBanned(guild.id)) continue;
-    const ch = postableChannel(guild);
-    if (!ch) { failed.push(`${guild.name} (no channel)`); continue; }
-    try { await ch.send({ embeds: [embed] }); sent++; } catch (err) { failed.push(`${guild.name} (${err.message.slice(0, 40)})`); }
+  let sent = 0; const failed = [], skipped = [];
+  for (const guild of announceGuilds(client)) {
+    if (p.excluded.has(guild.id)) continue;
+    const target = resolveTarget(guild, p);
+    if (!target) { skipped.push(guild.name); continue; }
+    try { await target.channel.send({ embeds: [embed] }); sent++; } catch (err) { failed.push(`${guild.name} (${err.message.slice(0, 40)})`); }
     await new Promise(r => setTimeout(r, 400));
   }
-  audit({ action: 'Announcement sent', actor: interaction.user, details: `"${p.title}" → ${sent} server(s), ${failed.length} failed` });
-  return { sent, failed };
+  audit({ action: 'Announcement sent', actor: interaction.user, details: `"${p.title}" → ${sent} server(s), ${failed.length + skipped.length} not reached` });
+  return { sent, failed, skipped };
 }
 
 /** Buttons + modal belonging to /owner. Returns true when handled. */
@@ -340,15 +484,35 @@ async function handleComponent(interaction, client) {
 
   if (interaction.isModalSubmit() && id === 'owner:announce_modal') {
     const title = interaction.fields.getTextInputValue('title').trim(), body = interaction.fields.getTextInputValue('body').trim();
-    const nonce = remember({ kind: 'announce', userId: interaction.user.id, title, body });
-    const targets = client.guilds.cache.filter(g => !globalConfig.isGuildBanned(g.id)).size;
-    await interaction.reply({
-      content: `**Preview** — this will be posted in **${targets}** server(s):`,
-      embeds: [new EmbedBuilder().setColor(BLUE).setTitle(title).setDescription(body).setFooter({ text: 'Message from the bot owner' })],
-      components: [confirmRow(nonce, `Send to ${targets} server(s)`)], flags: ephemeral,
-    });
+    const state = { kind: 'announce', userId: interaction.user.id, title, body, excluded: new Set(), overrides: new Map() };
+    const nonce = remember(state);
+    await interaction.reply({ ...announceView(client, nonce, pending.get(nonce)), flags: ephemeral });
     return true;
   }
+
+  // Announcement screen controls (skip servers / change a server's channel)
+  if (interaction.isStringSelectMenu() && /^owner:ann_(skip|chg|ch):/.test(id)) {
+    const [, rawKind, nonce, guildId] = id.split(':');
+    const kind = rawKind.replace(/^ann_/, '');          // ann_skip → skip, ann_chg → chg, ann_ch → ch
+    const p = pending.get(nonce);
+    if (!p || p.expires < Date.now() || p.userId !== interaction.user.id) { await interaction.update({ content: 'That screen expired — run `/owner announce` again.', embeds: [], components: [] }); return true; }
+    if (kind === 'skip') {
+      const shown = new Set(announceGuilds(client).slice(0, 25).map(g => g.id));
+      for (const gid of shown) p.excluded.delete(gid);
+      for (const gid of interaction.values) p.excluded.add(gid);
+      await interaction.update(announceView(client, nonce, p));
+    } else if (kind === 'chg') {
+      const guild = client.guilds.cache.get(interaction.values[0]);
+      await interaction.update(guild ? channelPickView(guild, nonce, p) : announceView(client, nonce, p));
+    } else {
+      const choice = interaction.values[0];
+      if (choice === '__auto') p.overrides.delete(guildId); else p.overrides.set(guildId, choice);
+      await interaction.update(announceView(client, nonce, p));
+    }
+    return true;
+  }
+
+  if (/^owner:al_/.test(id)) return handleAlertSetup(interaction);
 
   if (!interaction.isButton()) return false;
   const [, action, nonce] = id.split(':');
@@ -383,7 +547,9 @@ async function handleComponent(interaction, client) {
   if (p.kind === 'announce') {
     await interaction.update({ content: '📣 Sending…', embeds: [], components: [] });
     const r = await runAnnounce(interaction, client, p);
-    await interaction.editReply({ content: `✅ Sent to **${r.sent}** server(s).${r.failed.length ? `\n⚠️ Could not post in ${r.failed.length}: ${r.failed.join(', ').slice(0, 800)}` : ''}` });
+    await interaction.editReply({ content: [`✅ Sent to **${r.sent}** server(s).`,
+      r.skipped.length ? `⚠️ No usable channel (skipped): ${r.skipped.join(', ').slice(0, 600)}` : null,
+      r.failed.length ? `⚠️ Could not post in ${r.failed.length}: ${r.failed.join(', ').slice(0, 600)}` : null].filter(Boolean).join('\n') });
     return true;
   }
   return false;
