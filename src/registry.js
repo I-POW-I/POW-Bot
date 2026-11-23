@@ -14,7 +14,14 @@ function loadCommands(client) {
   const files = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
 
   for (const file of files) {
-    const command = require(path.join(commandsPath, file));
+    let command;
+    try {
+      command = require(path.join(commandsPath, file));
+    } catch (error) {
+      // One broken file must never stop the whole bot from starting
+      log('ERROR', `Could not load commands/${file}: ${error.message}`);
+      continue;
+    }
 
     if (!command.data || !command.execute) {
       log('WARN', `Skipping ${file} — missing data or execute export`);

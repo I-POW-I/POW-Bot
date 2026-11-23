@@ -29,7 +29,7 @@ const ephemeral = [MessageFlags.Ephemeral];
 
 const LOG_TYPES = [
   { key: 'voice',    label: 'Voice activity',        desc: 'Joins, leaves and moves in voice channels' },
-  { key: 'messages', label: 'Message logs',          desc: 'Deleted and edited messages' },
+  { key: 'messages', label: 'Message logs',          desc: 'Deleted and edited messages (text is kept 7 days so this works)' },
   { key: 'members',  label: 'Member join/leave + verification', desc: 'Detailed join log and verification results (staff only)' },
   { key: 'modlog',   label: 'Moderation actions',    desc: 'Kicks, bans, timeouts' },
   { key: 'commands', label: 'Command & button logs', desc: 'Every command and button used' },
@@ -133,7 +133,14 @@ function viewHome(guild, note) {
   const embed = new EmbedBuilder()
     .setColor(coreDone === core.length ? GREEN : AMBER)
     .setTitle(`⚙️ Setup — ${guild.name}`)
-    .setDescription([note, `**Core setup: ${coreDone} of ${core.length}**${coreDone === core.length ? ' — all done! 🎉' : ''}`].filter(Boolean).join('\n\n'))
+    .setDescription([note, `**Core setup: ${coreDone} of ${core.length}**${coreDone === core.length ? ' — all done! 🎉' : ''}`,
+      coreDone === 0 ? ['**Start here** — four quick steps, pick each from the menu below:',
+        '1. **Voice panel** — choose where the control panel lives',
+        '2. **Logs** — choose where logs are posted',
+        '3. **Welcome & leave** — choose a welcome channel',
+        '4. **Verification** — pick the verified role, then the channel for the verify message',
+        '_Everything saves the moment you pick it. Press **Permission check** at any time to see what is missing._'].join('\n') : null,
+    ].filter(Boolean).join('\n\n'))
     .addFields(
       { name: 'Core', value: core.map(line).join('\n') },
       { name: 'Optional', value: optional.map(line).join('\n') },
@@ -246,8 +253,8 @@ function viewVerify(guild, note) {
           { label: 'One-click button', value: 'button', description: 'Fastest — member presses Verify', default: s.mode === 'button' },
           { label: 'Human check (recommended)', value: 'captcha', description: 'Member types the code from a picture', default: s.mode === 'captcha' },
         ])),
+      channelSelect('setup:verify:postch', 'Post the verification message in…', s.channelId),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('setup:verify:post').setLabel('Post message here').setEmoji('📌').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('setup:verify:rules').setLabel('Rules…').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('setup:verify:dm').setLabel(`DM prompt ${s.dmOnJoin ? 'ON' : 'OFF'}`).setStyle(s.dmOnJoin ? ButtonStyle.Success : ButtonStyle.Secondary),
         backButton(),
@@ -399,10 +406,12 @@ async function handleInteraction(interaction, client) {
       if (missing.length) return await respond(interaction, viewLogs(guild, arg, noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`))), true;
       setLogChannel(guild.id, arg, channel.id);
       done(`log channel set (${arg})`, `→ #${channel.name}`);
-      return await respond(interaction, viewLogs(guild, arg, noteGood(`**${LOG_TYPES.find(t => t.key === arg).label}** now goes to ${channel}.`))), true;
+      const privacy = arg === 'messages' ? '\n🔒 To log deleted and edited messages, new messages in this server are kept for **7 days**, then deleted automatically. Removing this log deletes them immediately.' : '';
+      return await respond(interaction, viewLogs(guild, arg, noteGood(`**${LOG_TYPES.find(t => t.key === arg).label}** now goes to ${channel}.${privacy}`))), true;
     }
     if (action === 'clear') {
       setLogChannel(guild.id, arg, null);
+      if (arg === 'messages') require('./messageStore').purgeGuild(guild.id);   // stop keeping message text
       done(`log channel cleared (${arg})`);
       return await respond(interaction, viewLogs(guild, arg, noteGood('Cleared.'))), true;
     }
@@ -459,9 +468,9 @@ async function handleInteraction(interaction, client) {
       return await show('verify', noteGood('Method saved.')), true;
     }
     if (action === 'dm') { setGuildConfig(guild.id, { verifyDmOnJoin: !s.dmOnJoin }); done(`join DM prompt ${!s.dmOnJoin ? 'enabled' : 'disabled'}`); return await show('verify'), true; }
-    if (action === 'post') {
+    if (action === 'postch') {
       if (!s.roleId) return await show('verify', noteBad('Pick the **verified role** first.')), true;
-      const channel = interaction.channel;
+      const channel = interaction.channels.first();
       const missing = missingIn(channel, guild);
       if (missing.length) return await show('verify', noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`)), true;
       try { await verification.postPrompt(channel); } catch (err) { log('ERROR', 'Could not post the verification message', { guild: guild.name, err }); return await show('verify', noteBad('Discord refused the message.')), true; }
