@@ -332,6 +332,8 @@ async function handle(interaction, client) {
 
 // ── Safety net, global gates, and the exported handler ───────────────────────
 
+const EXPIRED_CODES = new Set([10062, 40060]);   // Unknown interaction · already acknowledged
+
 /** Tell the user something went wrong without ever throwing from here. */
 async function replyFailure(interaction) {
   try {
@@ -387,6 +389,12 @@ module.exports = {
       try {
         await handle(interaction, client);
       } catch (err) {
+        // Discord drops an interaction that isn't answered within 3 seconds (10062), and refuses a second answer (40060).
+        // Both are normal when the bot is briefly slow or a button is clicked twice, so they are logged quietly.
+        if (EXPIRED_CODES.has(err?.code)) {
+          log('WARN', `${label} could not be answered in time`, { guild: interaction.guild?.name || 'DM', user: interaction.user?.tag, code: err.code });
+          return;
+        }
         log('ERROR', `Unhandled error in ${label}`, { guild: interaction.guild?.name || 'DM', user: interaction.user?.tag, err });
         await replyFailure(interaction);
       }

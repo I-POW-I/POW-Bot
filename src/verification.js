@@ -42,6 +42,39 @@ const MAX_KICKS_SWEEP  = 5;
 const ts  = (ms, style = 'R') => `<t:${Math.floor(ms / 1000)}:${style}>`;
 const ephemeral = [MessageFlags.Ephemeral];
 
+// ── One action per member at a time, and staff-log tracking ───────────────────
+
+/** `${guildId}:${userId}` while a verification, approval or kick is being processed. */
+const busy = new Set();
+
+/** Staff-log messages that still carry Approve / Kick buttons: `${guildId}:${userId}` → [{ channelId, messageId }] */
+const openLogs = new Map();
+
+function trackLog(guildId, userId, message) {
+  if (!message) return;
+  const key = `${guildId}:${userId}`;
+  const list = openLogs.get(key) || [];
+  list.push({ channelId: message.channelId, messageId: message.id });
+  openLogs.set(key, list.slice(-10));
+  if (openLogs.size > 2000) openLogs.delete(openLogs.keys().next().value);
+}
+
+/** Remove the buttons from every open staff log for a member and record why. */
+async function closeLogs(guild, userId, status, exceptMessageId = null) {
+  const key = `${guild.id}:${userId}`;
+  const list = openLogs.get(key);
+  openLogs.delete(key);
+  for (const ref of list || []) {
+    if (ref.messageId === exceptMessageId) continue;
+    try {
+      const channel = guild.channels.cache.get(ref.channelId) || await guild.channels.fetch(ref.channelId);
+      const message = await channel.messages.fetch(ref.messageId);
+      const embeds = message.embeds.map((e, i) => i === 0 ? EmbedBuilder.from(e).addFields({ name: 'Status', value: `${status} ${ts(Date.now())}`, inline: false }) : e);
+      await message.edit({ embeds, components: [] });
+    } catch { /* message or channel was deleted */ }
+  }
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 function settings(guildId) {
@@ -247,7 +280,7 @@ function captchaMessage(guildId, session, note) {
     new ButtonBuilder().setCustomId(`verify:enter:${guildId}:${session.nonce}`).setLabel('Enter code').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`verify:start:${guildId}`).setLabel('New picture').setStyle(ButtonStyle.Secondary),
   );
-  return { embeds: [embed], components: [row], files: [file], flags: ephemeral };
+  return { embeds: [embed], components: [row], files: [file], attachments: [] };
 }
 
 function newSession(guildId, userId, previous) {
@@ -260,8 +293,9 @@ function newSession(guildId, userId, previous) {
 
 // ── Completing a verification ─────────────────────────────────────────────────
 
-async function complete({ guild, member, method, attempts = 0, startedAt = Date.now(), by = null }) {
+async function complete({ guild, member, method, attempts = 0, startedAt = Date.now(), by = null, exceptMessageId = null }) {
   const s = settings(guild.id);
+  if (s.roleId && member.roles.cache.has(s.roleId)) { sessions.delete(sKey(guild.id, member.id)); return { ok: true, already: true }; }   // never log a second time
   const given = await changeRole(member, s.roleId, true, `Verified (${method})`);
   if (!given.ok) return given;
   if (s.unverifiedRoleId) await changeRole(member, s.unverifiedRoleId, false, 'Verified');
@@ -270,6 +304,8 @@ async function complete({ guild, member, method, attempts = 0, startedAt = Date.
   const staff = method === 'staff approval';
   memberLog.record(guild.id, member.id, staff ? 'approved' : 'verify_ok', { method, attempts, tookMs, by });
   sessions.delete(sKey(guild.id, member.id));
+
+  await closeLogs(guild, member.id, staff ? `Approved by ${by}` : `Verified themselves (${method})`, exceptMessageId);
 
   const a = assessAccount(member.user, memberLog.priorCounts(guild.id, member.id));
   log('INFO', 'Member verified', { guild: guild.name, user: member.user.tag, method, attempts, took: `${Math.round(tookMs / 1000)}s`, risk: a.level });
@@ -328,7 +364,8 @@ async function onMemberJoin(member) {
 
   const payload = { embeds: [buildJoinLog(member, a, prior, s)] };
   if (isConfigured(s) && !user.bot) payload.components = [staffButtons(guild.id, user.id)];
-  await postStaffLog(guild, payload);
+  const sent = await postStaffLog(guild, payload);
+  if (payload.components) trackLog(guild.id, user.id, sent);
 
   if (a.level === 'High' && !user.bot) {
     ownerFeed(`High-risk join — ${guild.name}`, [{ name: 'User', value: user.tag }, { name: 'Account age', value: ageText(a.ageDays) }, { name: 'Flags', value: a.flags.join('\n') }]);
@@ -338,6 +375,7 @@ async function onMemberJoin(member) {
 function onMemberLeave(member) {
   const pending = isConfigured(settings(member.guild.id)) && !member.user?.bot && member.roles?.cache && !member.roles.cache.has(settings(member.guild.id).roleId);
   memberLog.record(member.guild.id, member.id, 'leave', { unverified: !!pending, bot: !!member.user?.bot });
+  closeLogs(member.guild, member.id, 'Left the server').catch(() => {});
 }
 
 // ── Interactions ──────────────────────────────────────────────────────────────
@@ -352,38 +390,48 @@ async function resolveTarget(interaction, client, guildId) {
 const say = (interaction, content) => interaction.reply({ content, flags: ephemeral });
 
 async function handleStart(interaction, client, guildId) {
-  const { guild, member } = await resolveTarget(interaction, client, guildId);
-  if (!guild) return say(interaction, 'I can\'t find that server any more.');
-  if (!member) return say(interaction, 'You are not a member of that server.');
+  // Answer Discord straight away: the work below can easily take longer than its 3-second limit.
+  const inPlace = !!interaction.message?.flags?.has(MessageFlags.Ephemeral);   // "New picture" on the code message
+  if (inPlace) await interaction.deferUpdate(); else await interaction.deferReply({ flags: ephemeral });
+  const reply = (content) => interaction.editReply({ content, embeds: [], components: [], files: [], attachments: [] });
 
-  const s = settings(guild.id);
-  if (!isConfigured(s)) return say(interaction, 'Verification is not set up yet. Ask a server admin to run `/setup`.');
-  if (member.roles.cache.has(s.roleId)) return say(interaction, '✅ You are already verified.');
+  const lock = sKey(guildId, interaction.user.id);
+  if (busy.has(lock)) return inPlace ? null : reply('Your verification is already being processed. One moment.');
+  busy.add(lock);
+  try {
+    const { guild, member } = await resolveTarget(interaction, client, guildId);
+    if (!guild) return reply('I can\'t find that server any more.');
+    if (!member) return reply('You are not a member of that server.');
 
-  const key = sKey(guild.id, member.id);
-  const lockedUntil = lockouts.get(key);
-  if (lockedUntil && lockedUntil > Date.now()) return say(interaction, `Too many wrong codes. Try again ${ts(lockedUntil)}.`);
+    const s = settings(guild.id);
+    if (!isConfigured(s)) return reply('Verification is not set up yet. Ask a server admin to run `/setup`.');
+    if (member.roles.cache.has(s.roleId)) return reply('✅ You are already verified.');
 
-  const prior = memberLog.priorCounts(guild.id, member.id);
-  const a = assessAccount(member.user, prior);
-  if (s.minAgeDays && a.ageDays < s.minAgeDays) {
-    memberLog.record(guild.id, member.id, 'verify_blocked', { reason: 'account too new', ageDays: a.ageDays });
-    log('INFO', 'Verification needs staff approval (new account)', { guild: guild.name, user: member.user.tag, age: ageText(a.ageDays) });
-    await postStaffLog(guild, {
-      embeds: [new EmbedBuilder().setColor(0xFAA61A).setTitle('⏳ Staff approval needed').setDescription(`${member} tried to verify but their account is **${ageText(a.ageDays)}** old (the minimum is **${s.minAgeDays}** day(s)).`).setThumbnail(member.user.displayAvatarURL()).setTimestamp()],
-      components: [staffButtons(guild.id, member.id)],
-    });
-    return say(interaction, `Your account is newer than ${s.minAgeDays} day(s), so a moderator needs to approve you. They've been notified — please be patient.`);
-  }
+    const key = sKey(guild.id, member.id);
+    const lockedUntil = lockouts.get(key);
+    if (lockedUntil && lockedUntil > Date.now()) return reply(`Too many wrong codes. Try again ${ts(lockedUntil)}.`);
 
-  if (s.mode === 'captcha') {
-    const session = newSession(guild.id, member.id, sessions.get(key));
-    return interaction.reply(captchaMessage(guild.id, session));
-  }
+    const prior = memberLog.priorCounts(guild.id, member.id);
+    const a = assessAccount(member.user, prior);
+    if (s.minAgeDays && a.ageDays < s.minAgeDays) {
+      memberLog.record(guild.id, member.id, 'verify_blocked', { reason: 'account too new', ageDays: a.ageDays });
+      log('INFO', 'Verification needs staff approval (new account)', { guild: guild.name, user: member.user.tag, age: ageText(a.ageDays) });
+      const sent = await postStaffLog(guild, {
+        embeds: [new EmbedBuilder().setColor(0xFAA61A).setTitle('⏳ Staff approval needed').setDescription(`${member} tried to verify but their account is **${ageText(a.ageDays)}** old (the minimum is **${s.minAgeDays}** day(s)).`).setThumbnail(member.user.displayAvatarURL()).setTimestamp()],
+        components: [staffButtons(guild.id, member.id)],
+      });
+      trackLog(guild.id, member.id, sent);
+      return reply(`Your account is newer than ${s.minAgeDays} day(s), so a moderator needs to approve you. They've been notified — please be patient.`);
+    }
 
-  await interaction.deferReply({ flags: ephemeral });
-  const res = await complete({ guild, member, method: 'button' });
-  return interaction.editReply({ content: res.ok ? `✅ You're verified — welcome to **${guild.name}**!` : `⚠️ ${res.error}` });
+    if (s.mode === 'captcha') {
+      const session = newSession(guild.id, member.id, sessions.get(key));
+      return interaction.editReply(captchaMessage(guild.id, session));
+    }
+
+    const res = await complete({ guild, member, method: 'button' });
+    return reply(res.ok ? `✅ You're verified — welcome to **${guild.name}**!` : `⚠️ ${res.error}`);
+  } finally { busy.delete(lock); }
 }
 
 async function handleEnter(interaction, guildId, nonce) {
@@ -399,30 +447,38 @@ async function handleEnter(interaction, guildId, nonce) {
 }
 
 async function handleModal(interaction, client, guildId, nonce) {
-  const { guild, member } = await resolveTarget(interaction, client, guildId);
-  if (!guild || !member) return say(interaction, 'I can\'t find you in that server.');
-  const key = sKey(guild.id, member.id);
-  const session = sessions.get(key);
-  if (!session || session.nonce !== nonce || session.expires < Date.now()) return say(interaction, 'That picture expired — press **Verify now** again.');
+  if (interaction.isFromMessage()) await interaction.deferUpdate(); else await interaction.deferReply({ flags: ephemeral });
+  const reply = (content) => interaction.editReply({ content, embeds: [], components: [], files: [], attachments: [] });
 
-  const typed = interaction.fields.getTextInputValue('code').trim().toUpperCase();
-  if (typed === session.code) {
-    await interaction.deferReply({ flags: ephemeral });
-    const res = await complete({ guild, member, method: 'human check', attempts: session.attempts + 1, startedAt: session.startedAt });
-    return interaction.editReply({ content: res.ok ? `✅ Correct — you're verified. Welcome to **${guild.name}**!` : `⚠️ ${res.error}` });
-  }
+  const lock = sKey(guildId, interaction.user.id);
+  if (busy.has(lock)) return null;
+  busy.add(lock);
+  try {
+    const { guild, member } = await resolveTarget(interaction, client, guildId);
+    if (!guild || !member) return reply('I can\'t find you in that server.');
+    const key = sKey(guild.id, member.id);
+    const session = sessions.get(key);
+    if (!session || session.nonce !== nonce || session.expires < Date.now()) return reply('That picture expired — press **Verify now** again.');
 
-  session.attempts++;
-  if (session.attempts >= MAX_ATTEMPTS) {
-    sessions.delete(key);
-    lockouts.set(key, Date.now() + LOCKOUT_MS);
-    memberLog.record(guild.id, member.id, 'verify_fail', { attempts: session.attempts });
-    log('INFO', 'Verification failed (too many wrong codes)', { guild: guild.name, user: member.user.tag });
-    await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('❌ Verification failed').setDescription(`${member} entered the wrong code **${MAX_ATTEMPTS}** times and is locked out for 10 minutes.`).setTimestamp()], components: [staffButtons(guild.id, member.id)] });
-    return say(interaction, `That wasn't right, and you're out of attempts. You can try again ${ts(Date.now() + LOCKOUT_MS)}.`);
-  }
-  const fresh = newSession(guild.id, member.id, session);
-  return interaction.reply(captchaMessage(guild.id, fresh, `❌ That wasn't the right code. **${MAX_ATTEMPTS - session.attempts}** attempt(s) left.`));
+    const typed = interaction.fields.getTextInputValue('code').trim().toUpperCase();
+    if (typed === session.code) {
+      const res = await complete({ guild, member, method: 'human check', attempts: session.attempts + 1, startedAt: session.startedAt });
+      return reply(res.ok ? `✅ Correct — you're verified. Welcome to **${guild.name}**!` : `⚠️ ${res.error}`);
+    }
+
+    session.attempts++;
+    if (session.attempts >= MAX_ATTEMPTS) {
+      sessions.delete(key);
+      lockouts.set(key, Date.now() + LOCKOUT_MS);
+      memberLog.record(guild.id, member.id, 'verify_fail', { attempts: session.attempts });
+      log('INFO', 'Verification failed (too many wrong codes)', { guild: guild.name, user: member.user.tag });
+      const sent = await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('❌ Verification failed').setDescription(`${member} entered the wrong code **${MAX_ATTEMPTS}** times and is locked out for 10 minutes.`).setTimestamp()], components: [staffButtons(guild.id, member.id)] });
+      trackLog(guild.id, member.id, sent);
+      return reply(`That wasn't right, and you're out of attempts. You can try again ${ts(Date.now() + LOCKOUT_MS)}.`);
+    }
+    const fresh = newSession(guild.id, member.id, session);
+    return interaction.editReply(captchaMessage(guild.id, fresh, `❌ That wasn't the right code. **${MAX_ATTEMPTS - session.attempts}** attempt(s) left.`));
+  } finally { busy.delete(lock); }
 }
 
 function handleWhy(interaction, guildId) {
@@ -442,35 +498,47 @@ function handleWhy(interaction, guildId) {
 }
 
 async function handleStaff(interaction, client, action, guildId, userId) {
-  const guild = interaction.guild || await client.guilds.fetch(guildId).catch(() => null);
-  if (!guild || interaction.guildId !== guildId) return say(interaction, 'Use this button inside the server.');
+  if (!interaction.guild || interaction.guildId !== guildId) return say(interaction, 'Use this button inside the server.');
   const needed = action === 'approve' ? PermissionFlagsBits.ManageRoles : PermissionFlagsBits.KickMembers;
   if (!interaction.memberPermissions?.has(needed)) return say(interaction, `You need the **${action === 'approve' ? 'Manage Roles' : 'Kick Members'}** permission.`);
 
-  const target = await guild.members.fetch(userId).catch(() => null);
-  if (!target) {
-    await interaction.update({ components: [] }).catch(() => {});
-    return interaction.followUp({ content: 'That member has already left.', flags: ephemeral });
-  }
+  const lock = sKey(guildId, userId);
+  if (busy.has(lock)) return say(interaction, 'Another action is already in progress for this member.');
+  busy.add(lock);
+  try {
+    await interaction.deferUpdate();   // acknowledge first; the work below can be slow
+    const guild = interaction.guild;
+    const s = settings(guild.id);
+    const finish = (text) => interaction.editReply({
+      embeds: [EmbedBuilder.from(interaction.message.embeds[0]).addFields({ name: 'Status', value: `${text} ${ts(Date.now())}`, inline: false })],
+      components: [],
+    });
+    const tell = (content) => interaction.followUp({ content, flags: ephemeral });
 
-  const note = (text) => {
-    const base = interaction.message.embeds[0];
-    const embed = EmbedBuilder.from(base).addFields({ name: 'Handled', value: `${text} by ${interaction.user.tag} ${ts(Date.now())}`, inline: false });
-    return interaction.update({ embeds: [embed], components: [] });
-  };
+    const target = await guild.members.fetch(userId).catch(() => null);
+    if (!target) { await closeLogs(guild, userId, 'Left the server', interaction.message.id); await finish('Left the server'); return tell('That member has already left.'); }
 
-  if (action === 'approve') {
-    const res = await complete({ guild, member: target, method: 'staff approval', by: interaction.user.tag });
-    if (!res.ok) return say(interaction, `⚠️ ${res.error}`);
-    return note('✅ Approved');
-  }
+    // They may have verified themselves while this log was open: close it instead of acting.
+    if (s.roleId && target.roles.cache.has(s.roleId)) {
+      await closeLogs(guild, userId, 'Already verified', interaction.message.id);
+      await finish('Already verified, no action needed');
+      return tell(`**${target.user.tag}** has already verified, so this log is now closed.`);
+    }
 
-  if (!target.kickable) return say(interaction, 'I can\'t kick that member (their role is above mine or they\'re the owner).');
-  try { await target.kick(`Kicked from verification log by ${interaction.user.tag}`); }
-  catch (err) { log('ERROR', 'Kick from verification log failed', { guild: guild.name, err }); return say(interaction, 'Discord refused the kick.'); }
-  memberLog.record(guild.id, userId, 'kicked_staff', { by: interaction.user.tag });
-  log('INFO', 'Member kicked from verification log', { guild: guild.name, user: target.user.tag, by: interaction.user.tag });
-  return note('👢 Kicked');
+    if (action === 'approve') {
+      const res = await complete({ guild, member: target, method: 'staff approval', by: interaction.user.tag, exceptMessageId: interaction.message.id });
+      if (!res.ok) return tell(`⚠️ ${res.error}`);
+      return finish(`Approved by ${interaction.user.tag}`);
+    }
+
+    if (!target.kickable) return tell('I can\'t kick that member (their role is above mine or they\'re the owner).');
+    try { await target.kick(`Kicked from verification log by ${interaction.user.tag}`); }
+    catch (err) { log('ERROR', 'Kick from verification log failed', { guild: guild.name, err }); return tell('Discord refused the kick.'); }
+    memberLog.record(guild.id, userId, 'kicked_staff', { by: interaction.user.tag });
+    log('INFO', 'Member kicked from verification log', { guild: guild.name, user: target.user.tag, by: interaction.user.tag });
+    await closeLogs(guild, userId, `Kicked by ${interaction.user.tag}`, interaction.message.id);
+    return finish(`Kicked by ${interaction.user.tag}`);
+  } finally { busy.delete(lock); }
 }
 
 /** Returns true when the interaction belonged to verification. */
@@ -530,6 +598,7 @@ async function sweep(client) {
       kicked++;
       memberLog.record(guild.id, member.id, 'kicked_unverified', { minutes: s.kickMinutes });
       log('INFO', 'Unverified member removed', { guild: guild.name, user: member.user.tag, after: `${s.kickMinutes} min` });
+      await closeLogs(guild, member.id, 'Removed: did not verify in time');
       await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xFAA61A).setTitle('👢 Unverified member removed').setDescription(`**${member.user.tag}** (\`${member.id}\`) did not verify within **${s.kickMinutes}** minutes.`).setTimestamp()] });
     }
   }
