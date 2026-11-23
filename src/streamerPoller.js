@@ -53,18 +53,18 @@ function buildLiveEmbed(platform, sub, status) {
   const embed = new EmbedBuilder()
     .setColor(COLOURS[platform])
     .setAuthor({ name: NAMES[platform], iconURL: ICONS[platform] })
-    .setTitle(`🔴 ${name} is now live!`)
+    .setTitle(`${name} is now live!`)
     .setURL(status.url)
     .setDescription(status.title || 'No stream title')
     .setTimestamp()
     .setFooter({ text: `${NAMES[platform]} • Live` });
 
   if (status.category) {
-    embed.addFields({ name: '🎮 Playing', value: status.category, inline: true });
+    embed.addFields({ name: 'Playing', value: status.category, inline: true });
   }
 
   if (status.viewers !== null && status.viewers >= 0) {
-    embed.addFields({ name: '👥 Viewers', value: status.viewers.toLocaleString(), inline: true });
+    embed.addFields({ name: 'Viewers', value: status.viewers.toLocaleString(), inline: true });
   }
 
   if (status.thumbnail) embed.setImage(status.thumbnail);
@@ -77,7 +77,6 @@ function buildWatchButton(url) {
     new ButtonBuilder()
       .setLabel('Watch Stream')
       .setURL(url)
-      .setEmoji('🔴')
       .setStyle(ButtonStyle.Link)
   );
 }

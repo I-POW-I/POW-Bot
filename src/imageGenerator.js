@@ -24,18 +24,28 @@ async function fetchAvatar(url) {
   return Buffer.from(await res.arrayBuffer());
 }
 
+/** '#RRGGBB' -> 'rgba(r,g,b,a)' */
+function rgba(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
 /**
  * Generate a welcome or leave card.
  * @param {'welcome'|'leave'} type
  * @param {string}  displayName  Member's display name
  * @param {string}  avatarUrl    Discord avatar URL
  * @param {number}  memberCount  Guild member count
+ * @param {{ title?: string, subtitle?: string, accent?: string|null }} [opts]  Server-customised text and colour
  * @returns {Buffer}  PNG image buffer
  */
-async function generateCard(type, displayName, avatarUrl, memberCount) {
+async function generateCard(type, displayName, avatarUrl, memberCount, opts = {}) {
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
   const isLeave = type === 'leave';
+  const accent  = /^#[0-9a-f]{6}$/i.test(opts.accent || '') ? opts.accent : null;
+  const titleText = opts.title || displayName;
+  const subtitleText = opts.subtitle !== undefined ? opts.subtitle : (isLeave ? `${displayName} has left the server` : '');
 
   // Transparent background — nothing to fill
 
@@ -43,11 +53,11 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
 
   // Subtle shadow ring so avatar stands out against dark backgrounds
   ctx.save();
-  ctx.shadowColor = isLeave ? 'rgba(100,100,100,0.5)' : 'rgba(88,101,242,0.6)';
+  ctx.shadowColor = accent ? rgba(accent, 0.6) : isLeave ? 'rgba(100,100,100,0.5)' : 'rgba(88,101,242,0.6)';
   ctx.shadowBlur  = 28;
   ctx.beginPath();
   ctx.arc(AVATAR_X, AVATAR_Y, AVATAR_R + 2, 0, Math.PI * 2);
-  ctx.strokeStyle = isLeave ? 'rgba(120,120,120,0.8)' : 'rgba(255,255,255,0.25)';
+  ctx.strokeStyle = accent ? rgba(accent, 0.9) : isLeave ? 'rgba(120,120,120,0.8)' : 'rgba(255,255,255,0.25)';
   ctx.lineWidth   = 3;
   ctx.stroke();
   ctx.restore();
@@ -71,7 +81,7 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
     // Fallback: plain coloured circle if avatar fails to load
     ctx.beginPath();
     ctx.arc(AVATAR_X, AVATAR_Y, AVATAR_R, 0, Math.PI * 2);
-    ctx.fillStyle = isLeave ? '#747F8D' : '#5865F2';
+    ctx.fillStyle = accent || (isLeave ? '#747F8D' : '#5865F2');
     ctx.fill();
   }
 
@@ -79,13 +89,15 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
 
-  // Truncate long names
-  ctx.font = 'bold 50px sans-serif';
-  let name = displayName;
+  // Shrink long text to fit, then truncate as a last resort
+  let size = 50;
+  ctx.font = `bold ${size}px sans-serif`;
+  while (size > 26 && ctx.measureText(titleText).width > W - 60) { size -= 2; ctx.font = `bold ${size}px sans-serif`; }
+  let name = titleText;
   while (name.length > 1 && ctx.measureText(name).width > W - 60) {
     name = name.slice(0, -1);
   }
-  if (name !== displayName) name += '…';
+  if (name !== titleText) name += '…';
 
   ctx.fillStyle = '#ffffff';
   ctx.shadowColor = 'rgba(0,0,0,0.9)';
@@ -93,12 +105,12 @@ async function generateCard(type, displayName, avatarUrl, memberCount) {
   ctx.fillText(name, W / 2, AVATAR_Y + AVATAR_R + 44);
   ctx.shadowBlur  = 0;
 
-  // ── Subtitle (leave cards only — welcome cards no longer show a subtitle) ──
-  if (isLeave) {
+  // ── Subtitle (leave cards by default; any card when the server sets one) ──
+  if (subtitleText) {
     ctx.font      = '22px sans-serif';
     ctx.fillStyle = '#9ca3af';
 
-    const subtitle = `${displayName} has left the server`;
+    const subtitle = subtitleText;
 
     // Truncate subtitle too
     let sub = subtitle;

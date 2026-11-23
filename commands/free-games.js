@@ -1,28 +1,19 @@
 /**
- * /free-games — free game alerts for Epic Games Store + Steam.
- *
- * Subcommands:
- *   now    — show the games that are free right now (Epic + Steam)
- *   setup  — post free game alerts in a channel (both platforms at once)
- *   edit   — change the channel or the ping role
- *   remove — stop the alerts
- *   status — show where alerts are going
+ * /free-games: shows the games that are free right now on Epic + Steam.
+ * Staff also get a button to the setup page (/setup -> Free game alerts) where the alerts are turned on and off.
  */
 
 const {
   SlashCommandBuilder, EmbedBuilder, ActionRowBuilder,
   ButtonBuilder, ButtonStyle, MessageFlags,
-  ChannelType, PermissionFlagsBits, InteractionContextType,
+  PermissionFlagsBits, InteractionContextType,
 } = require('discord.js');
-const { log }                       = require('../src/logger');
-const diagnostics_audit = (e) => require('../src/diagnostics').audit(e);
-const { run, selectOne, selectAll } = require('../src/database');
+const { selectOne }                 = require('../src/database');
 const { getFreeGames }      = require('../src/platforms/epicGames');
 const { getSteamFreeGames, getAppDetails } = require('../src/platforms/steam');
 
 const EPIC_COLOUR  = 0x0078F2;
 const STEAM_COLOUR = 0x1B2838;
-const TAG_DOTS     = ['🔴', '🟡', '🟢', '🔵', '🟣', '🟠'];
 
 function epicEmbed(game) {
   const endsAt   = game.endsAt
@@ -36,7 +27,7 @@ function epicEmbed(game) {
   ].filter(Boolean).join(' ');
 
   const tagLine = game.tags?.length
-    ? game.tags.map((t, i) => `${TAG_DOTS[i % TAG_DOTS.length]} **${t}**`).join('  ')
+    ? game.tags.map((t) => `**${t}**`).join('  ')
     : null;
 
   const desc = [
@@ -63,7 +54,6 @@ function epicEmbed(game) {
     new ButtonBuilder()
       .setLabel('Claim on Epic')
       .setURL(game.url)
-      .setEmoji('🎮')
       .setStyle(ButtonStyle.Link)
   );
 
@@ -106,7 +96,6 @@ function steamEmbed(game, details) {
     new ButtonBuilder()
       .setLabel('Claim on Steam')
       .setURL(game.url)
-      .setEmoji('🎮')
       .setStyle(ButtonStyle.Link)
   );
 
@@ -127,7 +116,7 @@ async function showCurrent(interaction) {
 
   if (!epicCurrent.length && !steamGames.length) {
     return interaction.editReply({
-      content: '🎮 No free games available right now on Epic or Steam. Check back soon!',
+      content: 'No free games available right now on Epic or Steam. Check back soon!',
     });
   }
 
@@ -152,7 +141,7 @@ async function showCurrent(interaction) {
   if (epicUpcoming.length > 0) {
     const upEmbed = new EmbedBuilder()
       .setColor(EPIC_COLOUR)
-      .setTitle('⏳ Coming Up Free on Epic')
+      .setTitle('Coming Up Free on Epic')
       .setDescription(
         epicUpcoming.map(g => {
           const starts = g.startsAt
@@ -181,96 +170,26 @@ async function showCurrent(interaction) {
 
   // If nothing posted at all (shouldn't happen but just in case)
   if (firstReply) {
-    await interaction.editReply({ content: '🎮 No free games found right now.' });
+    await interaction.editReply({ content: 'No free games found right now.' });
   }
 }
-
-const FREE_APPS = ['epic', 'steam_free'];
-const FREE_NAMES = { epic: 'Epic Games Free Games', steam_free: 'Steam Free Games' };
-
-const freeRows = (guildId) => selectAll(
-  "SELECT * FROM game_subscriptions WHERE guild_id = ? AND app_id IN ('epic', 'steam_free')", [guildId]
-);
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('free-games')
-    .setDescription('Free game alerts for Epic Games Store and Steam')
-    .setContexts(InteractionContextType.Guild)
-    .addSubcommand(sub => sub.setName('now').setDescription('Show the games that are free right now'))
-    .addSubcommand(sub => sub.setName('setup').setDescription('Post free game alerts in a channel (Epic and Steam)')
-      .addChannelOption(o => o.setName('channel').setDescription('Channel for the alerts').addChannelTypes(ChannelType.GuildText).setRequired(true))
-      .addRoleOption(o => o.setName('role').setDescription('Role to ping (optional)')))
-    .addSubcommand(sub => sub.setName('edit').setDescription('Change the alert channel or ping role')
-      .addChannelOption(o => o.setName('channel').setDescription('New channel').addChannelTypes(ChannelType.GuildText).setRequired(true))
-      .addRoleOption(o => o.setName('role').setDescription('New ping role — leave empty to remove the ping')))
-    .addSubcommand(sub => sub.setName('remove').setDescription('Stop free game alerts in this server'))
-    .addSubcommand(sub => sub.setName('status').setDescription('Show where free game alerts are posted')),
+    .setDescription('Games that are free right now on Epic Games Store and Steam')
+    .setContexts(InteractionContextType.Guild),
 
   async execute(interaction) {
-    const sub = interaction.options.getSubcommand();
-    if (sub === 'now') return showCurrent(interaction);
+    await showCurrent(interaction);
 
-    // Everything else changes server settings → Manage Server
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-      return interaction.reply({ content: 'You need **Manage Server** to change free game alerts.', flags: [MessageFlags.Ephemeral] });
-    }
-    const { guild } = interaction;
-
-    if (sub === 'setup' || sub === 'edit') {
-      const channel = interaction.options.getChannel('channel');
-      const role    = interaction.options.getRole('role');
-      const me      = guild.members.me;
-      const perms   = channel.permissionsFor(me);
-      const missing = ['ViewChannel', 'SendMessages', 'EmbedLinks'].filter(p => !perms?.has(PermissionFlagsBits[p])).map(p => p.replace(/([a-z])([A-Z])/g, '$1 $2'));
-      if (missing.length) {
-        return interaction.reply({ content: `I can't post in <#${channel.id}> — I'm missing: **${missing.join(', ')}**. Fix the channel permissions and try again.`, flags: [MessageFlags.Ephemeral] });
-      }
-      if (sub === 'edit' && !freeRows(guild.id).length) {
-        return interaction.reply({ content: 'Free game alerts are not set up yet — use `/free-games setup` first.', flags: [MessageFlags.Ephemeral] });
-      }
-
-      const set = [];
-      for (const appId of FREE_APPS) {
-        const existing = selectOne('SELECT id FROM game_subscriptions WHERE guild_id = ? AND app_id = ?', [guild.id, appId]);
-        if (existing) {
-          run('UPDATE game_subscriptions SET channel_id = ?, role_id = ? WHERE id = ?', [channel.id, role?.id || null, existing.id]);
-          set.push(`${appId === 'epic' ? '🎮 Epic' : '🎯 Steam'} (updated)`);
-        } else {
-          run('INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id) VALUES (?, ?, ?, ?, ?)',
-            [guild.id, appId, FREE_NAMES[appId], channel.id, role?.id || null]);
-          set.push(appId === 'epic' ? '🎮 Epic' : '🎯 Steam');
-        }
-      }
-
-      diagnostics_audit({ action: sub === 'setup' ? 'Free game alerts set up' : 'Free game alerts changed', actor: interaction.user, guild, details: `→ #${channel.name}${role ? ` · ping @${role.name}` : ''}` });
-      return interaction.reply({
-        content: [
-          `✅ Free game alerts ${sub === 'setup' ? 'set up' : 'updated'} in <#${channel.id}>${role ? ` · pinging <@&${role.id}>` : ''}:`,
-          set.map(x => `• ${x}`).join('\n'),
-          '',
-          'Each game gets its own post. Use `/free-games now` to see what is free right now.',
-        ].join('\n'),
-        flags: [MessageFlags.Ephemeral],
-      });
-    }
-
-    if (sub === 'remove') {
-      const rows = freeRows(guild.id);
-      if (!rows.length) return interaction.reply({ content: '📭 Free game alerts are not set up.', flags: [MessageFlags.Ephemeral] });
-      run("DELETE FROM game_subscriptions WHERE guild_id = ? AND app_id IN ('epic', 'steam_free')", [guild.id]);
-      diagnostics_audit({ action: 'Free game alerts removed', actor: interaction.user, guild });
-      return interaction.reply({ content: '🗑️ Free game alerts removed.', flags: [MessageFlags.Ephemeral] });
-    }
-
-    if (sub === 'status') {
-      const rows = freeRows(guild.id);
-      if (!rows.length) return interaction.reply({ content: '📭 Free game alerts are not set up. Use `/free-games setup`.', flags: [MessageFlags.Ephemeral] });
-      const lines = rows.map(r => `${r.app_id === 'epic' ? '🎮' : '🎯'} **${FREE_NAMES[r.app_id]}** → <#${r.channel_id}>${r.role_id ? ` · <@&${r.role_id}>` : ''}`);
-      return interaction.reply({
-        embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎮 Free game alerts').setDescription(lines.join('\n')).setTimestamp()],
-        flags: [MessageFlags.Ephemeral],
-      });
-    }
+    // Staff also see where this server's alerts go, with a shortcut to the setup page
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return;
+    const row = selectOne("SELECT channel_id, role_id FROM game_subscriptions WHERE guild_id = ? AND app_id IN ('epic', 'steam_free')", [interaction.guildId]);
+    return interaction.followUp({
+      content: row ? `Free game alerts are posted in <#${row.channel_id}>${row.role_id ? ` and ping <@&${row.role_id}>` : ''}.` : 'Free game alerts are off for this server.',
+      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setup:free').setLabel('Manage free game alerts').setStyle(ButtonStyle.Primary))],
+      flags: [MessageFlags.Ephemeral],
+    });
   },
 };

@@ -11,9 +11,9 @@ const ts = (ms, s = 'R') => `<t:${Math.floor(ms / 1000)}:${s}>`;
 const n  = (v) => Number(v || 0).toLocaleString('en-GB');
 
 const EVENT_LABELS = {
-  join: '🚪 joined', leave: '🏃 left', verify_ok: '✅ verified', approved: '✅ approved by staff',
-  verify_fail: '❌ failed the check', verify_blocked: '⏳ needs approval', kicked_unverified: '👢 removed (never verified)',
-  kicked_staff: '👢 kicked by staff', raid: '🚨 raid alert',
+  join: 'joined', leave: 'left', verify_ok: 'verified', approved: 'approved by staff',
+  verify_fail: 'failed the check', verify_blocked: 'needs approval', kicked_unverified: 'removed (never verified)',
+  kicked_staff: 'kicked by staff', raid: 'raid alert',
 };
 
 /** All members, fetched safely (big servers use whatever is cached). */
@@ -48,7 +48,7 @@ async function overview(interaction) {
   const newest = [...members.values()].filter(m => !m.user.bot).sort((a, b) => (b.joinedTimestamp || 0) - (a.joinedTimestamp || 0)).slice(0, 5)
     .map(m => `${m} · joined ${ts(m.joinedTimestamp || now)}`).join('\n') || '—';
 
-  const embed = new EmbedBuilder().setColor(BLUE).setTitle(`👥 Members — ${guild.name}`)
+  const embed = new EmbedBuilder().setColor(BLUE).setTitle(`Members — ${guild.name}`)
     .addFields(
       { name: 'Total',        value: `**${n(guild.memberCount)}**\n${n(humans)} people · ${n(bots)} bots`, inline: true },
       { name: 'Joined',       value: `24h: **${j24}**\n7d: **${j7}**\n30d: **${j30}**`, inline: true },
@@ -72,7 +72,7 @@ async function recent(interaction) {
     return `${ts(r.at)} ${EVENT_LABELS[r.event] || r.event}${who}${extra}`;
   });
   return interaction.reply({
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('🕒 Recent member activity').setDescription(lines.join('\n') || 'Nothing recorded yet — history starts from the first join after this update.')],
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Recent member activity').setDescription(lines.join('\n') || 'Nothing recorded yet — history starts from the first join after this update.')],
     flags: [MessageFlags.Ephemeral],
   });
 }
@@ -90,8 +90,8 @@ async function pending(interaction) {
     return `${m} · joined ${ts(m.joinedTimestamp || Date.now())} · account ${verification.ageText(a.ageDays)} · risk **${a.level}**`;
   });
   return interaction.editReply({
-    embeds: [new EmbedBuilder().setColor(list.length ? 0xFAA61A : 0x57F287).setTitle(`⏳ Not verified (${list.length})`)
-      .setDescription(lines.join('\n') + (list.length > 20 ? `\n…and ${list.length - 20} more` : '') || 'Everyone is verified. 🎉')],
+    embeds: [new EmbedBuilder().setColor(list.length ? 0xFAA61A : 0x57F287).setTitle(`Not verified (${list.length})`)
+      .setDescription(lines.join('\n') + (list.length > 20 ? `\n…and ${list.length - 20} more` : '') || 'Everyone is verified.')],
   });
 }
 
@@ -105,12 +105,12 @@ async function lookup(interaction) {
   const stats = getUserStats(user.id, guild.id);
   const hist = memberLog.history(guild.id, user.id, 8).map(r => `${ts(r.at)} ${EVENT_LABELS[r.event] || r.event}${r.data?.method ? ` · ${r.data.method}` : ''}`).join('\n') || 'No history recorded';
 
-  const embed = new EmbedBuilder().setColor(member ? 0x5865F2 : 0x99AAB5).setTitle(`🔎 ${user.tag}`)
+  const embed = new EmbedBuilder().setColor(member ? 0x5865F2 : 0x99AAB5).setTitle(`${user.tag}`)
     .setThumbnail(user.displayAvatarURL({ size: 256 }))
     .addFields(
       { name: 'Account',   value: `Created ${ts(user.createdTimestamp, 'F')}\n**${verification.ageText(a.ageDays)}** old · ID \`${user.id}\``, inline: true },
       { name: 'In server', value: member ? `Joined ${ts(member.joinedTimestamp)}\nRoles: **${member.roles.cache.size - 1}**` : 'Not in this server', inline: true },
-      { name: 'Verification', value: !s.roleId ? 'Not set up' : member ? (member.roles.cache.has(s.roleId) ? '✅ Verified' : '⏳ Not verified') : '—', inline: true },
+      { name: 'Verification', value: !s.roleId ? 'Not set up' : member ? (member.roles.cache.has(s.roleId) ? 'Verified' : 'Not verified') : '—', inline: true },
       { name: `Risk: ${a.level}`, value: a.flags.length ? a.flags.map(f => `• ${f}`).join('\n') : 'No flags', inline: false },
       { name: 'Voice', value: stats.session_count ? `**${formatMs(stats.total_ms)}** in ${n(stats.session_count)} sessions · streak **${stats.streak}** day(s)` : 'No voice activity recorded', inline: false },
       { name: 'History', value: hist, inline: false },

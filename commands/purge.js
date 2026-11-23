@@ -43,7 +43,7 @@ module.exports = {
       // ── Reply immediately so the user knows what's happening ───────────────
       let replyContent = `Deleted **${bulkDeleted}** recent message(s).`;
       if (old.size > 0) {
-        replyContent += `\n⏳ **${old.size}** message(s) are older than 14 days — deleting individually in the background...`;
+        replyContent += `\n**${old.size}** message(s) are older than 14 days — deleting individually in the background...`;
       }
       await interaction.editReply({ content: replyContent });
 
@@ -118,7 +118,7 @@ module.exports = {
     } catch (err) {
       log('ERROR', 'Purge failed', { guild: guild.name, err });
       return interaction.editReply({
-        content: '❌ Failed — make sure I have the **Manage Messages** permission.',
+        content: 'Failed — make sure I have the **Manage Messages** permission.',
       });
     }
   },

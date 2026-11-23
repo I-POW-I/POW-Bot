@@ -103,7 +103,7 @@ module.exports = {
             // Check your server audit logs to see who dragged the bot
             const draggedBy = await getMoveMod(newState.guild, newChannel.id);
 
-            const embed = base(newState.member, C.forceLeave, '🤖 Bot Intercepted Unauthorized Move')
+            const embed = base(newState.member, C.forceLeave, 'Bot Intercepted Unauthorized Move')
               .setDescription(`The application caught an unapproved drag action and successfully rubber-banded itself back to its assigned room.`)
               .addFields(
                 { name: 'Intercepted In', value: `<#${newChannel.id}>`, inline: true },

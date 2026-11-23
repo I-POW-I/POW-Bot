@@ -108,7 +108,7 @@ function discloudView() {
     cpu:         s.cpu ?? null,
     memory:      s.memory ?? null,
     ssd:         s.ssd ?? null,
-    net:         s.netIO ? `🔻 ${s.netIO.down || '0KB'} 🔺 ${s.netIO.up || '0KB'}` : null,
+    net:         s.netIO ? `In ${s.netIO.down || '0KB'} / Out ${s.netIO.up || '0KB'}` : null,
     lastRestart: s.last_restart ?? null,
     startedAt:   s.startedAt ?? null,
     cluster:     i.cluster ?? null,

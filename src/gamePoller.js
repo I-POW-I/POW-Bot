@@ -19,13 +19,12 @@ const UPDATE_INTERVAL     = 15 * 60 * 1000;
 const EPIC_INTERVAL       =  6 * 60 * 60 * 1000;
 const STEAM_FREE_INTERVAL =  3 * 60 * 60 * 1000; // 3h — catches shorter promotions
 
-const TAG_DOTS   = ['🔴', '🟡', '🟢', '🔵', '🟣', '🟠'];
 const EPIC_COLOUR  = 0x0078F2;
 const STEAM_COLOUR = 0x1B2838;
 
 function formatTagLine(tags) {
   if (!tags?.length) return null;
-  return tags.map((t, i) => `${TAG_DOTS[i % TAG_DOTS.length]} **${t}**`).join('  ');
+  return tags.map((t) => `**${t}**`).join('  ');
 }
 
 // ── Reliable channel fetch ─────────────────────────────────────────────────────
@@ -74,7 +73,6 @@ function buildEpicGameEmbed(game) {
     new ButtonBuilder()
       .setLabel('Claim Free Game')
       .setURL(game.url)
-      .setEmoji('🎮')
       .setStyle(ButtonStyle.Link)
   );
   return { embed, row };
@@ -118,7 +116,6 @@ function buildSteamFreeEmbed(game, details) {
     new ButtonBuilder()
       .setLabel('Claim on Steam')
       .setURL(game.url)
-      .setEmoji('🎮')
       .setStyle(ButtonStyle.Link)
   );
   return { embed, row };
@@ -200,7 +197,7 @@ async function checkEpicGames(client) {
       if (upcoming.length > 0) {
         const upEmbed = new EmbedBuilder()
           .setColor(EPIC_COLOUR)
-          .setTitle('⏳ Coming Up Free on Epic')
+          .setTitle('Coming Up Free on Epic')
           .setDescription(upcoming.map(g => {
             const starts = g.startsAt
               ? `<t:${Math.floor(new Date(g.startsAt).getTime() / 1000)}:D>`

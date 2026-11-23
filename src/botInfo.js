@@ -1,6 +1,6 @@
 /**
  * Bot information embeds — one place that builds everything shown by:
- *   • the panel's "Bot Info" button   • /botinfo   • /owner status
+ *   • the panel's "Bot Info" button (short card)   • /botinfo (full, server admins)   • /owner status
  *
  * Public view    : what every member may see (status, latency, RAM, uptime, services)
  * Owner view     : extra embeds for OWNER_IDS / ADMIN_IDS (Discloud container, event loop,
@@ -98,7 +98,7 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
     { name: 'Container State',   value: c(dv.container || 'Unknown'), inline: true },
     { name: 'CPU Usage',         value: c(dv.cpu || `${system.getCpuPercent().toFixed(1)}%`), inline: true },
     { name: 'SSD Storage',       value: c(dv.ssd || '—'), inline: true },
-    { name: 'Network I/O',       value: c(dv.net || '🔻 0KB 🔺 0KB'), inline: true },
+    { name: 'Network I/O',       value: c(dv.net || 'In 0KB / Out 0KB'), inline: true },
     { name: 'Last Restart',      value: c(dv.lastRestart || '—'), inline: true },
   ] : [];
 
@@ -109,7 +109,7 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
 
     embed.addFields(
       // Row 1: Connection & Core State
-      { name: 'Status',    value: '🟢 Connected', inline: true },
+      { name: 'Status',    value: 'Connected', inline: true },
       { name: 'VC Uptime', value: c(store.formatUptime(entry.joinedAt)), inline: true },
       { name: 'Bot Uptime', value: c(uptime(process.uptime())), inline: true },
 
@@ -147,7 +147,7 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
       inline: false,
     });
   } else {
-    embed.setDescription('💤 *Not currently connected to any voice channel.*').addFields(
+    embed.setDescription('*Not currently connected to any voice channel.*').addFields(
       { name: 'Bot Uptime', value: c(uptime(process.uptime())), inline: true },
       { name: memLabel, value: c(system.formatMemory(mem)), inline: true },
       { name: 'Web Socket Ping', value: ping >= 0 ? c(`${ping}ms`) : c('—'), inline: true },
@@ -170,6 +170,28 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
   );
   embed.setFooter({ text: `Node ${process.version} · discord.js ${require('discord.js').version}` });
   return embed;
+}
+
+// ── Short public card (panel "Bot Info" button) ───────────────────────────────
+
+/** A handful of stats that are safe and useful for any member. Full detail is in /botinfo (admins). */
+function buildPublicInfoEmbed(guildId, client) {
+  const entry     = store.getEntry(guildId);
+  const connected = isConnected(guildId) && !!entry;
+  const totals    = getServerTotals(guildId);
+  const ping      = client.ws.ping;
+
+  return new EmbedBuilder()
+    .setColor(connected ? 0x57F287 : 0x99AAB5)
+    .setTitle('POW-Bot')
+    .addFields(
+      { name: 'Status',      value: connected ? 'Connected' : 'Idle', inline: true },
+      { name: 'Uptime',      value: c(uptime(process.uptime())), inline: true },
+      { name: 'Latency',     value: ping >= 0 ? c(`${ping} ms`) : c('n/a'), inline: true },
+      { name: 'Voice time in this server', value: c(formatMs(totals.total_ms)), inline: true },
+      { name: 'Version',     value: c(`v${require('../package.json').version}`), inline: true },
+    )
+    .setFooter({ text: 'Server admins can see full details with /botinfo' });
 }
 
 // ── Global statistics (owner) ─────────────────────────────────────────────────
@@ -211,7 +233,7 @@ async function buildOwnerEmbeds(client) {
   const usedRestarts = cfg.restarts.filter(t => Date.now() - t < 86400e3).length;
   const settings = require('./ownerMonitor').getSettings();
 
-  const system_ = new EmbedBuilder().setColor(0x5865F2).setTitle('🖥️ System').addFields(
+  const system_ = new EmbedBuilder().setColor(0x5865F2).setTitle('System').addFields(
     { name: 'Container',     value: c(d.container || (d.configured ? 'n/a' : 'API not set')), inline: true },
     { name: 'RAM',           value: c(system.formatMemory(m)), inline: true },
     { name: 'RAM source',    value: c(m.source === 'discloud' ? 'Discloud' : 'Process (RSS)'), inline: true },
@@ -225,12 +247,12 @@ async function buildOwnerEmbeds(client) {
     { name: 'Memory detail', value: c(`RSS ${Math.round(m.rssMb)} · heap ${Math.round(m.heapMb)}/${Math.round(m.heapTotalMb)} · external ${Math.round(m.externalMb)} · buffers ${Math.round(m.arrayBuffersMb)} MB`), inline: false },
     { name: 'Runtime',       value: c(`Node ${snap.node} · discord.js ${snap.discordjs} · ${snap.platform}`), inline: false },
   );
-  if (d.ramKilled) system_.addFields({ name: '⚠️ Discloud flag', value: `Marked **killed for RAM** (exit code ${d.exitCode ?? '?'})`, inline: false });
-  if (d.error)     system_.addFields({ name: '⚠️ Discloud API', value: d.error, inline: false });
+  if (d.ramKilled) system_.addFields({ name: 'Discloud flag', value: `Marked **killed for RAM** (exit code ${d.exitCode ?? '?'})`, inline: false });
+  if (d.error)     system_.addFields({ name: 'Discloud API', value: d.error, inline: false });
 
   const platforms = g.streams.length
     ? g.streams.map(s => `${s.platform} ${s.n} (${s.live} live)`).join(' · ') : 'none';
-  const usage = new EmbedBuilder().setColor(0x57F287).setTitle('📈 Usage').addFields(
+  const usage = new EmbedBuilder().setColor(0x57F287).setTitle('Usage').addFields(
     { name: 'Servers',            value: c(n(g.servers)), inline: true },
     { name: 'Members (total)',    value: c(n(g.members)), inline: true },
     { name: 'Users cached',       value: c(n(g.usersCached)), inline: true },
@@ -250,7 +272,7 @@ async function buildOwnerEmbeds(client) {
   const dest = alerts.describeDestinations();
   const where = [dest.webhook && 'webhook', dest.channel && 'private channel', dest.dm && 'DMs'].filter(Boolean).join(' + ') || 'NOT SET';
   const flags = Object.entries(cfg.features).map(([k, v]) => `${k}: ${v ? 'on' : '**off**'}`).join(' · ');
-  const services = new EmbedBuilder().setColor(0xFAA61A).setTitle('🛡️ Services & safety').addFields(
+  const services = new EmbedBuilder().setColor(0xFAA61A).setTitle('Services & safety').addFields(
     { name: 'Integrations',      value: servicesSummary(), inline: false },
     { name: 'Alerts go to',      value: `${where}${dest.muted ? ' · **muted**' : ''}`, inline: true },
     { name: 'Alert levels',      value: c(dest.levels.join(', ')), inline: true },
@@ -264,4 +286,4 @@ async function buildOwnerEmbeds(client) {
   return [system_, usage, services];
 }
 
-module.exports = { buildBotInfoEmbed, buildOwnerEmbeds, getGlobalStats, servicesSummary };
+module.exports = { buildBotInfoEmbed, buildPublicInfoEmbed, buildOwnerEmbeds, getGlobalStats, servicesSummary };

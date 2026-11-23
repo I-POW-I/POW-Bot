@@ -29,7 +29,6 @@ const SEND_TIMEOUT_MS  = 12_000;
 const SEND_FAIL_LOG_MS = 30 * 60_000;
 
 const COLOURS = { ERROR: 0xED4245, WARN: 0xFEE75C, GHOST: 0xEB459E, INFO: 0x57F287, MEMORY: 0xFAA61A, AUDIT: 0x5865F2, DIGEST: 0x3498DB };
-const EMOJI   = { ERROR: '🔴', WARN: '🟡', GHOST: '👻', INFO: '🟢', MEMORY: '🧠', AUDIT: '🛠️', DIGEST: '📜' };
 
 let client       = null;
 let queue        = Promise.resolve();
@@ -122,9 +121,9 @@ function allowedByRateLimit() {
 /** [View logs] [Restart bot] [Mute 1 hour] — handled in ownerMonitor.handleAlertButton */
 function alertButtons() {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('alert_logs').setLabel('View logs').setEmoji('📄').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('alert_restart').setLabel('Restart bot').setEmoji('🔄').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('alert_mute').setLabel('Mute 1 hour').setEmoji('🔕').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('alert_logs').setLabel('View logs').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('alert_restart').setLabel('Restart bot').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('alert_mute').setLabel('Mute 1 hour').setStyle(ButtonStyle.Secondary),
   );
 }
 
@@ -133,7 +132,7 @@ function alertButtons() {
 function buildEmbed({ level, title, description, fields = [], codeBlocks = [] }) {
   const embed = new EmbedBuilder()
     .setColor(COLOURS[level] ?? COLOURS.ERROR)
-    .setTitle(trunc(`${EMOJI[level] ?? '🔴'} ${redact(title)}`, 250))
+    .setTitle(trunc(redact(title), 250))
     .setTimestamp()
     .setFooter({ text: footerText() });
 

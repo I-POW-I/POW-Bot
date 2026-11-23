@@ -72,15 +72,12 @@ async function joinChannel(targetChannel, guild, member, client, interaction) {
     const entry = store.getEntry(guild.id);
     setStats(guild.id, { joinedAt: entry.joinedAt, reconnectCount: 0 });
 
-    client.user.setPresence({
-      status: 'dnd',
-      activities: [{ name: `🔊 ${targetChannel.name}`, type: ActivityType.Custom }],
-    });
+    require('../src/presence').refresh(client);
 
     log('VOICE', 'Joined channel', { guild: guild.name, channel: targetChannel.name, by: member.user.tag });
     await updatePanel(client);
 
-    return interaction.reply({ content: `✅ Joined **${targetChannel.name}**.`, flags: [MessageFlags.Ephemeral] });
+    return interaction.reply({ content: `Joined **${targetChannel.name}**.`, flags: [MessageFlags.Ephemeral] });
   } catch {
     return interaction.reply({
       content: 'Failed to join — check I have the **Connect** permission.',
@@ -197,7 +194,7 @@ async function handle(interaction, client) {
     if (interaction.isStringSelectMenu() && interaction.customId === 'remove_streamer_select') {
       const { guild, member } = interaction;
       
-      // 🛠️ FIX: Grab the first element out of the selection array string mapping
+      // FIX: Grab the first element out of the selection array string mapping
       const subId = interaction.values[0]; 
       
       const sub   = selectOne('SELECT * FROM streamer_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
@@ -211,7 +208,7 @@ async function handle(interaction, client) {
       if (sub.platform === 'twitch') require('../src/platforms/twitchEventSub').requestSync();
 
       return interaction.update({
-        content:    `✅ No longer watching **${sub.display_name || sub.username}** on **${PLATFORM_NAMES[sub.platform]}**.`,
+        content:    `No longer watching **${sub.display_name || sub.username}** on **${PLATFORM_NAMES[sub.platform]}**.`,
         components: [],
       });
     }
@@ -237,9 +234,9 @@ async function handle(interaction, client) {
             const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
             if (btnCh?.isTextBased()) {
               const BUTTON_LABELS = {
-                bot_join: '🔊 Join', bot_leave: '👋 Leave',
-                bot_myinfo: '👤 My Info', bot_lookup: '🔍 Lookup',
-                bot_info: 'ℹ️ Bot Info',
+                bot_join: 'Join', bot_leave: 'Leave',
+                bot_myinfo: 'My Info', bot_lookup: 'Lookup',
+                bot_info: 'Bot Info',
               };
               const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
               await btnCh.send({
@@ -265,11 +262,8 @@ async function handle(interaction, client) {
     // ── Open to everyone ──────────────────────────────────────────────────────
 
     if (interaction.customId === 'bot_info') {
-      // Container / infrastructure rows are for staff (Move Members) and bot admins; everyone else gets the public view
-      const staff = member.permissions.has(PermissionFlagsBits.MoveMembers) || isBotAdmin(interaction.user.id);
-      const embeds = [buildStatsEmbed(guild.id, client, { detailed: staff })];
-      if (isBotAdmin(interaction.user.id)) embeds.push(...await require('../src/botInfo').buildOwnerEmbeds(client));   // owner-only extras
-      return interaction.reply({ embeds, flags: [MessageFlags.Ephemeral] });
+      // Short card for everyone. The full details are in /botinfo (server admins and bot owners).
+      return interaction.reply({ embeds: [require('../src/botInfo').buildPublicInfoEmbed(guild.id, client)], flags: [MessageFlags.Ephemeral] });
     }
 
     if (interaction.customId === 'bot_myinfo') {
@@ -323,7 +317,7 @@ async function handle(interaction, client) {
       stopSilencePlayer(guild.id);
       store.clearConnection(guild.id);
       clearLastChannel(guild.id);
-      client.user.setPresence({ status: 'idle', activities: [{ name: 'Sleeping...', type: ActivityType.Custom }] });
+      require('../src/presence').refresh(client);
       log('VOICE', 'Left via panel', { guild: guild.name, by: member.user.tag });
       await updatePanel(client);
       return interaction.reply({ content: `Disconnected from **${entry?.channelName || 'the voice channel'}**.`, flags: [MessageFlags.Ephemeral] });
@@ -368,7 +362,7 @@ async function passesGlobalGates(interaction) {
 
   try {
     if (interaction.isAutocomplete()) await interaction.respond([]);
-    else await interaction.reply({ content: `🔧 ${message}`, flags: [MessageFlags.Ephemeral] });
+    else await interaction.reply({ content: `${message}`, flags: [MessageFlags.Ephemeral] });
   } catch { /* already answered / expired */ }
   return false;
 }

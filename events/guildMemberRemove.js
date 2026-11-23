@@ -2,6 +2,7 @@ const { Events, EmbedBuilder, AuditLogEvent, AttachmentBuilder } = require('disc
 const { log }                    = require('../src/logger');
 const { getLogChannel, getGuildConfig } = require('../src/guildConfig');
 const { generateCard }           = require('../src/imageGenerator');
+const cards                      = require('../src/cards');
 
 async function getKicker(guild, userId, windowMs = 5000) {
   try {
@@ -38,8 +39,14 @@ module.exports = {
         if (channel?.isTextBased()) {
           const displayName = member.displayName || member.user.username;
           const avatarUrl   = member.user.displayAvatarURL({ dynamic: false, size: 512 });
-          const buffer      = await generateCard('leave', displayName, avatarUrl, guild.memberCount);
-          await channel.send({ files: [new AttachmentBuilder(buffer, { name: 'leave.png' })] });
+          const post = cards.compose(guild.id, 'leave', { user: displayName, server: guild.name, count: guild.memberCount });
+          const payload = { allowedMentions: { parse: [] } };
+          if (post.text) payload.content = post.text;
+          if (post.card) {
+            const buffer = await generateCard('leave', displayName, avatarUrl, guild.memberCount, post.image);
+            payload.files = [new AttachmentBuilder(buffer, { name: 'leave.png' })];
+          }
+          if (payload.content || payload.files) await channel.send(payload);
         }
       } catch (err) {
         log('WARN', 'Failed to send leave card', { err });

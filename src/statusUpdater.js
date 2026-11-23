@@ -11,8 +11,6 @@ const { getUserStats, getServerTotals, formatMs, getStreamStats }  = require('./
 const { joinTimes, streamTimes }           = require('./memberTracker');
 
 const PRESENCE_INTERVAL  = 60 * 1000;
-const ROTATION_INTERVAL  = 20 * 1000;
-let rotationIndex = 0;
 
 const HEALTHY = [
   VoiceConnectionStatus.Ready,
@@ -47,40 +45,14 @@ function formatLive(ms) {
 }
 
 // ── Presence ──────────────────────────────────────────────────────────────────
-
-function buildRotationSlots(client) {
-  const active = store.getAllEntries().filter(([guildId]) => isConnected(guildId));
-  const slots = [];
-  for (const [, meta] of active) {
-    slots.push({
-      name:          `${meta.channelName} · ${store.formatUptime(meta.joinedAt)}`,
-      discordStatus: 'dnd',
-      type:          ActivityType.Custom,
-    });
-  }
-  const totalMembers = client.guilds.cache.reduce((sum, g) => sum + g.memberCount, 0);
-  slots.push({
-    name:          `${totalMembers.toLocaleString()} members`,
-    discordStatus: 'dnd',
-    type:          ActivityType.Watching,
-  });
-  return slots;
-}
+// The rotating status is owned by presence.js (managed by the bot owner in /owner).
 
 function startStatusUpdater(client) {
-  const rotate = () => {
-    const slots = buildRotationSlots(client);
-    rotationIndex = rotationIndex % slots.length;
-    const slot = slots[rotationIndex];
-    client.user.setPresence({ status: slot.discordStatus, activities: [{ name: slot.name, type: slot.type }] });
-    rotationIndex++;
-  };
-  rotate();
-  setInterval(rotate, ROTATION_INTERVAL);
+  require('./presence').start(client);
   const panelUpdate = async () => { await updatePanel(client); };
   panelUpdate();
   setInterval(panelUpdate, PRESENCE_INTERVAL);
-  log('INFO', 'Status updater started (20s rotation · 60s panel)');
+  log('INFO', 'Panel updater started (60s)');
 }
 
 // ── Panel embed ───────────────────────────────────────────────────────────────
@@ -101,7 +73,7 @@ function buildPanelEmbed(guildId, guild = null) {
 
   if (connected && entry) {
     colour      = 0x57F287;
-    statusLine  = '🟢 Connected';
+    statusLine  = 'Connected';
     channelLine = `**${entry.channelName}**`;
     vcUptime    = store.formatUptime(entry.joinedAt);
     processUp   = getProcessUptime();
@@ -116,14 +88,14 @@ function buildPanelEmbed(guildId, guild = null) {
 
   } else if (isGhost) {
     colour      = 0xFEE75C;
-    statusLine  = '🟡 Idle';
+    statusLine  = 'Idle';
     channelLine = entry.channelName;
     vcUptime    = '—';
     processUp   = getProcessUptime();
     membersInVc = '0';
   } else {
     colour      = 0xED4245;
-    statusLine  = '🔴 Sleeping...';
+    statusLine  = 'Sleeping...';
     channelLine = '—';
     vcUptime    = '—';
     processUp   = getProcessUptime();
@@ -188,7 +160,7 @@ function buildMemberEmbed(member, guild) {
 
   const nickname   = member.nickname && member.nickname !== user.username ? member.nickname : 'None';
   const boostSince = member.premiumSince;
-  const boostStr   = boostSince ? `💜 <t:${Math.floor(boostSince.getTime() / 1000)}:R>` : '❌ No';
+  const boostStr   = boostSince ? `<t:${Math.floor(boostSince.getTime() / 1000)}:R>` : 'No';
 
   const vc = member.voice;
   const vcKey = `${guild.id}_${user.id}`;
@@ -204,9 +176,9 @@ function buildMemberEmbed(member, guild) {
     ].filter(Boolean);
 
     vcLine = `<#${vc.channel.id}> ${sessionMs ? `— \`${formatLive(sessionMs)}\`` : ''}`;
-    if (indicators.length > 0) vcLine += `\n⚙️ ${indicators.join('  •  ')}`;
+    if (indicators.length > 0) vcLine += `\n${indicators.join('  •  ')}`;
   } else {
-    vcLine = '💤 Not in a VC';
+    vcLine = 'Not in a VC';
   }
 
   const allRoles = member.roles.cache
@@ -219,7 +191,7 @@ function buildMemberEmbed(member, guild) {
     .setColor(member.displayColor || 0x5865F2)
     .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true }) })
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
-    .setTitle('🥷🏽 User Profile')
+    .setTitle('User Profile')
     // Section headers below use a plain bold bullet, not decorative emoji,
     // per request — just enough to visually separate each group of fields.
     .addFields({ name: '\u200b', value: '**▸ Account Overview**', inline: false })
@@ -245,7 +217,7 @@ function buildMemberEmbed(member, guild) {
   // Historical Metrics
   if (stats.session_count > 0) {
     let lastSeenStr = stats.last_seen ? `<t:${Math.floor(stats.last_seen / 1000)}:R>` : '—';
-    if (vc?.channel) lastSeenStr = '🟢 Active Now';
+    if (vc?.channel) lastSeenStr = 'Active Now';
 
     embed.addFields({ name: '\u200b', value: '**▸ Voice Activity**', inline: false });
     embed.addFields(
@@ -283,13 +255,11 @@ function buildPanelButtons() {
     new ButtonBuilder()
       .setCustomId('bot_join')
       .setLabel('Join')
-      .setEmoji('🟩')
       .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
       .setCustomId('bot_leave')
       .setLabel('Leave')
-      .setEmoji('🟧')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -298,13 +268,11 @@ function buildPanelButtons() {
     new ButtonBuilder()
       .setCustomId('bot_myinfo')
       .setLabel('My Info')
-      .setEmoji('▫️')
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
       .setCustomId('bot_lookup')
       .setLabel('User Lookup')
-      .setEmoji('▫️')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -313,7 +281,6 @@ function buildPanelButtons() {
     new ButtonBuilder()
       .setCustomId('bot_info')
       .setLabel('Bot Info')
-      .setEmoji('▫️')
       .setStyle(ButtonStyle.Secondary)
   );
 

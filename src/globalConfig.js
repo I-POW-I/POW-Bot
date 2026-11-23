@@ -7,6 +7,7 @@
  *   blacklist:   { users: { id: {reason, at, by} }, guilds: { id: {reason, at, by} } },
  *   audit:       [ { at, action, actor, guild, details } ],   // last 200 changes
  *   alerts:      { webhookUrl, webhookId, dm, levels, digestMinutes, memoryPercent },   // set by /owner alerts → Set up (Discloud variables override these)
+ *   presence:    { status, rotateSeconds, list }       // bot status line, managed in /owner (see presence.js)
  *   restarts:    [ ms timestamps of automatic restarts ],
  *   pendingRestart: { reason, by, requestedAt, memory… }      // read after the restart
  * }
@@ -24,6 +25,7 @@ const DEFAULTS = () => ({
   blacklist:   { users: {}, guilds: {} },
   audit:       [],
   alerts:      { webhookUrl: null, webhookId: null, dm: null, levels: null, digestMinutes: null, memoryPercent: null },
+  presence:    { status: 'dnd', rotateSeconds: 30, list: null },
   restarts:    [],
   pendingRestart: null,
 });
@@ -42,6 +44,7 @@ function load() {
     blacklist:   { users: { ...(raw.blacklist?.users || {}) }, guilds: { ...(raw.blacklist?.guilds || {}) } },
     audit:       Array.isArray(raw.audit) ? raw.audit : [],
     alerts:      { ...d.alerts, ...(raw.alerts || {}) },
+    presence:    { ...d.presence, ...(raw.presence || {}) },
     restarts:    Array.isArray(raw.restarts) ? raw.restarts : [],
   };
   return state;

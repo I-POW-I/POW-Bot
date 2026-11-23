@@ -1,8 +1,9 @@
 /**
  * /setup — one interactive screen to configure the bot for a server.
  *
- * Pages: home (checklist) · panel · logs · welcome · verify · control · streamers · games ·
- *        announce · check (permission doctor)
+ * Pages: home (checklist) · panel · logs · welcome · verify · control · streamers · updates ·
+ *        free · announce · check (permission doctor)
+ *        (streamers, updates and free live in setupAlerts.js)
  *
  * Everything reads/writes the same guild config keys the rest of the bot already uses
  * (src/guildConfig.js), so existing features keep working. Only members with
@@ -23,9 +24,12 @@ const { selectAll, selectOne, run } = require('./database');
 const { audit }  = require('./diagnostics');
 const { log }    = require('./logger');
 const verification = require('./verification');
-
-const BLUE = 0x5865F2, GREEN = 0x57F287, AMBER = 0xFAA61A, RED = 0xED4245;
-const ephemeral = [MessageFlags.Ephemeral];
+const cards = require('./cards');
+const alertsKit = require('./setupAlerts');
+const {
+  BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
+  channelSelect, roleSelect, POST_PERMS, missingIn, respond,
+} = require('./setupKit');
 
 const LOG_TYPES = [
   { key: 'voice',    label: 'Voice activity',        desc: 'Joins, leaves and moves in voice channels' },
@@ -36,19 +40,17 @@ const LOG_TYPES = [
 ];
 
 const PAGES = [
-  { value: 'panel',     label: 'Voice panel',                desc: 'Where the control panel lives', emoji: '🎛️' },
-  { value: 'logs',      label: 'Logs',                       desc: 'Voice, messages, members, moderation, commands', emoji: '📜' },
-  { value: 'welcome',   label: 'Welcome & leave',            desc: 'Welcome / leave cards', emoji: '👋' },
-  { value: 'verify',    label: 'Verification',               desc: 'Verified role, human check, quarantine, auto-kick', emoji: '✅' },
-  { value: 'control',   label: 'Bot control role',           desc: 'Who may make the bot join / leave', emoji: '🔑' },
-  { value: 'streamers', label: 'Streamer alerts',            desc: 'Twitch / Kick / YouTube live alerts', emoji: '📺' },
-  { value: 'games',     label: 'Game alerts',                desc: 'Free games and Steam patch notes', emoji: '🎮' },
-  { value: 'announce',  label: 'Announcements',              desc: 'Where the bot owner can post notices', emoji: '📣' },
+  { value: 'panel',     label: 'Voice panel',                desc: 'Where the control panel lives',},
+  { value: 'logs',      label: 'Logs',                       desc: 'Voice, messages, members, moderation, commands',},
+  { value: 'welcome',   label: 'Welcome & leave',            desc: 'Welcome / leave cards',},
+  { value: 'verify',    label: 'Verification',               desc: 'Verified role, human check, quarantine, auto-kick',},
+  { value: 'control',   label: 'Bot control role',           desc: 'Who may make the bot join / leave',},
+  { value: 'streamers', label: 'Streamer alerts',            desc: 'Twitch / Kick / YouTube live alerts',},
+  { value: 'updates',   label: 'Game update alerts',         desc: 'Patch notes: Steam, Minecraft, Riot, Fortnite, Blizzard, RSS',},
+  { value: 'free',      label: 'Free game alerts',           desc: 'Epic Games Store and Steam free games',},
+  { value: 'announce',  label: 'Announcements',              desc: 'Where the bot owner can post notices',},
 ];
 
-const chan = (id) => id ? `<#${id}>` : '*not set*';
-const role = (id) => id ? `<@&${id}>` : '*not set*';
-const onOff = (v) => v ? '🟢 on' : '⚫ off';
 
 // ── Status ────────────────────────────────────────────────────────────────────
 
@@ -69,8 +71,9 @@ function summary(guild) {
     { key: 'welcome', core: true,  done: exists(c.welcomeChannelId),               text: c.welcomeChannelId ? `${chan(c.welcomeChannelId)} · welcome ${onOff(c.welcomeEnabled !== false)}` : 'Choose a welcome channel' },
     { key: 'verify',  core: true,  done: !!(vs.roleId && vs.messageId),            text: !vs.roleId ? 'Pick the verified role' : !vs.messageId ? 'Role set — post the verification message' : `${role(vs.roleId)} · ${vs.mode === 'captcha' ? 'human check' : 'button'}` },
     { key: 'control', core: false, done: !!c.botControlRoleId,                     text: c.botControlRoleId ? role(c.botControlRoleId) : 'Only the server owner can control the bot' },
-    { key: 'streamers', core: false, done: streamers > 0,                          text: streamers ? `${streamers} streamer(s) watched` : 'None yet — /streamers add' },
-    { key: 'games',   core: false, done: games + free > 0,                         text: games + free ? `${games} game(s) · free games ${free ? 'on' : 'off'}` : 'None yet' },
+    { key: 'streamers', core: false, done: streamers > 0,                          text: streamers ? `${streamers} streamer(s) watched` : 'None yet' },
+    { key: 'updates', core: false, done: games > 0,                                text: games ? `${games} game(s) watched` : 'None yet' },
+    { key: 'free',    core: false, done: free > 0,                                 text: free ? 'On' : 'Off' },
     { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Uses the system channel' },
   ];
 }
@@ -85,11 +88,11 @@ function checkPermissions(guild) {
   const channelCheck = (id, label, needs) => {
     if (!id) return;
     const ch = guild.channels.cache.get(id);
-    if (!ch) { problems.push(`❌ **${label}** — the channel was deleted. Pick it again.`); return; }
+    if (!ch) { problems.push(`**${label}** — the channel was deleted. Pick it again.`); return; }
     const perms = ch.permissionsFor(me);
     const missing = needs.filter(([flag]) => !perms?.has(F[flag])).map(([, name]) => name);
-    if (missing.length) problems.push(`❌ **${label}** (<#${id}>) — I'm missing **${missing.join(', ')}**.`);
-    else good.push(`✅ ${label} (<#${id}>)`);
+    if (missing.length) problems.push(`**${label}** (<#${id}>) — I'm missing **${missing.join(', ')}**.`);
+    else good.push(`${label} (<#${id}>)`);
   };
   const POST = [['ViewChannel', 'View Channel'], ['SendMessages', 'Send Messages'], ['EmbedLinks', 'Embed Links']];
   const POST_FILES = [...POST, ['AttachFiles', 'Attach Files']];
@@ -106,34 +109,31 @@ function checkPermissions(guild) {
   const roleCheck = (id, label) => {
     if (!id) return;
     const r = guild.roles.cache.get(id);
-    if (!r) { problems.push(`❌ **${label}** — the role was deleted. Pick it again.`); return; }
-    if (!me.permissions.has(F.ManageRoles)) problems.push(`❌ **${label}** (${r}) — I need the **Manage Roles** permission.`);
-    else if (!r.editable) problems.push(`❌ **${label}** (${r}) — my role must be **above** it. Server Settings → Roles → drag my role higher.`);
-    else good.push(`✅ ${label} (${r})`);
+    if (!r) { problems.push(`**${label}** — the role was deleted. Pick it again.`); return; }
+    if (!me.permissions.has(F.ManageRoles)) problems.push(`**${label}** (${r}) — I need the **Manage Roles** permission.`);
+    else if (!r.editable) problems.push(`**${label}** (${r}) — my role must be **above** it. Server Settings → Roles → drag my role higher.`);
+    else good.push(`${label} (${r})`);
   };
   roleCheck(vs.roleId, 'Verified role');
   roleCheck(vs.unverifiedRoleId, 'Unverified role');
-  if (c.botControlRoleId && !guild.roles.cache.has(c.botControlRoleId)) problems.push('❌ **Bot control role** — the role was deleted. Pick it again.');
-  if (vs.kickMinutes && !me.permissions.has(F.KickMembers)) problems.push('❌ **Auto-kick** is on but I\'m missing **Kick Members**.');
+  if (c.botControlRoleId && !guild.roles.cache.has(c.botControlRoleId)) problems.push('**Bot control role** — the role was deleted. Pick it again.');
+  if (vs.kickMinutes && !me.permissions.has(F.KickMembers)) problems.push('**Auto-kick** is on but I\'m missing **Kick Members**.');
 
   return { problems, good };
 }
 
 // ── Views ─────────────────────────────────────────────────────────────────────
 
-const backButton = (page = 'home', label = 'Back') =>
-  new ButtonBuilder().setCustomId(`setup:${page}`).setLabel(label).setStyle(ButtonStyle.Secondary);
-
 function viewHome(guild, note) {
   const items = summary(guild);
   const core = items.filter(i => i.core), optional = items.filter(i => !i.core);
-  const line = (i) => `${i.done ? '✅' : i.core ? '⚠️' : '➖'} **${PAGES.find(p => p.value === i.key).label}** — ${i.text}`;
+  const line = (i) => `${i.done ? 'Done' : i.core ? 'Needs setup' : 'Optional'} · **${PAGES.find(p => p.value === i.key).label}** — ${i.text}`;
   const coreDone = core.filter(i => i.done).length;
 
   const embed = new EmbedBuilder()
     .setColor(coreDone === core.length ? GREEN : AMBER)
-    .setTitle(`⚙️ Setup — ${guild.name}`)
-    .setDescription([note, `**Core setup: ${coreDone} of ${core.length}**${coreDone === core.length ? ' — all done! 🎉' : ''}`,
+    .setTitle(`Setup — ${guild.name}`)
+    .setDescription([note, `**Core setup: ${coreDone} of ${core.length}**${coreDone === core.length ? ' — all done' : ''}`,
       coreDone === 0 ? ['**Start here** — four quick steps, pick each from the menu below:',
         '1. **Voice panel** — choose where the control panel lives',
         '2. **Logs** — choose where logs are posted',
@@ -148,13 +148,13 @@ function viewHome(guild, note) {
     .setFooter({ text: 'Pick a section below · changes save instantly' });
 
   const menu = new StringSelectMenuBuilder().setCustomId('setup:home:go').setPlaceholder('Choose what to configure…')
-    .addOptions(PAGES.map(p => ({ label: p.label, value: p.value, description: p.desc, emoji: p.emoji })));
+    .addOptions(PAGES.map(p => ({ label: p.label, value: p.value, description: p.desc })));
   return {
     embeds: [embed],
     components: [
       new ActionRowBuilder().addComponents(menu),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('setup:check').setLabel('Permission check').setEmoji('🩺').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('setup:check').setLabel('Permission check').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('setup:home').setLabel('Refresh').setStyle(ButtonStyle.Secondary),
       ),
     ],
@@ -165,31 +165,20 @@ function viewCheck(guild) {
   const { problems, good } = checkPermissions(guild);
   const embed = new EmbedBuilder()
     .setColor(problems.length ? RED : GREEN)
-    .setTitle('🩺 Permission check')
+    .setTitle('Permission check')
     .setDescription(problems.length
       ? `Found **${problems.length}** problem(s) that would stop features working:\n\n${problems.join('\n')}`
-      : '**Everything I need is in place.** 🎉')
+      : '**Everything I need is in place.**')
     .setTimestamp();
   if (good.length) embed.addFields({ name: 'Working', value: good.join('\n').slice(0, 1000) });
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('setup:check').setLabel('Check again').setStyle(ButtonStyle.Primary), backButton())] };
 }
 
-const channelSelect = (id, placeholder, current) => {
-  const m = new ChannelSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setChannelTypes(ChannelType.GuildText).setMinValues(1).setMaxValues(1);
-  if (current) m.setDefaultChannels(current);
-  return new ActionRowBuilder().addComponents(m);
-};
-const roleSelect = (id, placeholder, current) => {
-  const m = new RoleSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setMinValues(1).setMaxValues(1);
-  if (current) m.setDefaultRoles(current);
-  return new ActionRowBuilder().addComponents(m);
-};
-
 function viewPanel(guild, note) {
   const c = getGuildConfig(guild.id);
   return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('🎛️ Voice panel').setDescription([note,
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Voice panel').setDescription([note,
       `Current panel: ${c.panelChannelId ? chan(c.panelChannelId) : '*not posted*'}`,
       '', 'Pick a channel and I\'ll post the live control panel there (an old panel is replaced). Members use its buttons to make me join/leave and look up voice stats.'].filter(Boolean).join('\n'))],
     components: [channelSelect('setup:panel:set', 'Post the control panel in…', c.panelChannelId), new ActionRowBuilder().addComponents(backButton())],
@@ -206,27 +195,55 @@ function viewLogs(guild, type, note) {
     rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`setup:logs:clear:${type}`).setLabel('Clear this log').setStyle(ButtonStyle.Danger), backButton()));
   } else rows.push(new ActionRowBuilder().addComponents(backButton()));
-  return { embeds: [new EmbedBuilder().setColor(BLUE).setTitle('📜 Logs').setDescription([note, lines].filter(Boolean).join('\n\n'))], components: rows };
+  return { embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Logs').setDescription([note, lines].filter(Boolean).join('\n\n'))], components: rows };
+}
+
+function cardSummary(guildId, type) {
+  const o = cards.options(guildId, type);
+  const text = (v) => v ? `\`${v.length > 40 ? v.slice(0, 37) + '…' : v}\`` : '*none*';
+  return `Card ${o.card ? 'on' : 'off'} · title ${text(o.title)} · subtitle ${text(o.subtitle)} · colour ${o.accent ? `\`${o.accent}\`` : '*default*'} · message ${text(o.message)}`;
 }
 
 function viewWelcome(guild, note) {
   const c = getGuildConfig(guild.id);
+  const wOn = c.welcomeEnabled !== false, lOn = c.leaveEnabled !== false;
+  const wCard = cards.options(guild.id, 'welcome').card, lCard = cards.options(guild.id, 'leave').card;
   return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('👋 Welcome & leave').setDescription([note,
-      `**Welcome cards** — ${chan(c.welcomeChannelId)} · ${onOff(c.welcomeEnabled !== false)}`,
-      `**Leave cards** — ${chan(c.leaveChannelId || c.welcomeChannelId)}${c.leaveChannelId ? '' : ' *(defaults to the welcome channel)*'} · ${onOff(c.leaveEnabled !== false)}`].filter(Boolean).join('\n\n'))],
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Welcome & leave').setDescription([note,
+      `**Welcome** — ${chan(c.welcomeChannelId)} · ${wOn ? 'on' : 'off'}\n${cardSummary(guild.id, 'welcome')}`,
+      `**Leave** — ${chan(c.leaveChannelId || c.welcomeChannelId)}${c.leaveChannelId ? '' : ' *(defaults to the welcome channel)*'} · ${lOn ? 'on' : 'off'}\n${cardSummary(guild.id, 'leave')}`,
+      '**Placeholders:** `{user}` name · `{mention}` @mention · `{server}` server name · `{count}` member count'].filter(Boolean).join('\n\n'))],
     components: [
       channelSelect('setup:welcome:wch', 'Welcome messages channel', c.welcomeChannelId),
       channelSelect('setup:welcome:lch', 'Leave messages channel (optional)', c.leaveChannelId),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('setup:welcome:tw').setLabel(`Welcome ${c.welcomeEnabled !== false ? 'ON' : 'OFF'}`).setStyle(c.welcomeEnabled !== false ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('setup:welcome:tl').setLabel(`Leave ${c.leaveEnabled !== false ? 'ON' : 'OFF'}`).setStyle(c.leaveEnabled !== false ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('setup:welcome:tw').setLabel(`Welcome ${wOn ? 'ON' : 'OFF'}`).setStyle(wOn ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('setup:welcome:tl').setLabel(`Leave ${lOn ? 'ON' : 'OFF'}`).setStyle(lOn ? ButtonStyle.Success : ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('setup:welcome:pw').setLabel('Preview welcome').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('setup:welcome:pl').setLabel('Preview leave').setStyle(ButtonStyle.Primary),
         backButton(),
       ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('setup:welcome:ew').setLabel('Edit welcome').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('setup:welcome:el').setLabel('Edit leave').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('setup:welcome:cw').setLabel(`Welcome card ${wCard ? 'ON' : 'OFF'}`).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('setup:welcome:cl').setLabel(`Leave card ${lCard ? 'ON' : 'OFF'}`).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('setup:welcome:reset').setLabel('Reset text').setStyle(ButtonStyle.Danger),
+      ),
     ],
   };
+}
+
+function cardModal(guild, type) {
+  const o = cards.options(guild.id, type);
+  const input = (id, label, style, value, max, placeholder, required = false) => new ActionRowBuilder().addComponents(
+    new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setMaxLength(max).setPlaceholder(placeholder).setValue(String(value || '').slice(0, max)));
+  return new ModalBuilder().setCustomId(`setup:welcome:${type === 'welcome' ? 'wm' : 'lm'}`).setTitle(type === 'welcome' ? 'Welcome post' : 'Leave post').addComponents(
+    input('title',    'Card title',            TextInputStyle.Short,     o.title,    cards.LIMITS.title,    '{user}'),
+    input('subtitle', 'Card subtitle (blank = none)', TextInputStyle.Short, o.subtitle, cards.LIMITS.subtitle, 'Welcome to {server}'),
+    input('accent',   'Accent colour (hex)',   TextInputStyle.Short,     o.accent,   7,                     '#5865F2'),
+    input('message',  'Message above the card (blank = none)', TextInputStyle.Paragraph, o.message, cards.LIMITS.message, '{mention} welcome to {server}! You are member #{count}.'),
+  );
 }
 
 function viewVerify(guild, note) {
@@ -235,7 +252,7 @@ function viewVerify(guild, note) {
   const desc = [note,
     `**Verified role** — ${role(s.roleId)}`,
     `**Unverified role** — ${role(s.unverifiedRoleId)} *(given on join, removed when verified)*`,
-    `**Method** — ${s.mode === 'captcha' ? '🔐 human check (type the code in a picture)' : '🖱️ one-click button'}`,
+    `**Method** — ${s.mode === 'captcha' ? 'human check (type the code in a picture)' : 'one-click button'}`,
     `**Rules** — min account age: ${s.minAgeDays ? `${s.minAgeDays} day(s)` : 'off'} · auto-remove unverified: ${s.kickMinutes ? `after ${s.kickMinutes} min` : 'off'} · raid alert: ${s.raidThreshold} joins/min`,
     `**DM prompt on join** — ${onOff(s.dmOnJoin)}`,
     `**Verification message** — ${s.channelId ? chan(s.channelId) : '*not posted*'}`,
@@ -244,7 +261,7 @@ function viewVerify(guild, note) {
     '_Only what Discord shows about an account is used (age, badges, avatar). No emails, IPs or locations are collected._',
   ].filter(v => v !== null && v !== undefined).join('\n');
   return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('✅ Verification').setDescription(desc)],
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Verification').setDescription(desc)],
     components: [
       roleSelect('setup:verify:role', 'Role members get when verified', s.roleId),
       roleSelect('setup:verify:unv', 'Unverified role (optional)', s.unverifiedRoleId),
@@ -266,7 +283,7 @@ function viewVerify(guild, note) {
 function viewControl(guild, note) {
   const c = getGuildConfig(guild.id);
   return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('🔑 Bot control role').setDescription([note,
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Bot control role').setDescription([note,
       `Current: ${role(c.botControlRoleId)}`, '',
       'Members with this role (and the server owner) can use the panel\'s **Leave** button. Without a role, only the server owner can. *Changing this needs the Administrator permission.*'].filter(Boolean).join('\n'))],
     components: [roleSelect('setup:control:set', 'Role that can control the bot', c.botControlRoleId),
@@ -274,34 +291,10 @@ function viewControl(guild, note) {
   };
 }
 
-function viewStreamers(guild) {
-  const rows = selectAll('SELECT platform, username, discord_channel_id FROM streamer_subscriptions WHERE guild_id = ? ORDER BY platform, username LIMIT 15', [guild.id]);
-  const total = selectOne('SELECT COUNT(*) AS n FROM streamer_subscriptions WHERE guild_id = ?', [guild.id])?.n || 0;
-  return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('📺 Streamer alerts').setDescription([
-      rows.length ? rows.map(r => `• **${r.platform}** ${r.username} → ${chan(r.discord_channel_id)}`).join('\n') + (total > rows.length ? `\n…and ${total - rows.length} more` : '') : 'No streamers yet.',
-      '', 'Add or remove with **`/streamers add`**, **`/streamers remove`** and **`/streamers list`**.'].join('\n'))],
-    components: [new ActionRowBuilder().addComponents(backButton())],
-  };
-}
-
-function viewGames(guild, note) {
-  const games = selectAll(`SELECT game_name, channel_id FROM game_subscriptions WHERE guild_id = ? AND app_id NOT IN ${FREE_IDS} LIMIT 10`, [guild.id]);
-  const free  = selectOne(`SELECT channel_id FROM game_subscriptions WHERE guild_id = ? AND app_id IN ${FREE_IDS}`, [guild.id]);
-  return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('🎮 Game alerts').setDescription([note,
-      `**Free games (Epic + Steam)** — ${free ? chan(free.channel_id) : '*off*'}`,
-      `**Steam patch notes** — ${games.length ? games.map(g => `${g.game_name} → ${chan(g.channel_id)}`).join(' · ') : '*none*'}`,
-      '', 'Free games can be switched on below. Patch notes: **`/game-updates add`**. More: **`/free-games`**.'].filter(Boolean).join('\n'))],
-    components: [channelSelect('setup:games:free', 'Post free game alerts in…', free?.channel_id),
-      new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setup:games:freeoff').setLabel('Turn off free games').setStyle(ButtonStyle.Danger), backButton())],
-  };
-}
-
 function viewAnnounce(guild, note) {
   const c = getGuildConfig(guild.id);
   return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('📣 Announcements').setDescription([note,
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Announcements').setDescription([note,
       `Channel: ${c.announceChannelId ? chan(c.announceChannelId) : '*not set (uses the system channel)*'}`, '',
       'Where the bot\'s owner may post important notices — maintenance, new features. Rare.'].filter(Boolean).join('\n'))],
     components: [channelSelect('setup:announce:set', 'Announcement channel', c.announceChannelId),
@@ -309,21 +302,9 @@ function viewAnnounce(guild, note) {
   };
 }
 
-const VIEWS = { home: viewHome, logs: viewLogs, panel: viewPanel, welcome: viewWelcome, verify: viewVerify, control: viewControl, streamers: viewStreamers, games: viewGames, announce: viewAnnounce, check: viewCheck };
+const VIEWS = { home: viewHome, logs: viewLogs, panel: viewPanel, welcome: viewWelcome, verify: viewVerify, control: viewControl, announce: viewAnnounce, check: viewCheck };
 
 // ── Actions ───────────────────────────────────────────────────────────────────
-
-const POST_PERMS = ['ViewChannel', 'SendMessages', 'EmbedLinks'];
-
-const pretty = (flag) => flag.replace(/([a-z])([A-Z])/g, '$1 $2');   // SendMessages → Send Messages
-
-function missingIn(channel, guild, perms = POST_PERMS) {
-  const p = channel.permissionsFor(guild.members.me);
-  return perms.filter(x => !p?.has(PermissionFlagsBits[x])).map(pretty);
-}
-
-const noteBad = (text) => `❌ ${text}`;
-const noteGood = (text) => `✅ ${text}`;
 
 async function postPanel(guild, channel, client, by) {
   const { buildPanelEmbed, buildPanelButtons } = require('./statusUpdater');
@@ -334,15 +315,6 @@ async function postPanel(guild, channel, client, by) {
   const message = await channel.send({ embeds: [buildPanelEmbed(guild.id)], components: buildPanelButtons() });
   setGuildConfig(guild.id, { panelChannelId: channel.id, panelMessageId: message.id });
   log('INFO', 'Control panel deployed', { guild: guild.name, channel: channel.name, by: by.tag });
-}
-
-function setFreeGames(guild, channelId) {
-  const names = { epic: 'Epic Games Free Games', steam_free: 'Steam Free Games' };
-  for (const appId of ['epic', 'steam_free']) {
-    const ex = selectOne('SELECT id FROM game_subscriptions WHERE guild_id = ? AND app_id = ?', [guild.id, appId]);
-    if (ex) run('UPDATE game_subscriptions SET channel_id = ? WHERE id = ?', [channelId, ex.id]);
-    else run('INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id) VALUES (?, ?, ?, ?, NULL)', [guild.id, appId, names[appId], channelId]);
-  }
 }
 
 const parseIntIn = (text, min, max) => { const n = parseInt(String(text).trim(), 10); return Number.isFinite(n) && n >= min && n <= max ? n : null; };
@@ -356,11 +328,6 @@ function rulesModal(guild) {
     input('kick', 'Remove unverified after N minutes (0 = off)', s.kickMinutes, '0, or 10 – 10080'),
     input('raid', 'Raid alert: joins per minute', s.raidThreshold, '3 – 100'),
   );
-}
-
-async function respond(interaction, view) {
-  if (interaction.isFromMessage?.() || interaction.isMessageComponent?.()) return interaction.update(view);
-  return interaction.reply({ ...view, flags: ephemeral });
 }
 
 /** Returns true if the interaction belonged to /setup. */
@@ -378,13 +345,14 @@ async function handleInteraction(interaction, client) {
   const [, page, action, arg] = id.split(':');
   const by = interaction.user;
   const done = (a, details) => audit({ action: `Setup: ${a}`, actor: by, guild, details });
-  const show = (name, ...args) => respond(interaction, VIEWS[name](guild, ...args));
+  const show = (name, ...args) => respond(interaction, alertsKit.owns(name) ? alertsKit.VIEWS[name](guild, by, ...args) : VIEWS[name](guild, ...args));
 
   // Navigation
   if (page === 'home' && !action) return await show('home'), true;
   if (page === 'home' && action === 'go') return await show(interaction.values[0]), true;   // select menu
   if (page === 'check') return await show('check'), true;
-  if (['panel', 'welcome', 'verify', 'control', 'streamers', 'games', 'announce'].includes(page) && !action) return await show(page), true;
+  if (alertsKit.owns(page)) return await alertsKit.handle(interaction, { guild, by, client, page, action, arg }), true;
+  if (['panel', 'welcome', 'verify', 'control', 'announce'].includes(page) && !action) return await show(page), true;
   if (page === 'logs' && !action) return await respond(interaction, viewLogs(guild)), true;
 
   // ── panel ──
@@ -406,7 +374,7 @@ async function handleInteraction(interaction, client) {
       if (missing.length) return await respond(interaction, viewLogs(guild, arg, noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`))), true;
       setLogChannel(guild.id, arg, channel.id);
       done(`log channel set (${arg})`, `→ #${channel.name}`);
-      const privacy = arg === 'messages' ? '\n🔒 To log deleted and edited messages, new messages in this server are kept for **7 days**, then deleted automatically. Removing this log deletes them immediately.' : '';
+      const privacy = arg === 'messages' ? '\nTo log deleted and edited messages, new messages in this server are kept for **7 days**, then deleted automatically. Removing this log deletes them immediately.' : '';
       return await respond(interaction, viewLogs(guild, arg, noteGood(`**${LOG_TYPES.find(t => t.key === arg).label}** now goes to ${channel}.${privacy}`))), true;
     }
     if (action === 'clear') {
@@ -439,14 +407,40 @@ async function handleInteraction(interaction, client) {
       const type = action === 'pw' ? 'welcome' : 'leave';
       try {
         const { generateCard } = require('./imageGenerator');
-        const m = interaction.member;
-        const buffer = await generateCard(type, m.displayName || by.username, by.displayAvatarURL({ size: 512 }), guild.memberCount);
-        await interaction.editReply({ content: `**${type === 'welcome' ? 'Welcome' : 'Leave'} card preview** — exactly what will be posted:`, files: [new AttachmentBuilder(buffer, { name: `${type}-preview.png` })] });
+        const m = interaction.member, name = m.displayName || by.username;
+        const post = cards.compose(guild.id, type, { user: name, mention: `${m}`, server: guild.name, count: guild.memberCount });
+        const payload = { content: [`**${type === 'welcome' ? 'Welcome' : 'Leave'} preview**, exactly what will be posted:`, post.text].filter(Boolean).join('\n\n'), allowedMentions: { parse: [] } };
+        if (post.card) payload.files = [new AttachmentBuilder(await generateCard(type, name, by.displayAvatarURL({ size: 512 }), guild.memberCount, post.image), { name: `${type}-preview.png` })];
+        await interaction.editReply(payload);
       } catch (err) {
         log('ERROR', 'Card preview failed', { guild: guild.name, err });
         await interaction.editReply({ content: 'Could not generate the preview. The bot owner has been notified.' });
       }
       return true;
+    }
+    if (action === 'ew' || action === 'el') { await interaction.showModal(cardModal(guild, action === 'ew' ? 'welcome' : 'leave')); return true; }
+    if (action === 'wm' || action === 'lm') {
+      const type = action === 'wm' ? 'welcome' : 'leave', k = cards.keys(type);
+      const text = (id) => interaction.fields.getTextInputValue(id).trim();
+      const rawAccent = text('accent'), accent = rawAccent ? cards.parseColour(rawAccent) : null;
+      if (rawAccent && !accent) return await show('welcome', noteBad('That is not a colour. Use a hex code such as `#5865F2`.')), true;
+      setGuildConfig(guild.id, { [k.title]: text('title') || null, [k.subtitle]: text('subtitle'), [k.message]: text('message'), [k.accent]: accent });
+      done(`${type} post customised`);
+      return await show('welcome', noteGood(`${type === 'welcome' ? 'Welcome' : 'Leave'} post saved. Press **Preview** to see it.`)), true;
+    }
+    if (action === 'cw' || action === 'cl') {
+      const type = action === 'cw' ? 'welcome' : 'leave', k = cards.keys(type);
+      const now = cards.options(guild.id, type).card;
+      setGuildConfig(guild.id, { [k.card]: !now });
+      done(`${type} card ${!now ? 'enabled' : 'disabled'}`);
+      return await show('welcome'), true;
+    }
+    if (action === 'reset') {
+      const patch = {};
+      for (const type of ['welcome', 'leave']) { const k = cards.keys(type); patch[k.title] = null; patch[k.subtitle] = null; patch[k.message] = null; patch[k.accent] = null; }
+      setGuildConfig(guild.id, patch);
+      done('welcome and leave text reset to defaults');
+      return await show('welcome', noteGood('Titles, subtitles, colours and messages are back to the defaults.')), true;
     }
   }
 
@@ -496,19 +490,6 @@ async function handleInteraction(interaction, client) {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) return await show('control', noteBad('Only **Administrators** can change this.')), true;
     if (action === 'set') { const r = interaction.roles.first(); setGuildConfig(guild.id, { botControlRoleId: r.id }); done('bot control role set', `→ @${r.name}`); return await show('control', noteGood(`${r} can now control the bot.`)), true; }
     if (action === 'reset') { setGuildConfig(guild.id, { botControlRoleId: null }); done('bot control role reset'); return await show('control', noteGood('Reset — only the server owner can control the bot.')), true; }
-  }
-
-  // ── games (free) ──
-  if (page === 'games') {
-    if (action === 'free') {
-      const channel = interaction.channels.first();
-      const missing = missingIn(channel, guild);
-      if (missing.length) return await show('games', noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`)), true;
-      setFreeGames(guild, channel.id);
-      done('free game alerts set', `→ #${channel.name}`);
-      return await show('games', noteGood(`Free game alerts go to ${channel}.`)), true;
-    }
-    if (action === 'freeoff') { run(`DELETE FROM game_subscriptions WHERE guild_id = ? AND app_id IN ${FREE_IDS}`, [guild.id]); done('free game alerts removed'); return await show('games', noteGood('Free game alerts turned off.')), true; }
   }
 
   // ── announce ──

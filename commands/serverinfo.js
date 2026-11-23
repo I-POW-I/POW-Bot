@@ -5,10 +5,10 @@ const BOOST_TIER      = { 0: 'No Tier', 1: 'Tier 1', 2: 'Tier 2', 3: 'Tier 3' };
 const UPLOAD_LIMIT    = { 0: '25 MB', 1: '25 MB', 2: '50 MB', 3: '100 MB' };
 const CONTENT_FILTER  = ['Disabled', 'Members without roles', 'All members'];
 const NOTABLE_FEATURES = {
-  COMMUNITY: '🏘️ Community', PARTNERED: '🤝 Partnered', VERIFIED: '✅ Verified',
-  DISCOVERABLE: '🔍 Discoverable', ANIMATED_ICON: '🎞️ Animated Icon',
-  BANNER: '🖼️ Banner', NEWS: '📰 Announcements', VANITY_URL: '🔗 Vanity URL',
-  ROLE_ICONS: '🏷️ Role Icons', MONETIZATION_ENABLED: '💰 Monetization',
+  COMMUNITY: 'Community', PARTNERED: 'Partnered', VERIFIED: 'Verified',
+  DISCOVERABLE: 'Discoverable', ANIMATED_ICON: 'Animated Icon',
+  BANNER: 'Banner', NEWS: 'Announcements', VANITY_URL: 'Vanity URL',
+  ROLE_ICONS: 'Role Icons', MONETIZATION_ENABLED: 'Monetization',
 };
 
 module.exports = {
@@ -62,7 +62,7 @@ module.exports = {
         { name: 'Boosts',          value: `${boosts} · ${BOOST_TIER[tier] || 'No Tier'}`, inline: true },
         { name: 'Upload Limit',    value: UPLOAD_LIMIT[tier] || '25 MB', inline: true },
         { name: 'Verification',    value: VERIFICATION[guild.verificationLevel] || '—', inline: true },
-        { name: '2FA Requirement', value: guild.mfaLevel === 1 ? '✅ Required' : '❌ Not required', inline: true },
+        { name: '2FA Requirement', value: guild.mfaLevel === 1 ? 'Required' : 'Not required', inline: true },
         { name: 'Content Filter',  value: CONTENT_FILTER[guild.explicitContentFilter] || '—', inline: true },
         { name: 'Locale',          value: guild.preferredLocale || '—', inline: true },
       )
