@@ -4,14 +4,18 @@
  * Managed by the bot owner from /owner -> Status and stored in data/global-config.json:
  *   presence: { status, rotateSeconds, list: [{ id, type, text }] | null }
  *
- * Placeholders: {servers}  {uptime}  {version}
- * Server-specific details (voice channel names, member counts) are never shown here.
+ * Placeholders:
+ *   {servers}     servers the bot is in           {members}   total members across them ({users} works too)
+ *   {voicehours}  hours spent in voice, all servers   {voicenow}  people in voice right now
+ *   {uptime}      time since the bot started          {version}   bot version
+ * Totals only: nothing that identifies a server, channel or member is ever shown.
  */
 
 const crypto = require('crypto');
 const { ActivityType } = require('discord.js');
 const globalConfig = require('./globalConfig');
 const { log } = require('./logger');
+const { selectOne } = require('./database');
 
 const TYPES = {
   playing:   { label: 'Playing',   type: ActivityType.Playing },
@@ -28,6 +32,19 @@ const MIN_ROTATE = 15, MAX_ROTATE = 600;
 const DEFAULT_LIST = [
   { id: 'default1', type: 'custom',   text: 'Online 24/7' },
   { id: 'default2', type: 'watching', text: '{servers} servers' },
+];
+
+/** Ready-made statuses the owner can add with one click. */
+const TEMPLATES = [
+  { label: 'Servers',                type: 'watching', text: '{servers} servers' },
+  { label: 'Members',                type: 'watching', text: '{members} members' },
+  { label: 'Servers and members',    type: 'watching', text: '{servers} servers · {members} members' },
+  { label: 'Hours in voice',         type: 'custom',   text: '{voicehours} hours in voice' },
+  { label: 'In voice right now',     type: 'custom',   text: '{voicenow} in voice right now' },
+  { label: 'Uptime',                 type: 'custom',   text: 'Online for {uptime}' },
+  { label: 'Version',                type: 'custom',   text: 'POW-Bot {version}' },
+  { label: 'Online 24/7',            type: 'custom',   text: 'Online 24/7' },
+  { label: 'Point to /help',         type: 'custom',   text: 'Use /help to get started' },
 ];
 
 const cfg = () => globalConfig.get().presence;
@@ -47,9 +64,26 @@ function uptimeText() {
   return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+let hoursCache = { at: 0, value: 0 };
+/** Total hours spent in voice across every server (looked up at most once a minute). */
+function voiceHours() {
+  if (Date.now() - hoursCache.at > 60_000) {
+    try { hoursCache = { at: Date.now(), value: Math.floor(Number(selectOne('SELECT COALESCE(SUM(duration_ms), 0) AS ms FROM vc_sessions WHERE duration_ms IS NOT NULL')?.ms || 0) / 3_600_000) }; }
+    catch { hoursCache.at = Date.now(); }
+  }
+  return hoursCache.value;
+}
+
+const number = (n) => Number(n || 0).toLocaleString('en-GB');
+const totalMembers = (client) => (client?.guilds?.cache ? [...client.guilds.cache.values()].reduce((a, g) => a + (g.memberCount || 0), 0) : 0);
+const inVoiceNow = (client) => (client?.guilds?.cache ? [...client.guilds.cache.values()].reduce((a, g) => a + (g.voiceStates?.cache ? g.voiceStates.cache.filter(v => v.channelId && !v.member?.user?.bot).size : 0), 0) : 0);
+
 /** Fill in the placeholders. */
 function render(text, client) {
   return String(text)
+    .replace(/\{members\}|\{users\}/gi, () => number(totalMembers(client)))
+    .replace(/\{voicehours\}/gi, () => number(voiceHours()))
+    .replace(/\{voicenow\}/gi, () => number(inVoiceNow(client)))
     .replace(/\{servers\}/gi, String(client?.guilds?.cache?.size ?? 0))
     .replace(/\{uptime\}/gi, uptimeText())
     .replace(/\{version\}/gi, `v${require('../package.json').version}`);
@@ -141,4 +175,4 @@ function start(client) {
   log('INFO', `Status rotation started (${list().length} status(es), every ${settings().rotateSeconds}s)`);
 }
 
-module.exports = { TYPES, STATUSES, MAX_ENTRIES, MAX_TEXT, list, isCustomised, settings, render, add, edit, remove, move, setStatus, setRotate, reset, refresh, start };
+module.exports = { TEMPLATES, TYPES, STATUSES, MAX_ENTRIES, MAX_TEXT, list, isCustomised, settings, render, add, edit, remove, move, setStatus, setRotate, reset, refresh, start };

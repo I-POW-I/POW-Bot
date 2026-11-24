@@ -8,6 +8,7 @@
  *   audit:       [ { at, action, actor, guild, details } ],   // last 200 changes
  *   alerts:      { webhookUrl, webhookId, dm, levels, digestMinutes, memoryPercent },   // set by /owner alerts → Set up (Discloud variables override these)
  *   presence:    { status, rotateSeconds, list }       // bot status line, managed in /owner (see presence.js)
+ *   announce:    { lastChannels: { guildId: channelId } }   // channels the owner chose for earlier announcements
  *   restarts:    [ ms timestamps of automatic restarts ],
  *   pendingRestart: { reason, by, requestedAt, memory… }      // read after the restart
  * }
@@ -26,6 +27,7 @@ const DEFAULTS = () => ({
   audit:       [],
   alerts:      { webhookUrl: null, webhookId: null, dm: null, levels: null, digestMinutes: null, memoryPercent: null },
   presence:    { status: 'dnd', rotateSeconds: 30, list: null },
+  announce:    { lastChannels: {} },
   restarts:    [],
   pendingRestart: null,
 });
@@ -45,6 +47,7 @@ function load() {
     audit:       Array.isArray(raw.audit) ? raw.audit : [],
     alerts:      { ...d.alerts, ...(raw.alerts || {}) },
     presence:    { ...d.presence, ...(raw.presence || {}) },
+    announce:    { lastChannels: { ...(raw.announce?.lastChannels || {}) } },
     restarts:    Array.isArray(raw.restarts) ? raw.restarts : [],
   };
   return state;

@@ -15,7 +15,7 @@ const token = process.env.BOT_TOKEN;
 const clientId = process.env.CLIENT_ID;
 
 if (!token || !clientId) {
-  console.error('❌ BOT_TOKEN or CLIENT_ID missing from .env');
+  console.error('BOT_TOKEN or CLIENT_ID missing from .env');
   process.exit(1);
 }
 
@@ -27,7 +27,7 @@ for (const file of files) {
   const command = require(path.join(commandsPath, file));
   if (command.data) {
     commands.push(command.data.toJSON());
-    console.log(`  📦 Loaded: /${command.data.name}`);
+    console.log(`  Loaded: /${command.data.name}`);
   }
 }
 
@@ -37,8 +37,8 @@ const rest = new REST({ version: '10' }).setToken(token);
   try {
     console.log(`\nDeploying ${commands.length} global command(s)...`);
     await rest.put(Routes.applicationCommands(clientId), { body: commands });
-    console.log('✅ All commands deployed globally. May take up to 1 hour to appear everywhere.');
+    console.log('All commands deployed globally. May take up to 1 hour to appear everywhere.');
   } catch (err) {
-    console.error('❌ Deploy failed:', err.message);
+    console.error('Deploy failed:', err.message);
   }
 })();

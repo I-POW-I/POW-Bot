@@ -11,7 +11,7 @@ module.exports = {
 
   async execute(interaction, client) {
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) && !isBotAdmin(interaction.user.id)) {
-      return interaction.reply({ content: 'You need the **Manage Server** permission to use this. Press **Bot Info** on the panel for a short summary.', flags: [MessageFlags.Ephemeral] });
+      return interaction.reply({ content: 'You need the **Manage Server** permission to use this.', flags: [MessageFlags.Ephemeral] });
     }
     try {
       // Time between Discord creating the interaction and the bot receiving it (this replaces /ping)

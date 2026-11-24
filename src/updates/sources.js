@@ -72,11 +72,6 @@ function parseKey(appId) {
 const makeKey = (source, value) => source === 'steam' ? String(value) : `${source}:${value}`;
 const isUpdateKey = (appId) => !!parseKey(appId).source;
 
-function gameName(source, value) {
-  if (source === 'rss') return null;
-  return SOURCES[source]?.games?.find(g => g.value === value)?.name || null;
-}
-
 const absolute = (u, base) => { try { return new URL(u, base).toString(); } catch { return null; } };
 const firstImage = (html) => (toBlocks(html, 'html').images.find(x => /^https?:\/\//.test(x)) || null);
 const verFrom = (s) => (/(\d+(?:\.\d+){1,3}[a-z]?|\d{2}w\d{2}[a-z])/i.exec(String(s)) || [])[1] || null;
@@ -185,4 +180,4 @@ function fetchLatest(sub) {
   return fetchLatestFor(source, value, sub.game_name);
 }
 
-module.exports = { SOURCES, PAGES, parseKey, makeKey, isUpdateKey, gameName, fetchLatest, fetchLatestFor };
+module.exports = { SOURCES, PAGES, parseKey, makeKey, isUpdateKey, fetchLatest, fetchLatestFor };

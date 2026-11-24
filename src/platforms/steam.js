@@ -72,47 +72,4 @@ async function getSteamFreeGames() {
 
 function getHeaderImage(appId) { return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`; }
 
-function parseSteamContent(raw, maxLength=1000) {
-  if (!raw) return { text:'', imageUrl:null, youtubeUrl:null };
-  let text = raw;
-  const clanImg=text.match(/\{STEAM_CLAN_IMAGE\}\/([^\s\[\]\n,{]+)/i);
-  const regImg=text.match(/\[img\](https?:\/\/[^\[]+?)\[\/img\]/i);
-  let imageUrl=clanImg?`https://clan.akamai.steamstatic.com/images/${clanImg[1]}`:regImg?regImg[1].trim():null;
-  if (!imageUrl) { const si=text.match(/src=["'](https?:\/\/[^"']+\.(?:jpg|jpeg|png|gif|webp))['"]/i); if(si) imageUrl=si[1]; }
-  const ytMatch=text.match(/\[previewyoutube=([A-Za-z0-9_-]+)/i)||text.match(/youtube\.com\/watch\?v=([A-Za-z0-9_-]+)/i);
-  const youtubeUrl=ytMatch?`https://youtube.com/watch?v=${ytMatch[1]}`:null;
-  text=text.replace(/\\n/g,'\n').replace(/\r\n|\r/g,'\n');
-  text=text.replace(/\{STEAM_CLAN_IMAGE\}\/[^\s\[\]\n,{]+/gi,'').replace(/\[img\][^\[]*?\[\/img\]/gis,'').replace(/\[previewyoutube[^\]]*\][^\[]*?\[\/previewyoutube\]/gis,'');
-  // HTML → markdown
-  text=text
-    .replace(/<h[1-6][^>]*>\s*(.*?)\s*<\/h[1-6]>/gis,'\n**$1**\n')
-    .replace(/<(?:strong|b)[^>]*>\s*(.*?)\s*<\/(?:strong|b)>/gis,'\n**$1**')
-    .replace(/<(?:em|i)[^>]*>\s*(.*?)\s*<\/(?:em|i)>/gis,'*$1*')
-    .replace(/<p[^>]*>/gi,'\n').replace(/<\/p>/gi,'\n')
-    .replace(/<li[^>]*>/gi,'\n• ').replace(/<\/li>/gi,'')
-    .replace(/<[ou]l[^>]*>/gi,'\n').replace(/<\/[ou]l>/gi,'\n')
-    .replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'');
-  // BBCode → markdown
-  text=text
-    .replace(/\[h[1-3]\]\s*(.*?)\s*\[\/h[1-3]\]/gis,'\n**$1**\n')
-    .replace(/\[b\]\s*(.*?)\s*\[\/b\]/gis,'\n**$1**')
-    .replace(/\[i\]\s*(.*?)\s*\[\/i\]/gis,'*$1*')
-    .replace(/\[u\]\s*(.*?)\s*\[\/u\]/gis,'__$1__')
-    .replace(/\[strike\]\s*(.*?)\s*\[\/strike\]/gis,'~~$1~~')
-    .replace(/\[url=([^\]]+)\]\s*(.*?)\s*\[\/url\]/gis,'[$2]($1)')
-    .replace(/\[url\](.*?)\[\/url\]/gis,'$1')
-    .replace(/\[list\]/gi,'\n').replace(/\[\/list\]/gi,'\n')
-    .replace(/\s*\[\*\]\s*\\?/g,'\n• ')
-    .replace(/\[[^\]]{1,30}\]/g,'');
-  // Entities
-  text=text.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ').replace(/&mdash;/g,'—').replace(/&ndash;/g,'–');
-  // Neutralize any HTML delimiters reintroduced by entity decoding (e.g. &lt;script&gt; -> script)
-  text=text.replace(/[<>]/g,'');
-  // Raw \ bullets (CS2 style)
-  text=text.replace(/^\\([A-Z])/m,'• $1').replace(/([.!?)])\s*\\([A-Z])/g,'$1\n• $2').replace(/\s+\\([A-Z])/g,'\n• $1').replace(/^\\/gm,'• ');
-  text=text.replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').replace(/\n[ \t]+/g,'\n').trim();
-  if (text.length>maxLength) { const c=text.lastIndexOf('\n',maxLength-4); text=(c>maxLength*0.6?text.slice(0,c):text.slice(0,maxLength-3))+'\n...'; }
-  return { text, imageUrl, youtubeUrl };
-}
-
-module.exports = { searchGames, getAppDetails, getGameNews, getSteamFreeGames, getHeaderImage, parseSteamContent };
+module.exports = { searchGames, getAppDetails, getGameNews, getSteamFreeGames, getHeaderImage };

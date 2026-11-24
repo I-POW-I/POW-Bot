@@ -12,19 +12,19 @@ const TRACKED = new Set([
 ]);
 
 const LABELS = {
-  [AuditLogEvent.ChannelCreate]:    { title: 'Channel Created',          colour: 0x57F287 },
-  [AuditLogEvent.ChannelDelete]:    { title: 'Channel Deleted',          colour: 0xED4245 },
-  [AuditLogEvent.ChannelUpdate]:    { title: 'Channel Updated',          colour: 0x5865F2 },
-  [AuditLogEvent.RoleCreate]:       { title: 'Role Created',             colour: 0x57F287 },
-  [AuditLogEvent.RoleDelete]:       { title: 'Role Deleted',             colour: 0xED4245 },
-  [AuditLogEvent.RoleUpdate]:       { title: 'Role Updated',             colour: 0x5865F2 },
-  [AuditLogEvent.MemberRoleUpdate]: { title: 'Member Roles Changed',     colour: 0xFEE75C },
-  [AuditLogEvent.GuildUpdate]:      { title: 'Server Settings Changed',  colour: 0x5865F2 },
-  [AuditLogEvent.InviteCreate]:     { title: 'Invite Created',           colour: 0x57F287 },
-  [AuditLogEvent.EmojiCreate]:      { title: 'Emoji Added',              colour: 0x57F287 },
-  [AuditLogEvent.EmojiDelete]:      { title: 'Emoji Removed',            colour: 0xED4245 },
-  [AuditLogEvent.WebhookCreate]:    { title: 'Webhook Created',          colour: 0xFEE75C },
-  [AuditLogEvent.WebhookDelete]:    { title: 'Webhook Deleted',          colour: 0xFF7043 },
+  [AuditLogEvent.ChannelCreate]:    { title: 'Channel created',          colour: 0x57F287 },
+  [AuditLogEvent.ChannelDelete]:    { title: 'Channel deleted',          colour: 0xED4245 },
+  [AuditLogEvent.ChannelUpdate]:    { title: 'Channel updated',          colour: 0x5865F2 },
+  [AuditLogEvent.RoleCreate]:       { title: 'Role created',             colour: 0x57F287 },
+  [AuditLogEvent.RoleDelete]:       { title: 'Role deleted',             colour: 0xED4245 },
+  [AuditLogEvent.RoleUpdate]:       { title: 'Role updated',             colour: 0x5865F2 },
+  [AuditLogEvent.MemberRoleUpdate]: { title: 'Member roles changed',     colour: 0xFEE75C },
+  [AuditLogEvent.GuildUpdate]:      { title: 'Server settings changed',  colour: 0x5865F2 },
+  [AuditLogEvent.InviteCreate]:     { title: 'Invite created',           colour: 0x57F287 },
+  [AuditLogEvent.EmojiCreate]:      { title: 'Emoji added',              colour: 0x57F287 },
+  [AuditLogEvent.EmojiDelete]:      { title: 'Emoji removed',            colour: 0xED4245 },
+  [AuditLogEvent.WebhookCreate]:    { title: 'Webhook created',          colour: 0xFEE75C },
+  [AuditLogEvent.WebhookDelete]:    { title: 'Webhook deleted',          colour: 0xFF7043 },
 };
 
 module.exports = {
@@ -37,7 +37,7 @@ module.exports = {
     try {
       const logChannel = await guild.channels.fetch(channelId);
       if (!logChannel?.isTextBased()) return;
-      const { title, colour } = LABELS[entry.action] || { title: 'Audit Event', colour: 0x5865F2 };
+      const { title, colour } = LABELS[entry.action] || { title: 'Audit event', colour: 0x5865F2 };
       const executor = entry.executor ? `${entry.executor} — ${entry.executor.tag}` : 'Unknown';
       const embed = new EmbedBuilder().setColor(colour).setTitle(title).setTimestamp();
       if (entry.executor) embed.setAuthor({ name: entry.executor.tag, iconURL: entry.executor.displayAvatarURL?.({ dynamic: true }) });
@@ -47,8 +47,8 @@ module.exports = {
         if (target) embed.addFields({ name: 'Member', value: `${target} — ${target.tag || target.id}`, inline: true });
         const added   = entry.changes?.filter(c => c.key === '$add').flatMap(c => c.new?.map(r => `<@&${r.id}>`) || []);
         const removed = entry.changes?.filter(c => c.key === '$remove').flatMap(c => c.new?.map(r => `<@&${r.id}>`) || []);
-        if (added?.length)   embed.addFields({ name: 'Roles Added',   value: added.join(' '),   inline: false });
-        if (removed?.length) embed.addFields({ name: 'Roles Removed', value: removed.join(' '), inline: false });
+        if (added?.length)   embed.addFields({ name: 'Roles added',   value: added.join(' '),   inline: false });
+        if (removed?.length) embed.addFields({ name: 'Roles removed', value: removed.join(' '), inline: false });
         const other = entry.changes?.filter(c => !['$add','$remove'].includes(c.key)).map(c => `**${c.key}**: ${c.old ?? '—'} → ${c.new ?? '—'}`).filter(Boolean);
         if (other?.length) embed.addFields({ name: 'Changes', value: other.join('\n').slice(0, 1024), inline: false });
       } else if ([AuditLogEvent.ChannelCreate, AuditLogEvent.ChannelDelete, AuditLogEvent.ChannelUpdate].includes(entry.action)) {

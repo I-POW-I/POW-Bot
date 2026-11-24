@@ -43,7 +43,6 @@ function draftOf(guildId, userId, page) {
   d.expires = now + DRAFT_TTL;
   return d;
 }
-const clearDraft = (guildId, userId, page) => drafts.delete(`${guildId}:${userId}:${page}`);
 
 const button = (id, label, style = ButtonStyle.Secondary, disabled = false) =>
   new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);

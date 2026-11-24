@@ -52,6 +52,17 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_stream_user_guild ON stream_sessions (user_id, guild_id);
 
+      CREATE TABLE IF NOT EXISTS announcements (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        style     TEXT    NOT NULL,
+        title     TEXT    NOT NULL,
+        payload   TEXT    NOT NULL,
+        sent_at   INTEGER NOT NULL,
+        sent_by   TEXT,
+        servers   INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_announcements_sent ON announcements (sent_at);
+
       CREATE TABLE IF NOT EXISTS member_events (
         id        INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id  TEXT    NOT NULL,
@@ -128,7 +139,7 @@ async function init() {
     const migrations = [
       'ALTER TABLE streamer_subscriptions ADD COLUMN last_updated_at INTEGER',
       'ALTER TABLE game_subscriptions ADD COLUMN color INTEGER',
-      'ALTER TABLE game_subscriptions ADD COLUMN color INTEGER',
+      'ALTER TABLE message_store ADD COLUMN author_bot INTEGER DEFAULT 0',
     ];
     for (const m of migrations) {
       try { db.run(m); save(); } catch (_) { /* column already exists */ }

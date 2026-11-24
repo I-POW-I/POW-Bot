@@ -23,9 +23,9 @@ const CATEGORIES = [
       'The panel is a message with buttons that stays up to date by itself.',
       '**Join**: I join your voice channel and stay there.',
       '**Leave**: I leave. *(server owner or the bot control role)*',
-      '**My Info**: your voice stats: time, sessions, streaks.',
-      '**User Lookup**: pick someone to see their voice stats.',
-      '**Bot Info**: a short summary of my status.',
+      '**My info**: your voice stats: time, sessions, streaks.',
+      '**User lookup**: pick someone to see their voice stats.',
+      '**Leaderboard**: who has spent the most time in voice here, for all time, the last 30 days or the last 7 days.',
       '',
       'Post or move the panel in **`/setup` > Voice panel**.',
     ],
@@ -53,6 +53,10 @@ const CATEGORIES = [
   {
     id: 'info', label: 'Information',
     text: [
+      'Server staff can turn on **role rewards** for voice time in **`/setup` > Voice leaderboard**: pick a ladder (or make your own) and I create the roles.',
+      '',
+      '**`/leaderboard`**: the voice time ranking for this server.',
+      '**`/changelog`**: what changed in the bot, newest first.',
       '**`/serverinfo`**: details about this server.',
       '**`/botinfo`**: status, latency, memory, services, last error. *(server admins)*',
     ],

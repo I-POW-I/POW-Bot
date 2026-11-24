@@ -1,27 +1,11 @@
-const { 
-  Events, 
-  PermissionFlagsBits, 
-  MessageFlags, 
-  ActivityType, 
-  UserSelectMenuBuilder, 
-  ChannelSelectMenuBuilder, 
-  ChannelType, 
-  ButtonBuilder, 
-  ButtonStyle, 
-  ActionRowBuilder 
-} = require('discord.js');
+const { Events, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice');
 const { log }                     = require('../src/logger');
 const store                       = require('../src/connectionStore');
 const { attachDisconnectHandler } = require('../src/heartbeat');
-const {
-  updatePanel, buildMemberEmbed, buildStatsEmbed,
-  buildChannelSelectRow, buildUserSelectRow,
-} = require('../src/statusUpdater');
-const { setLastChannel, clearLastChannel, setStats, getVerifyRoleId, getBotControlRoleId } = require('../src/guildConfig');
+const { updatePanel, buildMemberEmbed, buildChannelSelectRow } = require('../src/statusUpdater');
+const { setLastChannel, clearLastChannel, setStats, getBotControlRoleId } = require('../src/guildConfig');
 const { attachSilencePlayer, stopSilencePlayer } = require('../src/audioPlayer');
-const { run, selectOne, selectAll } = require('../src/database');
-const { joinTimes }               = require('../src/memberTracker');
 const diagnostics                = require('../src/diagnostics');
 const globalConfig               = require('../src/globalConfig');
 const { isBotAdmin }             = require('../src/permissions');
@@ -31,8 +15,6 @@ const HEALTHY = [
   VoiceConnectionStatus.Signalling,
   VoiceConnectionStatus.Connecting,
 ];
-
-const PLATFORM_NAMES = { kick: 'Kick', twitch: 'Twitch', youtube: 'YouTube' };
 
 // ── Shared join logic ─────────────────────────────────────────────────────────
 async function joinChannel(targetChannel, guild, member, client, interaction) {
@@ -145,7 +127,7 @@ async function handle(interaction, client) {
                   .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
                   .setTitle(`/${interaction.commandName}`)
                   .addFields(
-                    { name: 'Used By', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
+                    { name: 'Used by', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
                     { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : '—',            inline: true },
                     ...(cmdArgs ? [{ name: 'Options', value: cmdArgs, inline: false }] : []),
                   )
@@ -190,31 +172,17 @@ async function handle(interaction, client) {
       });
     }
 
-    // ── Remove streamer select ────────────────────────────────────────────────
-    if (interaction.isStringSelectMenu() && interaction.customId === 'remove_streamer_select') {
-      const { guild, member } = interaction;
-      
-      // FIX: Grab the first element out of the selection array string mapping
-      const subId = interaction.values[0]; 
-      
-      const sub   = selectOne('SELECT * FROM streamer_subscriptions WHERE id = ? AND guild_id = ?', [subId, guild.id]);
-
-      if (!sub) {
-        return interaction.update({ content: 'Not found — may have already been removed.', components: [] });
-      }
-
-      run('DELETE FROM streamer_subscriptions WHERE id = ?', [subId]);
-      log('INFO', 'Streamer removed', { guild: guild.name, platform: sub.platform, username: sub.username, by: member.user.tag });
-      if (sub.platform === 'twitch') require('../src/platforms/twitchEventSub').requestSync();
-
-      return interaction.update({
-        content:    `No longer watching **${sub.display_name || sub.username}** on **${PLATFORM_NAMES[sub.platform]}**.`,
-        components: [],
-      });
+    // ── Changelog: pick an older update ────────────────────────────────────────
+    if (interaction.isStringSelectMenu() && interaction.customId === 'cl:pick') {
+      return interaction.update(require('../src/announcements').changelogView(Number(interaction.values[0])));
     }
 
+    // ── Leaderboard period select ──────────────────────────────────────────────
+    if (interaction.isStringSelectMenu() && interaction.customId === 'lb:period') {
+      await interaction.deferUpdate();
+      return interaction.editReply(await require('../src/leaderboard').view(interaction.guild, interaction.values[0], interaction.user.id));
+    }
 
-    
     if (!interaction.isButton()) return;
 
     const { guild, member } = interaction;
@@ -235,8 +203,8 @@ async function handle(interaction, client) {
             if (btnCh?.isTextBased()) {
               const BUTTON_LABELS = {
                 bot_join: 'Join', bot_leave: 'Leave',
-                bot_myinfo: 'My Info', bot_lookup: 'Lookup',
-                bot_info: 'Bot Info',
+                bot_myinfo: 'My info', bot_lookup: 'User lookup',
+                bot_leaderboard: 'Leaderboard', bot_info: 'Leaderboard',
               };
               const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
               await btnCh.send({
@@ -246,7 +214,7 @@ async function handle(interaction, client) {
                     .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
                     .setTitle(`Button: ${label}`)
                     .addFields(
-                      { name: 'Used By', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
+                      { name: 'Used by', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
                       { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : '—',            inline: true },
                     )
                     .setTimestamp(),
@@ -261,9 +229,10 @@ async function handle(interaction, client) {
 
     // ── Open to everyone ──────────────────────────────────────────────────────
 
-    if (interaction.customId === 'bot_info') {
-      // Short card for everyone. The full details are in /botinfo (server admins and bot owners).
-      return interaction.reply({ embeds: [require('../src/botInfo').buildPublicInfoEmbed(guild.id, client)], flags: [MessageFlags.Ephemeral] });
+    // 'bot_info' is the old name of this button, kept so panels posted before the update keep working
+    if (interaction.customId === 'bot_leaderboard' || interaction.customId === 'bot_info') {
+      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+      return interaction.editReply(await require('../src/leaderboard').view(guild, 'all', interaction.user.id));
     }
 
     if (interaction.customId === 'bot_myinfo') {

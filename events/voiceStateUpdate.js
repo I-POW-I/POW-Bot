@@ -103,13 +103,13 @@ module.exports = {
             // Check your server audit logs to see who dragged the bot
             const draggedBy = await getMoveMod(newState.guild, newChannel.id);
 
-            const embed = base(newState.member, C.forceLeave, 'Bot Intercepted Unauthorized Move')
+            const embed = base(newState.member, C.forceLeave, 'Bot intercepted unauthorized move')
               .setDescription(`The application caught an unapproved drag action and successfully rubber-banded itself back to its assigned room.`)
               .addFields(
-                { name: 'Intercepted In', value: `<#${newChannel.id}>`, inline: true },
-                { name: 'Returned Back To', value: `<#${entry.channelId}>`, inline: true },
-                { name: 'Uptime Intact', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
-                { name: 'Action Handled By', value: draggedBy || '*Unknown (Likely dragged self/API delay)*', inline: false }
+                { name: 'Intercepted in', value: `<#${newChannel.id}>`, inline: true },
+                { name: 'Returned back to', value: `<#${entry.channelId}>`, inline: true },
+                { name: 'Uptime intact', value: `\`${store.formatUptime(entry.joinedAt)}\``, inline: true },
+                { name: 'Action handled by', value: draggedBy || '*Unknown (Likely dragged self/API delay)*', inline: false }
               );
             
             await sendLog(newState.guild, embed);
@@ -144,10 +144,10 @@ module.exports = {
       joinTimes.set(key, Date.now());
       startSession(member.user.id, guild.id, newChannel.id, newChannel.name);
 
-      await sendLog(guild, base(member, C.join, 'Member Joined Voice')
+      await sendLog(guild, base(member, C.join, 'Member joined voice')
         .addFields(
           { name: 'Channel',     value: `<#${newChannel.id}>`, inline: true },
-          { name: 'Members Now', value: `${newChannel.members.size}`,        inline: true },
+          { name: 'Members now', value: `${newChannel.members.size}`,        inline: true },
           { name: '\u200b',      value: '\u200b',                            inline: true },
         ));
       return;
@@ -162,6 +162,7 @@ module.exports = {
       joinTimes.delete(key);
       streamTimes.delete(key);
       endSession(member.user.id, guild.id);
+      require('../src/leaderboard').onVoiceLeave(guild, member);
 
       const disconnectedBy = await getDisconnectMod(guild);
 
@@ -169,15 +170,15 @@ module.exports = {
         await sendLog(guild, base(member, C.forceLeave, 'Member Disconnected by Moderator')
           .addFields(
             { name: 'Channel',         value: `<#${oldChannel.id}>`, inline: true },
-            { name: 'Was In',          value: duration || 'Unknown',  inline: true },
+            { name: 'Was in',          value: duration || 'Unknown',  inline: true },
             { name: '\u200b',          value: '\u200b',               inline: true },
-            { name: 'Disconnected By', value: disconnectedBy,         inline: false },
+            { name: 'Disconnected by', value: disconnectedBy,         inline: false },
           ));
       } else {
-        await sendLog(guild, base(member, C.leave, 'Member Left Voice')
+        await sendLog(guild, base(member, C.leave, 'Member left voice')
           .addFields(
             { name: 'Channel', value: `<#${oldChannel.id}>`, inline: true },
-            { name: 'Was In',  value: duration || 'Unknown',  inline: true },
+            { name: 'Was in',  value: duration || 'Unknown',  inline: true },
             { name: '\u200b',  value: '\u200b',               inline: true },
           ));
       }
@@ -192,14 +193,14 @@ module.exports = {
       const movedBy = await getMoveMod(guild, newChannel.id);
       const embed   = base(member,
         movedBy ? C.modMove : C.move,
-        movedBy ? 'Member Moved by Moderator' : 'Member Changed Channel')
+        movedBy ? 'Member moved by moderator' : 'Member changed channel')
         .addFields(
           { name: 'From',    value: `<#${oldChannel.id}>`, inline: true },
           { name: 'To',      value: `<#${newChannel.id}>`, inline: true },
           { name: '\u200b',  value: '\u200b',              inline: true },
         );
 
-      if (movedBy) embed.addFields({ name: 'Moved By', value: movedBy, inline: false });
+      if (movedBy) embed.addFields({ name: 'Moved by', value: movedBy, inline: false });
       await sendLog(guild, embed);
       return;
     }
@@ -209,10 +210,10 @@ module.exports = {
       const mod = await getMuteDeafMod(guild, member.id);
       await sendLog(guild, base(member,
         newState.serverMute ? C.serverMute : C.serverUnmute,
-        newState.serverMute ? 'Member Server Muted' : 'Member Server Unmuted')
+        newState.serverMute ? 'Member server muted' : 'Member server unmuted')
         .addFields(
           { name: 'Channel',   value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
-          { name: 'Action By', value: mod || 'Unknown',                          inline: true },
+          { name: 'Action by', value: mod || 'Unknown',                          inline: true },
           { name: '\u200b',    value: '\u200b',                                  inline: true },
         ));
       return;
@@ -223,10 +224,10 @@ module.exports = {
       const mod = await getMuteDeafMod(guild, member.id);
       await sendLog(guild, base(member,
         newState.serverDeaf ? C.serverDeafen : C.serverUndeafen,
-        newState.serverDeaf ? 'Member Server Deafened' : 'Member Server Undeafened')
+        newState.serverDeaf ? 'Member server deafened' : 'Member server undeafened')
         .addFields(
           { name: 'Channel',   value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
-          { name: 'Action By', value: mod || 'Unknown',                          inline: true },
+          { name: 'Action by', value: mod || 'Unknown',                          inline: true },
           { name: '\u200b',    value: '\u200b',                                  inline: true },
         ));
       return;
@@ -237,7 +238,7 @@ module.exports = {
       if (newState.streaming) {
         streamTimes.set(key, Date.now());
         startStreamSession(member.id, guild.id);
-        await sendLog(guild, base(member, C.streamStart, 'Member Started Streaming')
+        await sendLog(guild, base(member, C.streamStart, 'Member started streaming')
           .addFields(
             { name: 'Channel', value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
             { name: '\u200b',  value: '\u200b',                                  inline: true },
@@ -249,10 +250,10 @@ module.exports = {
           : null;
         streamTimes.delete(key);
         endStreamSession(member.id, guild.id);
-        await sendLog(guild, base(member, C.streamStop, 'Member Stopped Streaming')
+        await sendLog(guild, base(member, C.streamStop, 'Member stopped streaming')
           .addFields(
             { name: 'Channel',      value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
-            { name: 'Streamed For', value: duration || 'Unknown',                     inline: true },
+            { name: 'Streamed for', value: duration || 'Unknown',                     inline: true },
             { name: '\u200b',       value: '\u200b',                                  inline: true },
           ));
       }

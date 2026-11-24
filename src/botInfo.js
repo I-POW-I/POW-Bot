@@ -1,6 +1,6 @@
 /**
  * Bot information embeds — one place that builds everything shown by:
- *   • the panel's "Bot Info" button (short card)   • /botinfo (full, server admins)   • /owner status
+ *   • /botinfo (full, server admins)   • /owner status
  *
  * Public view    : what every member may see (status, latency, RAM, uptime, services)
  * Owner view     : extra embeds for OWNER_IDS / ADMIN_IDS (Discloud container, event loop,
@@ -62,8 +62,7 @@ const LONDON = (ms) => { const d = new Date(ms); return isNaN(d) ? null : d.toLo
  * @param {string} guildId
  * @param {import('discord.js').Client} client
  * @param {{ responseMs?: number, detailed?: boolean }} opts
- *   detailed — include the Discloud container rows (staff / bot owner). The panel's Bot Info
- *   button passes false for ordinary members.
+ *   detailed — include the Discloud container rows (staff / bot owner).
  */
 function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}) {
   const entry     = store.getEntry(guildId);
@@ -84,7 +83,7 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
     return acc + (ch ? ch.members?.filter(m => !m.user.bot).size || 0 : 0);
   }, 0);
 
-  const memLabel = mem.source === 'discloud' ? 'Discloud Memory' : 'Memory';
+  const memLabel = mem.source === 'discloud' ? 'Discloud memory' : 'Memory';
   const pingText = ping >= 0 ? c(`${ping}ms`) : c('Calculating...');
   const started  = dv.startedAt ? LONDON(dv.startedAt) : null;
 
@@ -94,12 +93,12 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
     .setTimestamp();
 
   const container = detailed ? [
-    { name: 'Container Cluster', value: c(dv.cluster || process.env.DISCLOUD_CLUSTER || 'ASTRA'), inline: true },
-    { name: 'Container State',   value: c(dv.container || 'Unknown'), inline: true },
+    { name: 'Container cluster', value: c(dv.cluster || process.env.DISCLOUD_CLUSTER || 'ASTRA'), inline: true },
+    { name: 'Container state',   value: c(dv.container || 'Unknown'), inline: true },
     { name: 'CPU Usage',         value: c(dv.cpu || `${system.getCpuPercent().toFixed(1)}%`), inline: true },
     { name: 'SSD Storage',       value: c(dv.ssd || '—'), inline: true },
     { name: 'Network I/O',       value: c(dv.net || 'In 0KB / Out 0KB'), inline: true },
-    { name: 'Last Restart',      value: c(dv.lastRestart || '—'), inline: true },
+    { name: 'Last restart',      value: c(dv.lastRestart || '—'), inline: true },
   ] : [];
 
   if (connected && entry) {
@@ -111,36 +110,36 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
       // Row 1: Connection & Core State
       { name: 'Status',    value: 'Connected', inline: true },
       { name: 'VC Uptime', value: c(store.formatUptime(entry.joinedAt)), inline: true },
-      { name: 'Bot Uptime', value: c(uptime(process.uptime())), inline: true },
+      { name: 'Bot uptime', value: c(uptime(process.uptime())), inline: true },
 
       // Row 2: Performance Metrics
-      { name: 'Web Socket Ping', value: pingText, inline: true },
+      { name: 'WebSocket ping', value: pingText, inline: true },
       { name: memLabel, value: c(system.formatMemory(mem)), inline: true },
       { name: 'Members in VC', value: c(inVc), inline: true },
 
       // Row 3: Tracking History totals
       { name: 'Reconnects', value: c(entry.reconnectCount), inline: true },
       { name: 'Active VCs', value: c(`${totalActive} server(s)`), inline: true },
-      { name: 'Total Sessions', value: c(n(totals.total_sessions)), inline: true },
+      { name: 'Total sessions', value: c(n(totals.total_sessions)), inline: true },
 
       // Rows 4-5: Discloud container (staff / owner)
       ...container,
 
       // Row 6: Global Discord metadata
-      { name: 'Server Count', value: c(n(client.guilds.cache.size)), inline: true },
+      { name: 'Server count', value: c(n(client.guilds.cache.size)), inline: true },
       ...(detailed ? [
-        { name: 'Server Channels', value: c(n(client.channels.cache.size || 0)), inline: true },
-        { name: 'Server Voice Channels', value: c(n(client.channels.cache.filter(x => x.type === ChannelType.GuildVoice).size || 0)), inline: true },
+        { name: 'Server channels', value: c(n(client.channels.cache.size || 0)), inline: true },
+        { name: 'Server voice channels', value: c(n(client.channels.cache.filter(x => x.type === ChannelType.GuildVoice).size || 0)), inline: true },
       ] : [{ name: '\u200B', value: '\u200B', inline: true }, { name: '\u200B', value: '\u200B', inline: true }]),
 
       // Row 7: Member metrics
-      { name: 'Server Member Count', value: c(n(serverMemberCount)), inline: true },
+      { name: 'Server member count', value: c(n(serverMemberCount)), inline: true },
       { name: 'Active Members In VC', value: c(activeMembersInVc), inline: true },
       { name: '\u200B', value: '\u200B', inline: true },
     );
-    if (detailed && started) embed.addFields({ name: 'Container Started At', value: c(started), inline: false });
+    if (detailed && started) embed.addFields({ name: 'Container started at', value: c(started), inline: false });
     embed.addFields({
-      name: 'Persisted Stats',
+      name: 'Persisted stats',
       value: saved.joinedAt
         ? `Since <t:${Math.floor(new Date(saved.joinedAt).getTime() / 1000)}:R> · ${c(saved.reconnectCount)} reconnect(s)`
         : '*No persisted data yet*',
@@ -148,50 +147,28 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
     });
   } else {
     embed.setDescription('*Not currently connected to any voice channel.*').addFields(
-      { name: 'Bot Uptime', value: c(uptime(process.uptime())), inline: true },
+      { name: 'Bot uptime', value: c(uptime(process.uptime())), inline: true },
       { name: memLabel, value: c(system.formatMemory(mem)), inline: true },
-      { name: 'Web Socket Ping', value: ping >= 0 ? c(`${ping}ms`) : c('—'), inline: true },
+      { name: 'WebSocket ping', value: ping >= 0 ? c(`${ping}ms`) : c('—'), inline: true },
       ...(detailed ? [
-        { name: 'Container State', value: c(dv.container || 'Unknown'), inline: true },
+        { name: 'Container state', value: c(dv.container || 'Unknown'), inline: true },
         { name: 'CPU Usage', value: c(dv.cpu || `${system.getCpuPercent().toFixed(1)}%`), inline: true },
       ] : []),
-      { name: 'Total Sessions', value: c(n(totals.total_sessions)), inline: true },
-      ...(detailed && started ? [{ name: 'Container Started At', value: c(started), inline: false }] : []),
+      { name: 'Total sessions', value: c(n(totals.total_sessions)), inline: true },
+      ...(detailed && started ? [{ name: 'Container started at', value: c(started), inline: false }] : []),
     );
   }
 
   // Additions: latency, this server's voice time, version, services, last error
   embed.addFields(
-    { name: 'Response Time', value: c(responseMs != null ? `${responseMs} ms` : '—'), inline: true },
+    { name: 'Response time', value: c(responseMs != null ? `${responseMs} ms` : '—'), inline: true },
     { name: 'Voice Time (this server)', value: c(formatMs(totals.total_ms)), inline: true },
     { name: 'Version', value: c(`v${require('../package.json').version}`), inline: true },
     { name: 'Services', value: servicesSummary(), inline: false },
-    { name: 'Last Error', value: last ? `${ts(last.at)} — ${last.text}` : 'None since the bot started', inline: false },
+    { name: 'Last error', value: last ? `${ts(last.at)} — ${last.text}` : 'None since the bot started', inline: false },
   );
   embed.setFooter({ text: `Node ${process.version} · discord.js ${require('discord.js').version}` });
   return embed;
-}
-
-// ── Short public card (panel "Bot Info" button) ───────────────────────────────
-
-/** A handful of stats that are safe and useful for any member. Full detail is in /botinfo (admins). */
-function buildPublicInfoEmbed(guildId, client) {
-  const entry     = store.getEntry(guildId);
-  const connected = isConnected(guildId) && !!entry;
-  const totals    = getServerTotals(guildId);
-  const ping      = client.ws.ping;
-
-  return new EmbedBuilder()
-    .setColor(connected ? 0x57F287 : 0x99AAB5)
-    .setTitle('POW-Bot')
-    .addFields(
-      { name: 'Status',      value: connected ? 'Connected' : 'Idle', inline: true },
-      { name: 'Uptime',      value: c(uptime(process.uptime())), inline: true },
-      { name: 'Latency',     value: ping >= 0 ? c(`${ping} ms`) : c('n/a'), inline: true },
-      { name: 'Voice time in this server', value: c(formatMs(totals.total_ms)), inline: true },
-      { name: 'Version',     value: c(`v${require('../package.json').version}`), inline: true },
-    )
-    .setFooter({ text: 'Server admins can see full details with /botinfo' });
 }
 
 // ── Global statistics (owner) ─────────────────────────────────────────────────
@@ -286,4 +263,4 @@ async function buildOwnerEmbeds(client) {
   return [system_, usage, services];
 }
 
-module.exports = { buildBotInfoEmbed, buildPublicInfoEmbed, buildOwnerEmbeds, getGlobalStats, servicesSummary };
+module.exports = { buildBotInfoEmbed, buildOwnerEmbeds, getGlobalStats, servicesSummary };

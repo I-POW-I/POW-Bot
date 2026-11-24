@@ -15,17 +15,20 @@
 
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
-  ChannelSelectMenuBuilder, RoleSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
-  ChannelType, PermissionFlagsBits, MessageFlags, AttachmentBuilder,
+  ModalBuilder, TextInputBuilder, TextInputStyle,
+  PermissionFlagsBits, AttachmentBuilder,
 } = require('discord.js');
 
 const { getGuildConfig, setGuildConfig, setLogChannel, getLogChannel } = require('./guildConfig');
-const { selectAll, selectOne, run } = require('./database');
+const { selectAll, selectOne } = require('./database');
 const { audit }  = require('./diagnostics');
 const { log }    = require('./logger');
 const verification = require('./verification');
 const cards = require('./cards');
 const alertsKit = require('./setupAlerts');
+const leaderboardKit = require('./setupLeaderboard');
+const KITS = [alertsKit, leaderboardKit];                 // pages that live in their own files
+const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
   channelSelect, roleSelect, POST_PERMS, missingIn, respond,
@@ -48,7 +51,8 @@ const PAGES = [
   { value: 'streamers', label: 'Streamer alerts',            desc: 'Twitch / Kick / YouTube live alerts',},
   { value: 'updates',   label: 'Game update alerts',         desc: 'Patch notes: Steam, Minecraft, Riot, Fortnite, Blizzard, RSS',},
   { value: 'free',      label: 'Free game alerts',           desc: 'Epic Games Store and Steam free games',},
-  { value: 'announce',  label: 'Announcements',              desc: 'Where the bot owner can post notices',},
+  { value: 'leaderboard', label: 'Voice leaderboard',      desc: 'Top voice time and optional role rewards',},
+  { value: 'announce',  label: 'Announcements',              desc: 'Where bot news and changelogs are posted',},
 ];
 
 
@@ -63,6 +67,7 @@ function summary(guild) {
   const streamers = selectOne('SELECT COUNT(*) AS n FROM streamer_subscriptions WHERE guild_id = ?', [guild.id])?.n || 0;
   const games     = selectOne(`SELECT COUNT(*) AS n FROM game_subscriptions WHERE guild_id = ? AND app_id NOT IN ${FREE_IDS}`, [guild.id])?.n || 0;
   const free      = selectOne(`SELECT COUNT(*) AS n FROM game_subscriptions WHERE guild_id = ? AND app_id IN ${FREE_IDS}`, [guild.id])?.n || 0;
+  const lbs       = require('./leaderboard').settings(guild.id);
   const logsSet   = LOG_TYPES.filter(t => getLogChannel(guild.id, t.key)).length;
 
   return [
@@ -74,7 +79,8 @@ function summary(guild) {
     { key: 'streamers', core: false, done: streamers > 0,                          text: streamers ? `${streamers} streamer(s) watched` : 'None yet' },
     { key: 'updates', core: false, done: games > 0,                                text: games ? `${games} game(s) watched` : 'None yet' },
     { key: 'free',    core: false, done: free > 0,                                 text: free ? 'On' : 'Off' },
-    { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Uses the system channel' },
+    { key: 'leaderboard', core: false, done: lbs.rewards,                        text: lbs.rewards ? `Rewards on · ${lbs.tiers.length} tiers` : 'Leaderboard on · rewards off' },
+    { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Not set (falls back to another channel)' },
   ];
 }
 
@@ -96,8 +102,9 @@ function checkPermissions(guild) {
   };
   const POST = [['ViewChannel', 'View Channel'], ['SendMessages', 'Send Messages'], ['EmbedLinks', 'Embed Links']];
   const POST_FILES = [...POST, ['AttachFiles', 'Attach Files']];
+  const PANEL = [...POST, ['ReadMessageHistory', 'Read Message History']];
 
-  channelCheck(c.panelChannelId, 'Voice panel', POST);
+  channelCheck(c.panelChannelId, 'Voice panel', PANEL);
   for (const t of LOG_TYPES) channelCheck(getLogChannel(guild.id, t.key), `${t.label} log`, t.key === 'messages' ? POST_FILES : POST);
   channelCheck(c.welcomeChannelId, 'Welcome channel', POST_FILES);
   if (c.leaveChannelId) channelCheck(c.leaveChannelId, 'Leave channel', POST_FILES);
@@ -118,6 +125,7 @@ function checkPermissions(guild) {
   roleCheck(vs.unverifiedRoleId, 'Unverified role');
   if (c.botControlRoleId && !guild.roles.cache.has(c.botControlRoleId)) problems.push('**Bot control role** — the role was deleted. Pick it again.');
   if (vs.kickMinutes && !me.permissions.has(F.KickMembers)) problems.push('**Auto-kick** is on but I\'m missing **Kick Members**.');
+  if (LOG_TYPES.some(t => getLogChannel(guild.id, t.key)) && !me.permissions.has(F.ViewAuditLog)) problems.push('**Logs** — I\'m missing **View Audit Log**, so changes will show without who made them.');
 
   return { problems, good };
 }
@@ -185,16 +193,19 @@ function viewPanel(guild, note) {
   };
 }
 
+const botMessagesButton = (guild) => new ButtonBuilder().setCustomId('setup:logs:bots')
+  .setLabel(`Deleted bot messages: ${onOff(getGuildConfig(guild.id).logBotMessages === true)}`).setStyle(ButtonStyle.Secondary);
+
 function viewLogs(guild, type, note) {
-  const lines = LOG_TYPES.map(t => `**${t.label}** — ${chan(getLogChannel(guild.id, t.key))}\n└ ${t.desc}`).join('\n');
+  const lines = LOG_TYPES.map(t => `**${t.label}** — ${chan(getLogChannel(guild.id, t.key))}\n└ ${t.desc}`).join('\n') + `\n\n**Deleted bot messages** — ${onOff(getGuildConfig(guild.id).logBotMessages === true)}\n└ Also log messages deleted from other bots (shown in the Message log)`;
   const rows = [new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder().setCustomId('setup:logs:type').setPlaceholder('Choose a log to set…')
       .addOptions(LOG_TYPES.map(t => ({ label: t.label, value: t.key, description: t.desc.slice(0, 90), default: t.key === type }))))];
   if (type) {
     rows.push(channelSelect(`setup:logs:set:${type}`, `Channel for: ${LOG_TYPES.find(t => t.key === type).label}`, getLogChannel(guild.id, type)));
     rows.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`setup:logs:clear:${type}`).setLabel('Clear this log').setStyle(ButtonStyle.Danger), backButton()));
-  } else rows.push(new ActionRowBuilder().addComponents(backButton()));
+      new ButtonBuilder().setCustomId(`setup:logs:clear:${type}`).setLabel('Clear this log').setStyle(ButtonStyle.Danger), botMessagesButton(guild), backButton()));
+  } else rows.push(new ActionRowBuilder().addComponents(botMessagesButton(guild), backButton()));
   return { embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Logs').setDescription([note, lines].filter(Boolean).join('\n\n'))], components: rows };
 }
 
@@ -295,8 +306,8 @@ function viewAnnounce(guild, note) {
   const c = getGuildConfig(guild.id);
   return {
     embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Announcements').setDescription([note,
-      `Channel: ${c.announceChannelId ? chan(c.announceChannelId) : '*not set (uses the system channel)*'}`, '',
-      'Where the bot\'s owner may post important notices — maintenance, new features. Rare.'].filter(Boolean).join('\n'))],
+      `Channel: ${c.announceChannelId ? chan(c.announceChannelId) : '*not set (the bot falls back to the panel or system channel)*'}`, '',
+      'Where bot news is posted: changelogs, maintenance notices and important updates. These are rare, and you can change this channel at any time.'].filter(Boolean).join('\n'))],
     components: [channelSelect('setup:announce:set', 'Announcement channel', c.announceChannelId),
       new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setup:announce:clear').setLabel('Clear').setStyle(ButtonStyle.Danger), backButton())],
   };
@@ -345,13 +356,13 @@ async function handleInteraction(interaction, client) {
   const [, page, action, arg] = id.split(':');
   const by = interaction.user;
   const done = (a, details) => audit({ action: `Setup: ${a}`, actor: by, guild, details });
-  const show = (name, ...args) => respond(interaction, alertsKit.owns(name) ? alertsKit.VIEWS[name](guild, by, ...args) : VIEWS[name](guild, ...args));
+  const show = (name, ...args) => respond(interaction, kitFor(name) ? kitFor(name).VIEWS[name](guild, by, ...args) : VIEWS[name](guild, ...args));
 
   // Navigation
   if (page === 'home' && !action) return await show('home'), true;
   if (page === 'home' && action === 'go') return await show(interaction.values[0]), true;   // select menu
   if (page === 'check') return await show('check'), true;
-  if (alertsKit.owns(page)) return await alertsKit.handle(interaction, { guild, by, client, page, action, arg }), true;
+  if (kitFor(page)) return await kitFor(page).handle(interaction, { guild, by, client, page, action, arg }), true;
   if (['panel', 'welcome', 'verify', 'control', 'announce'].includes(page) && !action) return await show(page), true;
   if (page === 'logs' && !action) return await respond(interaction, viewLogs(guild)), true;
 
@@ -368,6 +379,14 @@ async function handleInteraction(interaction, client) {
   // ── logs ──
   if (page === 'logs') {
     if (action === 'type') return await respond(interaction, viewLogs(guild, interaction.values[0])), true;
+    if (action === 'bots') {
+      const on = getGuildConfig(guild.id).logBotMessages !== true;
+      setGuildConfig(guild.id, { logBotMessages: on });
+      if (!on) require('./messageStore').purgeBots(guild.id);
+      done('deleted bot messages', on ? 'on' : 'off');
+      const needs = on && !getLogChannel(guild.id, 'messages') ? ' Set a Message log channel for it to work.' : '';
+      return await respond(interaction, viewLogs(guild, undefined, noteGood(on ? `Messages deleted by other bots will now be logged. This bot's own messages never are.${needs}` : 'Deleted bot messages are no longer logged, and any stored ones were removed.'))), true;
+    }
     if (action === 'set') {
       const channel = interaction.channels.first();
       const missing = missingIn(channel, guild);

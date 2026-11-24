@@ -84,15 +84,15 @@ module.exports = {
           const logChannel = await guild.channels.fetch(logChannelId);
           if (logChannel?.isTextBased()) {
             const fields = [
-              { name: 'Purged By', value: `${member} — ${member.user.tag}`, inline: true },
+              { name: 'Purged by', value: `${member} — ${member.user.tag}`, inline: true },
               { name: 'Channel',   value: `<#${channel.id}>`,               inline: true },
               { name: 'Total',     value: `${totalDeleted}`,                 inline: true },
             ];
 
             if (old.size > 0) {
               fields.push(
-                { name: 'Bulk Deleted',       value: `${bulkDeleted}`, inline: true },
-                { name: 'Individual Deleted', value: `${oldDeleted}`,  inline: true },
+                { name: 'Bulk deleted',       value: `${bulkDeleted}`, inline: true },
+                { name: 'Individual deleted', value: `${oldDeleted}`,  inline: true },
                 { name: '\u200b',             value: '\u200b',          inline: true },
               );
             }
@@ -101,7 +101,7 @@ module.exports = {
               embeds: [
                 new EmbedBuilder()
                   .setColor(0xFF7043)
-                  .setTitle('Channel Purged')
+                  .setTitle('Channel purged')
                   .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) })
                   .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
                   .addFields(fields)

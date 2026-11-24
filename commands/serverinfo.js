@@ -60,10 +60,10 @@ module.exports = {
         { name: 'Emojis',          value: `${staticE} static · ${animated} animated`, inline: true },
         { name: 'Stickers',        value: `${stickers}`, inline: true },
         { name: 'Boosts',          value: `${boosts} · ${BOOST_TIER[tier] || 'No Tier'}`, inline: true },
-        { name: 'Upload Limit',    value: UPLOAD_LIMIT[tier] || '25 MB', inline: true },
+        { name: 'Upload limit',    value: UPLOAD_LIMIT[tier] || '25 MB', inline: true },
         { name: 'Verification',    value: VERIFICATION[guild.verificationLevel] || '—', inline: true },
         { name: '2FA Requirement', value: guild.mfaLevel === 1 ? 'Required' : 'Not required', inline: true },
-        { name: 'Content Filter',  value: CONTENT_FILTER[guild.explicitContentFilter] || '—', inline: true },
+        { name: 'Content filter',  value: CONTENT_FILTER[guild.explicitContentFilter] || '—', inline: true },
         { name: 'Locale',          value: guild.preferredLocale || '—', inline: true },
       )
       .setTimestamp()

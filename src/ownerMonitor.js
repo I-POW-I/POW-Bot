@@ -33,7 +33,7 @@ const NEEDS_ATTENTION_MS = 60 * 60_000;
 const CONFIRM_TTL_MS     = 5 * 60_000;
 
 let digestTimer = null, memoryTimer = null, clientRef = null;
-let overCount = 0, lastAttentionAt = 0, lastHighWarnAt = 0;
+let overCount = 0, lastAttentionAt = 0;
 let digestState = { tail: null };
 
 const stripAnsi = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');

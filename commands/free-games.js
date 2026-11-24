@@ -141,7 +141,7 @@ async function showCurrent(interaction) {
   if (epicUpcoming.length > 0) {
     const upEmbed = new EmbedBuilder()
       .setColor(EPIC_COLOUR)
-      .setTitle('Coming Up Free on Epic')
+      .setTitle('Coming up free on Epic')
       .setDescription(
         epicUpcoming.map(g => {
           const starts = g.startsAt

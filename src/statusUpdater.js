@@ -1,14 +1,14 @@
 const {
-  ActivityType, EmbedBuilder, PermissionsBitField,
+  EmbedBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ChannelType, ChannelSelectMenuBuilder, UserSelectMenuBuilder,
 } = require('discord.js');
 const { getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice');
 const { log }                              = require('./logger');
 const store                                = require('./connectionStore');
-const { getGuildConfig, getStats, getLogChannel } = require('./guildConfig');
-const { getUserStats, getServerTotals, formatMs, getStreamStats }  = require('./database');
-const { joinTimes, streamTimes }           = require('./memberTracker');
+const { getGuildConfig } = require('./guildConfig');
+const { getUserStats, formatMs, getStreamStats }  = require('./database');
+const { joinTimes }           = require('./memberTracker');
 
 const PRESENCE_INTERVAL  = 60 * 1000;
 
@@ -120,25 +120,7 @@ function buildPanelEmbed(guildId, guild = null) {
     .setTimestamp();
 }
 
-// ── Stats embed ─────────────────────────────────────────────
-
-function buildStatsEmbed(guildId, client, opts) {
-  return require('./botInfo').buildBotInfoEmbed(guildId, client, opts);
-}
-
 // ── Member profile embed ──────────────────────────────────────────────────────
-
-const KEY_PERMS = [
-  ['Administrator',     'Administrator'],
-  ['ManageGuild',       'Manage Server'],
-  ['ManageChannels',    'Manage Channels'],
-  ['ManageRoles',       'Manage Roles'],
-  ['ManageMessages',    'Manage Messages'],
-  ['ModerateMembers',   'Timeout Members'],
-  ['KickMembers',       'Kick Members'],
-  ['BanMembers',        'Ban Members'],
-  ['ViewAuditLog',      'View Audit Log'],
-];
 
 function buildMemberEmbed(member, guild) {
   const user  = member.user;
@@ -191,15 +173,15 @@ function buildMemberEmbed(member, guild) {
     .setColor(member.displayColor || 0x5865F2)
     .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true }) })
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
-    .setTitle('User Profile')
+    .setTitle('User profile')
     // Section headers below use a plain bold bullet, not decorative emoji,
     // per request — just enough to visually separate each group of fields.
     .addFields({ name: '\u200b', value: '**▸ Account Overview**', inline: false })
     // Row 1: Registry Markers
     .addFields(
-      { name: 'Joined Server', value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n(<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>)`, inline: true },
-      { name: 'Account Created', value: `<t:${Math.floor(user.createdAt.getTime() / 1000)}:D>\n(<t:${Math.floor(user.createdAt.getTime() / 1000)}:R>)`, inline: true },
-      { name: 'Account Age', value: `\`${ageStr}\``, inline: true }
+      { name: 'Joined server', value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n(<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>)`, inline: true },
+      { name: 'Account created', value: `<t:${Math.floor(user.createdAt.getTime() / 1000)}:D>\n(<t:${Math.floor(user.createdAt.getTime() / 1000)}:R>)`, inline: true },
+      { name: 'Account age', value: `\`${ageStr}\``, inline: true }
     )
     .addFields({ name: '\u200b', value: '**▸ Member Details**', inline: false })
     // Row 2: Presence Metadata
@@ -222,15 +204,15 @@ function buildMemberEmbed(member, guild) {
     embed.addFields({ name: '\u200b', value: '**▸ Voice Activity**', inline: false });
     embed.addFields(
       { name: 'Total VC Time', value: `\`${formatMs(stats.total_ms)}\``, inline: true },
-      { name: 'Total Sessions', value: `\`${stats.session_count}\``, inline: true },
-      { name: 'Avg Time', value: `\`${formatMs(stats.avg_ms)}\``, inline: true },
+      { name: 'Total sessions', value: `\`${stats.session_count}\``, inline: true },
+      { name: 'Avg time', value: `\`${formatMs(stats.avg_ms)}\``, inline: true },
 
       { name: 'Top VC', value: stats.top_channel ? `**${stats.top_channel}**\n(\`${formatMs(stats.top_channel_ms)}\`)` : '—', inline: true },
       { name: 'VC Streak', value: `\`${stats.streak} day(s)\``, inline: true },
-      { name: 'Longest Session', value: `\`${formatMs(stats.longest_session_ms)}\``, inline: true },
+      { name: 'Longest session', value: `\`${formatMs(stats.longest_session_ms)}\``, inline: true },
 
-      { name: 'Last Tracked', value: lastSeenStr, inline: true },
-      { name: 'Longest Stream', value: `\`${formatMs(streamStats.longest_stream_ms)}\``, inline: true }
+      { name: 'Last tracked', value: lastSeenStr, inline: true },
+      { name: 'Longest stream', value: `\`${formatMs(streamStats.longest_stream_ms)}\``, inline: true }
     );
   }
 
@@ -267,20 +249,20 @@ function buildPanelButtons() {
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bot_myinfo')
-      .setLabel('My Info')
+      .setLabel('My info')
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
       .setCustomId('bot_lookup')
-      .setLabel('User Lookup')
+      .setLabel('User lookup')
       .setStyle(ButtonStyle.Secondary)
   );
 
-  // Row 3: Bot information (a second button can be added here later)
+  // Row 3: Server stats
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('bot_info')
-      .setLabel('Bot Info')
+      .setCustomId('bot_leaderboard')
+      .setLabel('Leaderboard')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -343,5 +325,4 @@ module.exports = {
   buildMemberEmbed,
   buildChannelSelectRow,
   buildUserSelectRow,
-  buildStatsEmbed,
 };

@@ -38,13 +38,16 @@ module.exports = {
 
     // What we know: the live message if it was cached, otherwise the copy kept in the database
     const stored = store.get(message.id);
-    if (message.author?.bot) { if (stored) store.remove(message.id); return; }
+    // Other bots' messages are only logged when the server switched that on; this bot's own never are
+    const fromBot = !!(message.author?.bot || stored?.author_bot);
+    const ownMessage = message.author?.id === message.client?.user?.id;
+    if (fromBot && (ownMessage || !store.botLoggingOn(guild.id))) { if (stored) store.remove(message.id); return; }
 
     const channelId = getLogChannel(guild.id, 'messages');
     if (!channelId) return;
 
     const authorId = message.author?.id || stored?.author_id;
-    const content  = message.content || stored?.content || null;
+    const content  = message.content || (fromBot ? store.describe(message) : '') || stored?.content || null;
     const attachments = message.attachments?.size
       ? [...message.attachments.values()].map(a => ({ name: a.name, url: a.url, type: a.contentType }))
       : (stored?.attachments || []);
@@ -67,7 +70,7 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setColor(0xED4245)
-      .setTitle('Message Deleted')
+      .setTitle(fromBot ? 'Bot message deleted' : 'Message deleted')
       .setTimestamp();
 
     if (author) {
@@ -82,7 +85,7 @@ module.exports = {
       { name: 'Sent',    value: getMessageAge(sentAt) || '—',                                                 inline: true },
     );
 
-    if (deletedBy) embed.addFields({ name: 'Deleted By', value: deletedBy, inline: false });
+    if (deletedBy) embed.addFields({ name: 'Deleted by', value: deletedBy, inline: false });
 
     embed.addFields({
       name:   'Content',

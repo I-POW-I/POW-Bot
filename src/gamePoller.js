@@ -71,7 +71,7 @@ function buildEpicGameEmbed(game) {
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setLabel('Claim Free Game')
+      .setLabel('Claim free game')
       .setURL(game.url)
       .setStyle(ButtonStyle.Link)
   );
@@ -197,7 +197,7 @@ async function checkEpicGames(client) {
       if (upcoming.length > 0) {
         const upEmbed = new EmbedBuilder()
           .setColor(EPIC_COLOUR)
-          .setTitle('Coming Up Free on Epic')
+          .setTitle('Coming up free on Epic')
           .setDescription(upcoming.map(g => {
             const starts = g.startsAt
               ? `<t:${Math.floor(new Date(g.startsAt).getTime() / 1000)}:D>`

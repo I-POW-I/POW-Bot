@@ -19,7 +19,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, StringSelectMenuBuilder,
   ChannelSelectMenuBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, MessageFlags,
-  ChannelType, PermissionFlagsBits, REST, Routes,
+  ChannelType, REST, Routes,
 } = require('discord.js');
 const crypto = require('crypto');
 
@@ -28,11 +28,11 @@ const globalConfig = require('./globalConfig');
 const alerts       = require('./errorAlerts');
 const monitor      = require('./ownerMonitor');
 const presence     = require('./presence');
+const ownerAnnounce = require('./ownerAnnounce');
 const system       = require('./system');
 const { buildOwnerEmbeds } = require('./botInfo');
 const { audit }    = require('./diagnostics');
 const { log }      = require('./logger');
-const { getGuildConfig } = require('./guildConfig');
 const { selectOne, formatMs } = require('./database');
 
 const BLUE = 0x5865F2, RED = 0xED4245, AMBER = 0xFAA61A;
@@ -79,12 +79,12 @@ const back = (to = 'home', label = 'Back') => btn(to === 'home' ? 'owner:home' :
 
 /** Edit the screen in place (or open it fresh from the slash command). */
 async function show(interaction, view) {
+  if (!('content' in view)) view = { ...view, content: null };   // a screen that came after one with text must not keep that text
   if (interaction.deferred || interaction.replied) return interaction.editReply(view);
   if (interaction.isFromMessage?.() || interaction.isMessageComponent?.()) return interaction.update(view);
   return interaction.reply({ ...view, flags: ephemeral });
 }
 const say = (interaction, content) => interaction.reply({ content, flags: ephemeral });
-const withNote = (view, note) => (note ? { ...view, embeds: [EmbedBuilder.from(view.embeds[0]).setDescription([note, view.embeds[0].data.description].filter(Boolean).join('\n\n')), ...view.embeds.slice(1)] } : view);
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 
@@ -143,10 +143,9 @@ function viewServers(client, page = 0, note) {
 
 async function serverEmbed(guild) {
   const owner = await guild.fetchOwner().catch(() => null);
-  const me = guild.members.me;
   const { summary } = require('./setup');
   const items = summary(guild), core = items.filter(i => i.core);
-  const lacking = ['ManageRoles', 'KickMembers', 'ManageMessages', 'ViewAuditLog', 'Connect', 'Speak'].filter(p => !me.permissions.has(PermissionFlagsBits[p]));
+  const lacking = require('./botPermissions').missingServerWide(guild);
   const voice = selectOne('SELECT COUNT(*) AS n, COALESCE(SUM(duration_ms),0) AS ms FROM vc_sessions WHERE guild_id = ? AND duration_ms IS NOT NULL', [guild.id]) || {};
   const vs = require('./verification').settings(guild.id);
   const blocked = globalConfig.isGuildBanned(guild.id);
@@ -162,7 +161,7 @@ async function serverEmbed(guild) {
       { name: 'Setup', value: `Core ${core.filter(i => i.done).length}/${core.length}\n${items.filter(i => i.done).map(i => i.key).join(', ') || 'nothing set'}`, inline: true },
       { name: 'Verification', value: vs.roleId ? `${vs.mode === 'captcha' ? 'human check' : 'button'}${vs.kickMinutes ? ` · auto-remove ${vs.kickMinutes}m` : ''}` : 'off', inline: true },
       { name: 'Voice activity', value: `${n(voice.n)} sessions · ${formatMs(voice.ms || 0)}`, inline: true },
-      { name: 'Bot permissions', value: lacking.length ? `Missing: ${lacking.join(', ')}` : 'All the useful ones', inline: false },
+      { name: 'Bot permissions', value: lacking.length ? `Missing: ${lacking.join(', ')}` : 'All present', inline: false },
     );
   if (blocked) embed.setDescription(`**Blocked**: ${globalConfig.get().blacklist.guilds[guild.id].reason || 'no reason given'}`);
   return embed;
@@ -302,7 +301,7 @@ function viewStatus(client, note) {
     '',
     `Shown as **${{ online: 'Online', idle: 'Idle', dnd: 'Do not disturb' }[st.status]}** · changes every **${st.rotateSeconds >= 60 ? `${st.rotateSeconds / 60} min` : `${st.rotateSeconds}s`}**`,
     presence.isCustomised() ? null : 'These are the built-in statuses. Add or edit one to make the list your own.',
-    'Placeholders: `{servers}` `{uptime}` `{version}`. Voice channel names and member counts are never shown.'].filter(v => v !== null && v !== undefined).join('\n'));
+    'Placeholders: `{servers}` `{members}` `{voicehours}` `{voicenow}` `{uptime}` `{version}`. Only totals are shown, never a server, channel or member.'].filter(v => v !== null && v !== undefined).join('\n'));
   const pickOne = (id, ph, opts, cur) => row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(ph).addOptions(opts.map(([value, label]) => ({ label, value, default: String(cur) === value }))));
   return {
     embeds: [embed],
@@ -320,6 +319,8 @@ function viewStatusNew(type = 'playing') {
   return {
     embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Add a status').setDescription(`Type: **${typeLabel(type)}**\n\nChoose how it reads, then press **Write text**.\n\`Playing\` shows as "Playing …", \`Watching\` as "Watching …", and \`Custom\` shows just your text.`)],
     components: [
+      row(new StringSelectMenuBuilder().setCustomId('owner:st_tpl').setPlaceholder('Start from a template')
+        .addOptions(presence.TEMPLATES.map((t, i) => ({ label: t.label, value: String(i), description: `${t.type === 'custom' ? '' : typeLabel(t.type) + ' '}${t.text}`.slice(0, 100) })))),
       row(new StringSelectMenuBuilder().setCustomId('owner:st_newtype').setPlaceholder('Status type')
         .addOptions(Object.entries(presence.TYPES).map(([value, t]) => ({ label: t.label, value, default: value === type })))),
       row(btn(`owner:st_text:${type}`, 'Write text', ButtonStyle.Primary), back('status', 'Cancel')),
@@ -345,86 +346,6 @@ function viewStatusOne(client, id, note) {
 
 const statusTextModal = (customId, title, value = '') => new ModalBuilder().setCustomId(customId).setTitle(title).addComponents(
   row(new TextInputBuilder().setCustomId('text').setLabel('Status text').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(presence.MAX_TEXT).setValue(String(value).slice(0, presence.MAX_TEXT)).setPlaceholder('{servers} servers')));
-
-// ── Announcements ─────────────────────────────────────────────────────────────
-
-const isPostable = (guild, ch) => !!ch && ch.type === ChannelType.GuildText
-  && !!ch.permissionsFor(guild.members.me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks]);
-
-/** Where an announcement goes in one server: your choice, then its announcement channel, panel channel, system channel. */
-function resolveTarget(guild, state) {
-  const cfg = getGuildConfig(guild.id);
-  const tries = [[state?.overrides?.get(guild.id), 'chosen by you'], [cfg.announceChannelId, 'announcement channel'], [cfg.panelChannelId, 'panel channel']];
-  for (const [id, how] of tries) {
-    const ch = id && guild.channels.cache.get(id);
-    if (isPostable(guild, ch)) return { channel: ch, how };
-  }
-  return isPostable(guild, guild.systemChannel) ? { channel: guild.systemChannel, how: 'system channel' } : null;
-}
-
-const announceGuilds = (client) => [...client.guilds.cache.values()].filter(g => !globalConfig.isGuildBanned(g.id)).sort((a, b) => b.memberCount - a.memberCount);
-
-/** The announcement screen: preview, where it goes per server, who to skip, change a channel, send. */
-function announceView(client, nonce, p) {
-  const guilds = announceGuilds(client);
-  let willSend = 0;
-  const lines = guilds.map((g) => {
-    if (p.excluded.has(g.id)) return `**${g.name}**: skipped`;
-    const t = resolveTarget(g, p);
-    if (!t) return `**${g.name}**: no usable channel (will be skipped)`;
-    willSend++;
-    return `**${g.name}** → #${t.channel.name} *(${t.how})*`;
-  });
-  const shown = guilds.slice(0, 25);
-
-  const preview = new EmbedBuilder().setColor(BLUE).setTitle(p.title).setDescription(p.body).setFooter({ text: 'Message from the bot owner' });
-  const where = new EmbedBuilder().setColor(BLUE).setTitle(`Where it will be sent (${willSend} of ${guilds.length} servers)`)
-    .setDescription(lines.join('\n').slice(0, 3900) || 'No servers.')
-    .setFooter({ text: guilds.length > 25 ? 'The menus list the 25 largest servers; the rest follow the automatic choice.' : 'Automatic order: announcement channel, panel channel, system channel' });
-
-  const skip = new StringSelectMenuBuilder().setCustomId(`owner:ann_skip:${nonce}`).setPlaceholder('Servers to SKIP (optional)').setMinValues(0).setMaxValues(Math.max(1, shown.length))
-    .addOptions(shown.map(g => ({ label: g.name.slice(0, 100), value: g.id, default: p.excluded.has(g.id), description: `${n(g.memberCount)} members` })));
-  const change = new StringSelectMenuBuilder().setCustomId(`owner:ann_chg:${nonce}`).setPlaceholder('Change the channel for one server…')
-    .addOptions(shown.map(g => ({ label: g.name.slice(0, 100), value: g.id, description: 'Choose a different channel' })));
-  const buttons = confirmRow(nonce, willSend ? `Send to ${willSend} server(s)` : 'Nothing to send');
-  if (!willSend) buttons.components[0].setDisabled(true);
-  return { embeds: [preview, where], components: [row(skip), row(change), buttons] };
-}
-
-function channelPickView(guild, nonce, p) {
-  const options = [{ label: 'Automatic (announcement, panel or system channel)', value: '__auto' }];
-  const channels = [...guild.channels.cache.values()].filter(c => isPostable(guild, c)).sort((a, b) => a.rawPosition - b.rawPosition).slice(0, 24);
-  for (const c of channels) options.push({ label: `#${c.name}`.slice(0, 100), value: c.id, default: p.overrides.get(guild.id) === c.id });
-  return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle(`Channel for ${guild.name}`).setDescription(channels.length ? 'Pick where this server should receive the announcement.' : 'I can\'t post in any channel there, so it will be skipped.')],
-    components: [row(new StringSelectMenuBuilder().setCustomId(`owner:ann_ch:${nonce}:${guild.id}`).setPlaceholder('Choose a channel…').addOptions(options))],
-  };
-}
-
-function viewAnnounce() {
-  return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Announcements').setDescription('Send a notice to the servers you choose: maintenance, new features, anything important. You write the message, then pick which servers get it and which channel in each. Servers with no usable channel are skipped and listed.')],
-    components: [row(btn('owner:announce_new', 'New announcement', ButtonStyle.Primary), back())],
-  };
-}
-
-const announceModal = () => new ModalBuilder().setCustomId('owner:announce_modal').setTitle('Announcement').addComponents(
-  row(new TextInputBuilder().setCustomId('title').setLabel('Title').setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)),
-  row(new TextInputBuilder().setCustomId('body').setLabel('Message').setStyle(TextInputStyle.Paragraph).setMaxLength(1500).setRequired(true)));
-
-async function runAnnounce(interaction, client, p) {
-  const embed = new EmbedBuilder().setColor(BLUE).setTitle(p.title).setDescription(p.body).setFooter({ text: 'Message from the bot owner' }).setTimestamp();
-  let sent = 0; const failed = [], skipped = [];
-  for (const guild of announceGuilds(client)) {
-    if (p.excluded.has(guild.id)) continue;
-    const target = resolveTarget(guild, p);
-    if (!target) { skipped.push(guild.name); continue; }
-    try { await target.channel.send({ embeds: [embed] }); sent++; } catch (err) { failed.push(`${guild.name} (${err.message.slice(0, 40)})`); }
-    await new Promise(r => setTimeout(r, 400));
-  }
-  audit({ action: 'Announcement sent', actor: interaction.user, details: `"${p.title}" → ${sent} server(s), ${failed.length + skipped.length} not reached` });
-  return { sent, failed, skipped };
-}
 
 // ── Maintenance and features ──────────────────────────────────────────────────
 
@@ -528,7 +449,7 @@ async function openSection(interaction, client, key) {
     case 'servers':  return show(interaction, viewServers(client, 0));
     case 'alerts':   return show(interaction, viewAlerts(uid));
     case 'status':   return show(interaction, viewStatus(client));
-    case 'announce': return show(interaction, viewAnnounce());
+    case 'announce': return show(interaction, ownerAnnounce.viewHome());
     case 'control':  return show(interaction, viewControl());
     case 'blocks':   return show(interaction, viewBlocks());
     case 'audit':    return show(interaction, viewAudit());
@@ -561,14 +482,10 @@ async function handleComponent(interaction, client) {
 
   const parts = id.split(':'), action = parts[1];
 
+  if (action.startsWith('ann_')) return ownerAnnounce.handle(interaction, client);
+
   // ── Modals ──
   if (interaction.isModalSubmit()) {
-    if (action === 'announce_modal') {
-      const title = interaction.fields.getTextInputValue('title').trim(), body = interaction.fields.getTextInputValue('body').trim();
-      const nonce = remember({ kind: 'announce', userId: uid, title, body, excluded: new Set(), overrides: new Map() });
-      await interaction.reply({ ...announceView(client, nonce, pending.get(nonce)), flags: ephemeral });
-      return true;
-    }
     if (action === 'mt_modal') {
       const message = interaction.fields.getTextInputValue('message').trim();
       globalConfig.update(s => { s.maintenance = { enabled: true, message, since: Date.now(), by: interaction.user.tag }; });
@@ -623,6 +540,13 @@ async function handleComponent(interaction, client) {
       return true;
     }
     if (action === 'st_pick') { await show(interaction, viewStatusOne(client, v)); return true; }
+    if (action === 'st_tpl') {
+      const t = presence.TEMPLATES[Number(v)];
+      const res = t ? presence.add(t.type, t.text) : { ok: false, error: 'That template no longer exists.' };
+      if (res.ok) { audit({ action: 'Bot status added', actor: interaction.user, details: res.entry.text }); presence.refresh(client); }
+      await show(interaction, viewStatus(client, res.ok ? `Added: ${entryText(res.entry)}` : res.error));
+      return true;
+    }
     if (action === 'st_newtype') { await show(interaction, viewStatusNew(v)); return true; }
     if (action === 'st_type') {
       const current = presence.list().find(e => e.id === parts[2]);
@@ -634,24 +558,6 @@ async function handleComponent(interaction, client) {
     if (action === 'st_online') { presence.setStatus(v); audit({ action: 'Bot presence changed', actor: interaction.user, details: v }); presence.refresh(client); await show(interaction, viewStatus(client, 'Saved.')); return true; }
     if (action === 'st_rot')    { presence.setRotate(v); audit({ action: 'Status rotation changed', actor: interaction.user, details: `${v}s` }); presence.refresh(client); await show(interaction, viewStatus(client, 'Saved.')); return true; }
 
-    // Announcement screen controls
-    if (/^ann_(skip|chg|ch)$/.test(action)) {
-      const kind = action.replace(/^ann_/, ''), nonce = parts[2], guildId = parts[3];
-      const p = pending.get(nonce);
-      if (!p || p.expires < Date.now() || p.userId !== uid) { await interaction.update({ content: 'That screen expired. Start the announcement again.', embeds: [], components: [] }); return true; }
-      if (kind === 'skip') {
-        for (const gid of announceGuilds(client).slice(0, 25).map(g => g.id)) p.excluded.delete(gid);
-        for (const gid of interaction.values) p.excluded.add(gid);
-        await interaction.update(announceView(client, nonce, p));
-      } else if (kind === 'chg') {
-        const guild = client.guilds.cache.get(v);
-        await interaction.update(guild ? channelPickView(guild, nonce, p) : announceView(client, nonce, p));
-      } else {
-        if (v === '__auto') p.overrides.delete(guildId); else p.overrides.set(guildId, v);
-        await interaction.update(announceView(client, nonce, p));
-      }
-      return true;
-    }
     return false;
   }
 
@@ -672,7 +578,6 @@ async function handleComponent(interaction, client) {
       await interaction.reply({ embeds: [new EmbedBuilder().setColor(AMBER).setTitle('Re-register slash commands?').setDescription('Wipes every global and per-server command, then registers the current set again. Commands can be missing for a short moment.')], components: [confirmRow(nonce, 'Re-register')], flags: ephemeral });
       return true;
     }
-    case 'announce_new': await interaction.showModal(announceModal()); return true;
     case 'mt_toggle': {
       if (globalConfig.isMaintenance()) {
         globalConfig.update(s => { s.maintenance = { enabled: false, message: '', since: null, by: interaction.user.tag }; });
@@ -753,14 +658,6 @@ async function confirmed(interaction, client, nonce) {
     return true;
   }
 
-  if (p.kind === 'announce') {
-    await interaction.update({ content: 'Sending…', embeds: [], components: [] });
-    const r = await runAnnounce(interaction, client, p);
-    await interaction.editReply({ content: [`Sent to **${r.sent}** server(s).`,
-      r.skipped.length ? `No usable channel (skipped): ${r.skipped.join(', ').slice(0, 600)}` : null,
-      r.failed.length ? `Could not post in ${r.failed.length}: ${r.failed.join(', ').slice(0, 600)}` : null].filter(Boolean).join('\n') });
-    return true;
-  }
   return false;
 }
 

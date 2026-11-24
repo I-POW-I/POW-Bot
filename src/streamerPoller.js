@@ -75,7 +75,7 @@ function buildLiveEmbed(platform, sub, status) {
 function buildWatchButton(url) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setLabel('Watch Stream')
+      .setLabel('Watch stream')
       .setURL(url)
       .setStyle(ButtonStyle.Link)
   );

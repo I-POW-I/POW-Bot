@@ -84,12 +84,6 @@ function getStats(guildId) {
   };
 }
 
-/** Get the verify role ID configured for this guild. */
-function getVerifyRoleId(guildId) {
-  return getGuildConfig(guildId).verifyRoleId || null;
-}
-
-
 /**
  * Get the role ID allowed to use Leave and Force Leave buttons.
  * Returns null if not set — falls back to server owner.
@@ -103,6 +97,5 @@ module.exports = {
   getLogChannel,   setLogChannel,
   setLastChannel,  clearLastChannel,
   setStats,        getStats,
-  getVerifyRoleId,
   getBotControlRoleId,
 };
