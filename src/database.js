@@ -64,6 +64,22 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_announcements_sent ON announcements (sent_at);
 
+      CREATE TABLE IF NOT EXISTS mod_cases (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id    TEXT    NOT NULL,
+        number      INTEGER NOT NULL,
+        user_id     TEXT    NOT NULL,
+        user_tag    TEXT,
+        mod_id      TEXT,
+        mod_tag     TEXT,
+        action      TEXT    NOT NULL,
+        reason      TEXT,
+        duration_ms INTEGER,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_mod_cases_number ON mod_cases (guild_id, number);
+      CREATE INDEX IF NOT EXISTS idx_mod_cases_user ON mod_cases (guild_id, user_id);
+
       CREATE TABLE IF NOT EXISTS member_events (
         id        INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id  TEXT    NOT NULL,

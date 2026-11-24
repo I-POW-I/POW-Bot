@@ -39,6 +39,21 @@ const CATEGORIES = [
     ],
   },
   {
+    id: 'mod', label: 'Moderation',
+    text: [
+      'For staff. Each command needs the matching Discord permission, and every action becomes a numbered case with a reason, recorded in the mod log.',
+      '',
+      '**`/warn`**, **`/timeout`**, **`/untimeout`**, **`/kick`**, **`/softban`**, **`/ban`**, **`/unban`**: act on a member. The member is sent a short message with the reason (staff can turn that off in **`/setup` > Moderation**).',
+      '**`/softban`** bans and unbans straight away, which deletes their recent messages. They can rejoin.',
+      '**`/case`**: look up a case by number, or change its reason.',
+      '**`/history`**: every case for one member.',
+      '**`/lock`**, **`/unlock`**, **`/slowmode`**: control a channel.',
+      '**`/purge`**: delete up to 100 messages.',
+      '',
+      'Bans, kicks and timeouts done by hand in Discord are recorded as cases too. **`/setup` > Security Check Point** adds a trap channel that catches spam bots and hacked accounts.',
+    ],
+  },
+  {
     id: 'members', label: 'Members and verification',
     text: [
       '**Verification**: set it up in **`/setup` > Verification**: verified role, human check, optional quarantine role, minimum account age and auto-remove. Staff get a detailed log with Approve and Kick buttons. The buttons close as soon as the member verifies.',

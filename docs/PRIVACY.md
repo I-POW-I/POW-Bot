@@ -14,6 +14,7 @@ This explains what POW-Bot stores, why, for how long, and how to have it removed
 | **Live sessions**: when you went live in a voice channel | Voice stats | Same as voice sessions |
 | **Join and leave history**: user ID, server and time | Member overview and verification risk checks | 90 days |
 | **Recent messages**: text, attachment names, author ID and tag | Only in servers that switched on the deleted and edited message logs. Lets the log show what was removed | 7 days |
+| **Moderation cases**: the member's user ID and tag, the moderator, the action, the reason and the time | The server's moderation record (`/case`, `/history`) | Until the bot is removed from the server. They are the server's records, so `/privacy` does not remove them. Ask the server's staff |
 | **Watched streamers, games and feeds** | Alerts | Until the server removes them or the bot leaves |
 
 Server staff can also see what the verification feature shows about an account: its age, avatar and public badges. Nothing else is collected for that.

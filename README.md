@@ -12,6 +12,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 - Logs for voice activity, deleted and edited messages, members and server changes
 - Welcome and leave cards, fully editable
 - Human verification with staff approval, quarantine and auto-removal
+- Moderation: warn, timeout, kick, softban, ban and unban as numbered cases with a history and a mod log, plus lock and slowmode
 - Security Check Point: a trap channel that catches spam bots and hacked accounts and softbans, kicks, bans or times them out (staff choose)
 - Streamer alerts (Twitch, Kick, YouTube), free game alerts (Epic, Steam, GOG) and game update alerts (Steam, Minecraft, Riot, any RSS feed)
 - Owner tools: announcements, status editor, maintenance mode, alerts, weekly backups
@@ -31,6 +32,9 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 | `/members` | Overview, recent joins and leaves, unverified members, lookup | Manage Server |
 | `/botinfo` | Status, latency, memory and services | Manage Server, bot owners |
 | `/streamers`, `/game-updates`, `/free-games` | What the server follows. Staff get a Manage button | Everyone |
+| `/warn` `/timeout` `/untimeout` `/kick` `/softban` `/ban` `/unban` | Moderation actions. Each one is a numbered case, recorded in the mod log, and the member is sent the reason | Matching Discord permission |
+| `/case`, `/history` | Look up a case, or a member's whole record | Timeout Members |
+| `/lock` `/unlock` `/slowmode` | Control a channel | Manage Channels |
 | `/purge` | Delete up to 100 messages | Manage Messages |
 | `/owner` | The owner control hub | `OWNER_IDS` / `ADMIN_IDS` only |
 

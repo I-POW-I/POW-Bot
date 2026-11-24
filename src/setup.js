@@ -28,8 +28,9 @@ const cards = require('./cards');
 const alertsKit = require('./setupAlerts');
 const leaderboardKit = require('./setupLeaderboard');
 const checkpointKit = require('./setupCheckpoint');
+const moderationKit = require('./setupModeration');
 const botPermissions = require('./botPermissions');
-const KITS = [alertsKit, leaderboardKit, checkpointKit];                 // pages that live in their own files
+const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
@@ -54,6 +55,7 @@ const PAGES = [
   { value: 'updates',   label: 'Game update alerts',         emoji: '🎮', desc: 'Patch notes: Steam, Minecraft, Riot, RSS',},
   { value: 'free',      label: 'Free game alerts',           emoji: '🎁', desc: 'Epic Games Store and Steam free games',},
   { value: 'leaderboard', label: 'Voice leaderboard',      emoji: '🏆', desc: 'Top voice time and optional role rewards',},
+  { value: 'moderation', label: 'Moderation',                emoji: '🔨', desc: 'Mod log and the moderation commands',},
   { value: 'checkpoint', label: 'Security Check Point',    emoji: '🚧', desc: 'A trap channel that catches spam bots and hacked accounts',},
   { value: 'announce',  label: 'Announcements',              emoji: '📣', desc: 'Where bot news and changelogs are posted',},
 ];
@@ -84,6 +86,7 @@ function summary(guild) {
     { key: 'updates', core: false, done: games > 0,                                text: games ? `${games} game(s) watched` : 'None yet' },
     { key: 'free',    core: false, done: free > 0,                                 text: free ? `${free} on` : 'Off' },
     { key: 'leaderboard', core: false, done: lbs.rewards,                        text: lbs.rewards ? `Rewards on · ${lbs.tiers.length} tiers` : 'Leaderboard on · rewards off' },
+    { key: 'moderation', core: false, done: !!getLogChannel(guild.id, 'modlog'), text: getLogChannel(guild.id, 'modlog') ? `Mod log ${chan(getLogChannel(guild.id, 'modlog'))}` : 'Choose a mod log channel' },
     { key: 'checkpoint', core: false, done: cps.enabled && exists(cps.channelId), text: cps.enabled && exists(cps.channelId) ? `On · ${chan(cps.channelId)} · ${cps.caught} caught` : 'Off. Catches spam bots and hacked accounts' },
     { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Not set (falls back to another channel)' },
   ];

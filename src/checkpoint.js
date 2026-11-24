@@ -207,7 +207,14 @@ async function handleMessage(message) {
   try {
     await message.delete().catch(() => {});
     const result = await act(guild, message.author, member, s);
-    if (result.ok) save(guild.id, { ...s, caught: s.caught + 1 });
+    if (result.ok) {
+      save(guild.id, { ...s, caught: s.caught + 1 });
+      try {   // it is a case like any other, so /history shows it
+        const c = require('./moderation').createCase({ guildId: guild.id, user: message.author, moderator: guild.client.user, action: s.action,
+          reason: 'Security Check Point: posted in the trap channel', durationMs: s.action === 'timeout' ? TIMEOUTS[s.timeout] : null });
+        result.text += ` Case #${c.number}.`;
+      } catch (err) { log('WARN', 'Security Check Point: could not record the case', { err }); }
+    }
     log('INFO', `Security Check Point: ${message.author.tag} in ${guild.name}: ${result.text}`);
     await sendLog(guild, s, logEntry({ user: message.author, member, message, result, s }));
   } catch (err) {

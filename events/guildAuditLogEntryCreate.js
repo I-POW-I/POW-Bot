@@ -27,10 +27,35 @@ const LABELS = {
   [AuditLogEvent.WebhookDelete]:    { title: 'Webhook deleted',          colour: 0xFF7043 },
 };
 
+/**
+ * A ban, kick or timeout done by hand in Discord (not through the bot) becomes a case too, so /history is complete.
+ * Actions the bot took itself are skipped: they already have a case.
+ */
+async function recordManualAction(entry, guild) {
+  try {
+    if (!entry.executor || entry.executor.id === guild.client.user.id || !entry.target?.id) return;
+    const mod = require('../src/moderation');
+    let action = null, durationMs = null;
+    if (entry.action === AuditLogEvent.MemberBanAdd) action = 'ban';
+    else if (entry.action === AuditLogEvent.MemberBanRemove) action = 'unban';
+    else if (entry.action === AuditLogEvent.MemberKick) action = 'kick';
+    else if (entry.action === AuditLogEvent.MemberUpdate) {
+      const change = entry.changes?.find(c => c.key === 'communication_disabled_until');
+      if (!change?.new) return;
+      action = 'timeout';
+      durationMs = Math.max(0, Date.parse(change.new) - Date.now());
+    }
+    if (!action) return;
+    const c = mod.createCase({ guildId: guild.id, user: entry.target, moderator: entry.executor, action, reason: entry.reason || null, durationMs });
+    await mod.sendLog(guild, mod.caseEmbed(c, { user: entry.target }));
+  } catch (err) { log('WARN', 'Could not record a manual moderation action', { err }); }
+}
+
 module.exports = {
   name: Events.GuildAuditLogEntryCreate,
   once: false,
   async execute(entry, guild) {
+    await recordManualAction(entry, guild);
     if (!TRACKED.has(entry.action)) return;
     const channelId = getLogChannel(guild.id, 'modlog');
     if (!channelId) return;

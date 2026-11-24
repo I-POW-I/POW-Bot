@@ -7,6 +7,8 @@
  *                                                           server opts in to a yearly reset (/setup > Voice
  *                                                           leaderboard): on 1 January everything from before
  *                                                           the new year is deleted
+ *   Moderation cases (/case, /history)                      kept until the bot leaves the server; they are the
+ *                                                           server's own record, so /privacy does not remove them
  *   Everything about a server                               deleted when the bot is removed from it
  *   Everything about a person                               deleted on request with /privacy
  *
@@ -22,7 +24,7 @@ const { log } = require('./logger');
 const DAY = 86_400_000;
 const KEEP = { memberEvents: 90 * DAY };
 const EVERY = 6 * 3_600_000;
-const GUILD_TABLES = ['vc_sessions', 'stream_sessions', 'member_events', 'message_store', 'streamer_subscriptions', 'game_subscriptions'];
+const GUILD_TABLES = ['vc_sessions', 'stream_sessions', 'member_events', 'message_store', 'streamer_subscriptions', 'game_subscriptions', 'mod_cases'];
 
 // ── Removal ───────────────────────────────────────────────────────────────────
 

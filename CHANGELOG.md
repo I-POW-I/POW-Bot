@@ -1,9 +1,18 @@
 # Changelog
 
+## 5.5.1
+
+- **Moderation commands**: `/warn`, `/timeout`, `/untimeout`, `/kick`, `/softban`, `/ban` and `/unban`. Each needs the matching Discord permission and respects role order, so nobody can act on someone above them. Replies are private to the moderator and the action is posted to the mod log
+- **Cases**: every action is a numbered case (Case #1, #2, ...). `/case` shows one or changes its reason, `/history` shows everything for a member. Bans, kicks and timeouts done by hand in Discord, and Security Check Point catches, are recorded as cases too
+- Members are sent a short message with the reason when something is done to them. Staff can turn that off in `/setup` > Moderation
+- `/lock` and `/unlock` (put back exactly as it was) and `/slowmode`
+- New `/setup` > Moderation page: choose the mod log channel, message to member on or off, and see which permissions are missing for which command
+- `/unban` suggests the people who are banned as you type
+
 ## 5.5.0
 
 - **Security Check Point**: a trap channel that catches spam bots and hacked accounts. Set it up in `/setup` > Security Check Point. Press **Create the channel for me** and it is on. Staff choose what happens to anyone who posts there (softban is the default, or kick, ban, timeout), where it is logged, and which roles are never actioned. **Test it** checks permissions and sends a sample log entry
-- New permissions: Ban Members, Timeout Members and Manage Channels. The new permission number is `1099783335062`. Existing servers keep working, and `/setup` tells staff if a permission is missing for the action they chose
+- New permissions: Ban Members, Timeout Members and Manage Channels. Existing servers keep working, and `/setup` tells staff if a permission is missing for the action they chose
 - Streamer alerts recover on their own: if a live post was deleted or lost during a restart, the bot posts it again and keeps it updated, and it now logs when an update fails instead of failing silently
 - Fortnite and Blizzard game updates removed. Existing alerts for them are deleted automatically
 - After adding a game update alert, its page opens straight away with the **Send latest post as a test** button
