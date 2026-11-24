@@ -134,6 +134,9 @@ async function init() {
       try { db.run(m); save(); } catch (_) { /* column already exists */ }
     }
 
+    // Fortnite and Blizzard update alerts were removed (their sites can't be read reliably)
+    try { db.run("DELETE FROM game_subscriptions WHERE app_id LIKE 'fortnite:%' OR app_id LIKE 'blizzard:%'"); save(); } catch (_) { /* nothing to remove */ }
+
     flush();  // write the schema to disk immediately (later writes are batched)
 
     log('INFO', 'SQLite database ready (data/pow-bot.db)');

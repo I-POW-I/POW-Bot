@@ -18,6 +18,8 @@ This explains what POW-Bot stores, why, for how long, and how to have it removed
 
 Server staff can also see what the verification feature shows about an account: its age, avatar and public badges. Nothing else is collected for that.
 
+If a server turns on the Security Check Point, anyone who posts in its trap channel is removed or muted automatically. The bot may send that person a direct message explaining why. It writes their name, ID, account age and what they posted to the log channel that server's staff chose, and keeps only a running count of catches. It does not store the message itself.
+
 ## What the bot does not store
 
 Email addresses, IP addresses, locations, direct messages, voice audio, or message text from servers that have not turned on message logs. The bot stays silent in voice channels and never records audio.

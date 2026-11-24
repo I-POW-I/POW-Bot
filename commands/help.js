@@ -34,8 +34,8 @@ const CATEGORIES = [
     id: 'alerts', label: 'Alerts and games',
     text: [
       '**`/streamers`**: who this server watches and who is live now. Staff manage the list from the button, or in **`/setup` > Streamer alerts** (Twitch, Kick, YouTube).',
-      '**`/free-games`**: what is free right now on Epic and Steam. Staff turn the alerts on in **`/setup` > Free game alerts**.',
-      '**`/game-updates`**: the games this server gets patch notes for. Staff add games in **`/setup` > Game update alerts** (Steam, Minecraft Java and Bedrock, Riot, Fortnite, Blizzard or any RSS feed).',
+      '**`/free-games`**: what is free right now on Epic, Steam and GOG. Staff turn the alerts on in **`/setup` > Free game alerts**.',
+      '**`/game-updates`**: the games this server gets patch notes for. Staff add games in **`/setup` > Game update alerts** (Steam, Minecraft Java and Bedrock, Riot or any RSS feed).',
     ],
   },
   {

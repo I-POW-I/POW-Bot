@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.5.0
+
+- **Security Check Point**: a trap channel that catches spam bots and hacked accounts. Set it up in `/setup` > Security Check Point. Press **Create the channel for me** and it is on. Staff choose what happens to anyone who posts there (softban is the default, or kick, ban, timeout), where it is logged, and which roles are never actioned. **Test it** checks permissions and sends a sample log entry
+- New permissions: Ban Members, Timeout Members and Manage Channels. The new permission number is `1099783335062`. Existing servers keep working, and `/setup` tells staff if a permission is missing for the action they chose
+- Streamer alerts recover on their own: if a live post was deleted or lost during a restart, the bot posts it again and keeps it updated, and it now logs when an update fails instead of failing silently
+- Fortnite and Blizzard game updates removed. Existing alerts for them are deleted automatically
+- After adding a game update alert, its page opens straight away with the **Send latest post as a test** button
+- Help text corrected (free games include GOG)
+
 ## 5.4.2
 
 - `/botinfo` is now a short public post for everyone: status, latency, uptime, version and whether the bot is in voice there. The bot owner also gets the full system details, privately. Fixes the "Unable to show bot info" error

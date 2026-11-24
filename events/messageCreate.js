@@ -9,6 +9,7 @@ module.exports = {
   once: false,
 
   async execute(message) {
+    require('../src/checkpoint').handleMessage(message).catch(err => log('WARN', 'Security Check Point error', { err }));
     try { store.record(message); }
     catch (err) { log('WARN', 'Could not store a message for the delete log', { err }); }
   },

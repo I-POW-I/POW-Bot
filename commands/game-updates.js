@@ -1,6 +1,6 @@
 /**
  * /game-updates: the games this server gets patch-note alerts for.
- * Sources: Steam, Minecraft (Java + Bedrock), Riot Games, Fortnite, Blizzard, any RSS/Atom feed.
+ * Sources: Steam, Minecraft (Java + Bedrock), Riot Games, any RSS/Atom feed.
  * Staff get a button that opens the setup page (/setup -> Game update alerts), where alerts are added, changed and removed.
  */
 

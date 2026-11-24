@@ -133,16 +133,16 @@ async function checkSubscriptionLocked(client, sub) {
   const wasLive   = sub.is_live === 1;
   const isNowLive = status.isLive;
 
-  // ── Just went live ──────────────────────────────────────────────────────────
-  if (!wasLive && isNowLive) {
-    log('INFO', `${NAMES[sub.platform]}: ${sub.display_name || sub.username} went live`);
-
+  // ── Post the "is live" message ──────────────────────────────────────────────
+  // Also used to recover: a stream the database says is live but whose message is gone (deleted by someone, or
+  // lost around a restart) gets a fresh post, so the alert never silently stops updating.
+  const post = async (reason) => {
     try {
       const guild   = await client.guilds.fetch(sub.guild_id);
       const channel = await guild.channels.fetch(sub.discord_channel_id);
       if (!channel?.isTextBased()) return;
 
-      const content = sub.role_id ? `<@&${sub.role_id}>` : undefined;
+      const content = sub.role_id && reason === 'new' ? `<@&${sub.role_id}>` : undefined;   // recovery posts don't ping again
       const message = await channel.send({
         content,
         embeds:     [buildLiveEmbed(sub.platform, sub, status)],
@@ -151,27 +151,33 @@ async function checkSubscriptionLocked(client, sub) {
 
       run(
         `UPDATE streamer_subscriptions
-         SET is_live = 1, last_message_id = ?, last_went_live = ?,
+         SET is_live = 1, last_message_id = ?, last_went_live = COALESCE(?, last_went_live),
              last_stream_title = ?, last_updated_at = ?
          WHERE id = ?`,
-        [message.id, Date.now(), status.title, Date.now(), sub.id]
+        [message.id, reason === 'new' ? Date.now() : null, status.title, Date.now(), sub.id]
       );
     } catch (err) {
       log('WARN', `Failed to post live notification for ${sub.display_name || sub.username}`, { err });
     }
+  };
+
+  // ── Just went live ──────────────────────────────────────────────────────────
+  if (!wasLive && isNowLive) {
+    log('INFO', `${NAMES[sub.platform]}: ${sub.display_name || sub.username} went live`);
+    await post('new');
   }
 
   // ── Still live — refresh embed viewer count every 5 min ────────────────────
   else if (wasLive && isNowLive) {
+    if (!sub.last_message_id) { log('INFO', `${NAMES[sub.platform]}: ${sub.display_name || sub.username} is live with no post, posting it`); return post('recover'); }
     const lastUpdated = sub.last_updated_at || 0;
     if (Date.now() - lastUpdated < UPDATE_COOLDOWN) return;
-    if (!sub.last_message_id) return;
 
     try {
       const guild   = await client.guilds.fetch(sub.guild_id);
       const channel = await guild.channels.fetch(sub.discord_channel_id);
       const message = await channel?.messages.fetch(sub.last_message_id).catch(() => null);
-      if (!message) return;
+      if (!message) { log('INFO', `${NAMES[sub.platform]}: the post for ${sub.display_name || sub.username} is gone, posting it again`); return post('recover'); }
 
       await message.edit({
         embeds:     [buildLiveEmbed(sub.platform, sub, status)],
@@ -182,7 +188,9 @@ async function checkSubscriptionLocked(client, sub) {
         'UPDATE streamer_subscriptions SET last_stream_title = ?, last_updated_at = ? WHERE id = ?',
         [status.title, Date.now(), sub.id]
       );
-    } catch { /* silent — message may have been manually deleted */ }
+    } catch (err) {
+      throttleLog(`edit:${sub.id}`, `Could not update the live post for ${sub.display_name || sub.username}`, { err });
+    }
   }
 
   // ── Just went offline — delete the message ─────────────────────────────────

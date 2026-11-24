@@ -27,8 +27,9 @@ const verification = require('./verification');
 const cards = require('./cards');
 const alertsKit = require('./setupAlerts');
 const leaderboardKit = require('./setupLeaderboard');
+const checkpointKit = require('./setupCheckpoint');
 const botPermissions = require('./botPermissions');
-const KITS = [alertsKit, leaderboardKit];                 // pages that live in their own files
+const KITS = [alertsKit, leaderboardKit, checkpointKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
@@ -50,9 +51,10 @@ const PAGES = [
   { value: 'verify',    label: 'Verification',               emoji: '🔐', desc: 'Verified role, human check, quarantine, auto-kick',},
   { value: 'control',   label: 'Bot control role',           emoji: '🛡️', desc: 'Who may make the bot join / leave',},
   { value: 'streamers', label: 'Streamer alerts',            emoji: '📺', desc: 'Twitch / Kick / YouTube live alerts',},
-  { value: 'updates',   label: 'Game update alerts',         emoji: '🎮', desc: 'Patch notes: Steam, Minecraft, Riot, Fortnite, Blizzard, RSS',},
+  { value: 'updates',   label: 'Game update alerts',         emoji: '🎮', desc: 'Patch notes: Steam, Minecraft, Riot, RSS',},
   { value: 'free',      label: 'Free game alerts',           emoji: '🎁', desc: 'Epic Games Store and Steam free games',},
   { value: 'leaderboard', label: 'Voice leaderboard',      emoji: '🏆', desc: 'Top voice time and optional role rewards',},
+  { value: 'checkpoint', label: 'Security Check Point',    emoji: '🚧', desc: 'A trap channel that catches spam bots and hacked accounts',},
   { value: 'announce',  label: 'Announcements',              emoji: '📣', desc: 'Where bot news and changelogs are posted',},
 ];
 
@@ -69,6 +71,7 @@ function summary(guild) {
   const games     = selectOne(`SELECT COUNT(*) AS n FROM game_subscriptions WHERE guild_id = ? AND app_id NOT IN ${FREE_IDS}`, [guild.id])?.n || 0;
   const free      = selectOne(`SELECT COUNT(*) AS n FROM game_subscriptions WHERE guild_id = ? AND app_id IN ${FREE_IDS}`, [guild.id])?.n || 0;
   const lbs       = require('./leaderboard').settings(guild.id);
+  const cps       = require('./checkpoint').settings(guild.id);
   const logsSet   = LOG_TYPES.filter(t => getLogChannel(guild.id, t.key)).length;
 
   return [
@@ -81,6 +84,7 @@ function summary(guild) {
     { key: 'updates', core: false, done: games > 0,                                text: games ? `${games} game(s) watched` : 'None yet' },
     { key: 'free',    core: false, done: free > 0,                                 text: free ? `${free} on` : 'Off' },
     { key: 'leaderboard', core: false, done: lbs.rewards,                        text: lbs.rewards ? `Rewards on · ${lbs.tiers.length} tiers` : 'Leaderboard on · rewards off' },
+    { key: 'checkpoint', core: false, done: cps.enabled && exists(cps.channelId), text: cps.enabled && exists(cps.channelId) ? `On · ${chan(cps.channelId)} · ${cps.caught} caught` : 'Off. Catches spam bots and hacked accounts' },
     { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Not set (falls back to another channel)' },
   ];
 }

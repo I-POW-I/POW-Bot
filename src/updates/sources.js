@@ -9,7 +9,7 @@
  *   "rss:https://…"      → any RSS / Atom feed
  *
  * Confirmed sources (documented / verified feeds): steam, minecraft, rss
- * Beta sources (read the publisher's news page; may need tweaking if a site changes): riot, fortnite, blizzard
+ * Beta sources (read the publisher's news page; may need tweaking if a site changes): riot
  */
 
 const steam = require('../platforms/steam');
@@ -33,15 +33,6 @@ const SOURCES = {
     { value: 'valorant', name: 'VALORANT' },
     { value: 'tft',      name: 'Teamfight Tactics' },
   ] },
-  fortnite:  { label: 'Epic Games (Fortnite)', beta: true, games: [
-    { value: 'patch-notes', name: 'Fortnite — patch notes & news' },
-  ] },
-  blizzard:  { label: 'Blizzard',         beta: true, games: [
-    { value: 'overwatch',   name: 'Overwatch' },
-    { value: 'diablo4',     name: 'Diablo IV' },
-    { value: 'wow',         name: 'World of Warcraft' },
-    { value: 'hearthstone', name: 'Hearthstone' },
-  ] },
   rss:       { label: 'RSS / Atom feed',  beta: false, games: null },
 };
 
@@ -50,11 +41,6 @@ const PAGES = {
   'riot:lol':      { name: 'League of Legends', listing: 'https://www.leagueoflegends.com/en-us/news/tags/patch-notes/', re: /\/en-us\/news\/game-updates\/league-of-legends-patch-[a-z0-9-]*\/?$/i },
   'riot:tft':      { name: 'Teamfight Tactics', listing: 'https://www.leagueoflegends.com/en-us/news/tags/patch-notes/', re: /\/en-us\/news\/game-updates\/teamfight-tactics-patch-[a-z0-9-]*\/?$/i },
   'riot:valorant': { name: 'VALORANT',          listing: 'https://playvalorant.com/en-us/news/tags/patch-notes/',        re: /\/en-us\/news\/game-updates\/valorant-patch-notes-[a-z0-9-]*\/?$/i },
-  'fortnite:patch-notes': { name: 'Fortnite',   listing: 'https://www.fortnite.com/news?lang=en-US',                     re: /fortnite\.com\/news\/[a-z0-9-]*(?:v\d|update|patch|release)[a-z0-9-]*\/?$/i },
-  'blizzard:overwatch':   { name: 'Overwatch',  listing: 'https://news.blizzard.com/en-us/overwatch',   re: /news\.blizzard\.com\/en-us\/(?:article|overwatch)\/\d+\/[a-z0-9-]+/i, slug: /patch|hotfix|update|season|notes|changes/i },
-  'blizzard:diablo4':     { name: 'Diablo IV',  listing: 'https://news.blizzard.com/en-us/diablo4',     re: /news\.blizzard\.com\/en-us\/(?:article|diablo4)\/\d+\/[a-z0-9-]+/i,   slug: /patch|hotfix|update|season|notes|changes/i },
-  'blizzard:wow':         { name: 'World of Warcraft', listing: 'https://news.blizzard.com/en-us/world-of-warcraft', re: /news\.blizzard\.com\/en-us\/(?:article|world-of-warcraft)\/\d+\/[a-z0-9-]+/i, slug: /patch|hotfix|update|season|notes|changes/i },
-  'blizzard:hearthstone': { name: 'Hearthstone', listing: 'https://news.blizzard.com/en-us/hearthstone', re: /news\.blizzard\.com\/en-us\/(?:article|hearthstone)\/\d+\/[a-z0-9-]+/i, slug: /patch|hotfix|update|notes|changes/i },
 };
 
 // ── Keys ──────────────────────────────────────────────────────────────────────
@@ -156,7 +142,7 @@ async function pageLatest(key, cfg, sourceId) {
 
   const art = await page.fetchText(url);
   const m = page.pageMeta(art);
-  const title = (m.title || '').replace(/\s*[|–-]\s*(League of Legends|VALORANT|Fortnite|Blizzard News|Overwatch|Diablo.*|World of Warcraft|Hearthstone|Site)\s*$/i, '').trim() || cfg.name;
+  const title = (m.title || '').replace(/\s*[|–-]\s*(League of Legends|VALORANT|Site)\s*$/i, '').trim() || cfg.name;
   return {
     id: url, title, url, body: page.mainContent(art), bodyKind: 'html', image: m.image || null, icon: null,
     date: Date.parse(m.published || '') || null, version: verFrom(title), game: cfg.name, source: SOURCES[sourceId].label, buttons: [],
@@ -181,7 +167,7 @@ async function fetchLatestFor(source, value, name) {
     case 'steam':     return steamLatest(value, name);
     case 'rss':       return rssLatest(value, name);
     case 'minecraft': return value.startsWith('bedrock') ? minecraftBedrock(value, name) : minecraftJava(value, name);
-    case 'riot': case 'fortnite': case 'blizzard': {
+    case 'riot': {
       const cfg = PAGES[`${source}:${value}`];
       if (!cfg) throw new Error(`Unknown ${source} game "${value}".`);
       return pageLatest(`${source}:${value}`, cfg, source);

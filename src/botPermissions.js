@@ -9,7 +9,7 @@ const { PermissionFlagsBits, PermissionsBitField } = require('discord.js');
 const LABELS = {
   ViewChannel: 'View Channels', SendMessages: 'Send Messages', EmbedLinks: 'Embed Links', AttachFiles: 'Attach Files',
   ReadMessageHistory: 'Read Message History', Connect: 'Connect', Speak: 'Speak', ManageRoles: 'Manage Roles',
-  KickMembers: 'Kick Members', ManageMessages: 'Manage Messages', ViewAuditLog: 'View Audit Log',
+  KickMembers: 'Kick Members', BanMembers: 'Ban Members', ModerateMembers: 'Timeout Members', ManageChannels: 'Manage Channels', ManageMessages: 'Manage Messages', ViewAuditLog: 'View Audit Log',
 };
 
 /** What each permission is for. `serverWide` ones are checked on the server, the rest per channel. */
@@ -23,7 +23,10 @@ const REQUIRED = [
   { perm: 'Speak',              why: 'Stay connected in voice', serverWide: true },
   { perm: 'ManageRoles',        why: 'Verification and voice reward roles', serverWide: true },
   { perm: 'KickMembers',        why: 'Verification: remove members who never verify', serverWide: true },
-  { perm: 'ManageMessages',     why: '/purge', serverWide: true },
+  { perm: 'BanMembers',         why: 'Security Check Point: softban and ban', serverWide: true },
+  { perm: 'ModerateMembers',    why: 'Security Check Point: timeout', serverWide: true },
+  { perm: 'ManageChannels',     why: 'Create the Security Check Point channel', serverWide: true },
+  { perm: 'ManageMessages',     why: '/purge and the Security Check Point', serverWide: true },
   { perm: 'ViewAuditLog',       why: 'Show who made a change in the logs', serverWide: true },
 ];
 

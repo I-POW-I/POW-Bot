@@ -1,7 +1,7 @@
 /**
  * Game alerts polling engine.
  *
- * Game updates     — every 15 minutes (Steam, Minecraft, Riot, Fortnite, Blizzard, RSS — see src/updates/)
+ * Game updates     — every 15 minutes (Steam, Minecraft, Riot, RSS — see src/updates/)
  * Epic free games  — every 6 hours
  * Steam and GOG free games — every 3 hours (short-window promos)
  */
@@ -220,7 +220,7 @@ async function checkGiveaways(client, appId) {
 function startGamePoller(client) {
   log('INFO', 'Game poller started');
 
-  // Game updates (Steam, Minecraft, Riot, Fortnite, Blizzard, RSS) — every 15 minutes
+  // Game updates (Steam, Minecraft, Riot, RSS) — every 15 minutes
   setTimeout(() => {
     pollUpdates(client);
     setInterval(() => pollUpdates(client), UPDATE_INTERVAL);

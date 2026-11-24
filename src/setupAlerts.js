@@ -2,7 +2,7 @@
  * /setup pages for the three alert features:
  *
  *   streamers  Twitch / Kick / YouTube go-live alerts
- *   updates    Game patch-note alerts (Steam, Minecraft, Riot, Fortnite, Blizzard, RSS/Atom)
+ *   updates    Game patch-note alerts (Steam, Minecraft, Riot, RSS/Atom)
  *   free       Free game alerts (Epic Games Store + Steam)
  *
  * Everything the old /streamers, /game-updates and /free-games subcommands did lives here now.
@@ -266,7 +266,8 @@ async function addUpdate(guild, by, d) {
   run('INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id, last_post_id) VALUES (?, ?, ?, ?, ?, ?)',
     [guild.id, key, name, channel.id, d.roleId || null, latest ? String(latest.id) : null]);
   audit({ action: 'Game update alert added', actor: by, guild, details: `${name} (${SOURCES[d.source].label}) → #${channel.name}` });
-  return { ok: true, text: `Now watching **${name}** (${SOURCES[d.source].label}) in ${channel}${d.roleId ? `, pinging ${role(d.roleId)}` : ''}.${latest ? ` Latest right now: *${latest.title}*. Only newer updates will be posted. To see how a post looks, open **Manage alerts** and press **Send latest post as a test**.` : ' No updates found yet; the next one will be posted automatically.'}${extra}` };
+  const created = selectOne('SELECT * FROM game_subscriptions WHERE guild_id = ? AND app_id = ?', [guild.id, key]);
+  return { ok: true, sub: created, text: `Now watching **${name}** (${SOURCES[d.source].label}) in ${channel}${d.roleId ? `, pinging ${role(d.roleId)}` : ''}.${latest ? ` Latest right now: *${latest.title}*. Only newer updates will be posted. Press **Send latest post as a test** below to see how a post looks.` : ' No updates found yet; the next one will be posted automatically.'}${extra}` };
 }
 
 async function handleUpdates(interaction, { guild, by, action, arg, client }) {
@@ -307,6 +308,8 @@ async function handleUpdates(interaction, { guild, by, action, arg, client }) {
     if (!d.source || !d.value || !d.channelId) return show(noteBad('Choose a source, a game and a channel first.'));
     const res = await addUpdate(guild, by, d);
     if (res.ok) { d.value = null; d.name = null; d.matches = null; }
+    // After adding, open that alert's own page: it has the "Send latest post as a test" button
+    if (res.ok && res.sub) return showOne(res.sub, noteGood(res.text));
     return show(res.ok ? noteGood(res.text) : noteBad(res.text));
   }
   if (action === 'manage') return respond(interaction, viewUpdateList(guild));

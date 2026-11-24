@@ -12,7 +12,8 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 - Logs for voice activity, deleted and edited messages, members and server changes
 - Welcome and leave cards, fully editable
 - Human verification with staff approval, quarantine and auto-removal
-- Streamer alerts (Twitch, Kick, YouTube), free game alerts (Epic, Steam, GOG) and game update alerts (Steam, Minecraft, Riot, Fortnite, Blizzard, any RSS feed)
+- Security Check Point: a trap channel that catches spam bots and hacked accounts and softbans, kicks, bans or times them out (staff choose)
+- Streamer alerts (Twitch, Kick, YouTube), free game alerts (Epic, Steam, GOG) and game update alerts (Steam, Minecraft, Riot, any RSS feed)
 - Owner tools: announcements, status editor, maintenance mode, alerts, weekly backups
 
 ---
