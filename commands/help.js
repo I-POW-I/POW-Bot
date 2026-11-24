@@ -51,6 +51,9 @@ const CATEGORIES = [
       '**`/purge`**: delete up to 100 messages.',
       '',
       'Bans, kicks and timeouts done by hand in Discord are recorded as cases too. **`/setup` > Security Check Point** adds a trap channel that catches spam bots and hacked accounts.',
+      '',
+      '**Raid protection**: **`/setup` > Raid protection**. Detects a flood of new joins (you choose how many, how fast), then alerts staff or starts **raid mode**: new accounts you choose are kicked, timed out or banned and invites are paused. Also an account age gate. Turn raid mode on or off yourself with **`/raidmode`**. *(Manage Server)*',
+      '**AutoMod**: **`/setup` > AutoMod**. Switch on filters for invite links, scam links, all links, message spam, mass mentions, capitals, emoji and your own blocked words. Each has its own response (delete, warn or time out), strikes add up to a timeout, and staff, roles and channels you pick are ignored. One button also adds Discord\'s own built-in AutoMod rules.',
     ],
   },
   {

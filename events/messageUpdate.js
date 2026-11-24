@@ -14,6 +14,8 @@ module.exports = {
     if (newMessage.partial) { try { newMessage = await newMessage.fetch(); } catch { return; } }
     if (newMessage.author?.bot) return;
 
+    require('../src/automod').handleMessage(newMessage, { edited: true }).catch(err => log('WARN', 'AutoMod error', { err }));
+
     const guild     = newMessage.guild;
     const channelId = getLogChannel(guild.id, 'messages');
     if (!channelId) return;

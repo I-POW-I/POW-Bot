@@ -333,6 +333,7 @@ const joinsByGuild = new Map();
 const raidAlerted  = new Map();
 
 async function checkRaid(guild, s) {
+  if (require('./raid').settings(guild.id).enabled) return;   // Raid protection (/setup > Raid protection) does this, with more options
   const now = Date.now();
   const recent = (joinsByGuild.get(guild.id) || []).filter(t => now - t < 60_000);
   recent.push(now);

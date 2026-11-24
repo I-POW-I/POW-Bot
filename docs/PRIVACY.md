@@ -19,6 +19,8 @@ This explains what POW-Bot stores, why, for how long, and how to have it removed
 
 Server staff can also see what the verification feature shows about an account: its age, avatar and public badges. Nothing else is collected for that.
 
+If a server turns on Raid protection or AutoMod, the bot acts on new members and messages automatically. Actions are recorded as moderation cases (see above) and written to the log channel staff chose. Join counts and AutoMod strikes are held in memory for a few minutes to spot a pattern and are never saved. Messages AutoMod removes are shown in that log so staff can check them, and are not stored by the bot.
+
 If a server turns on the Security Check Point, anyone who posts in its trap channel is removed or muted automatically. The bot may send that person a direct message explaining why. It writes their name, ID, account age and what they posted to the log channel that server's staff chose, and keeps only a running count of catches. It does not store the message itself.
 
 ## What the bot does not store

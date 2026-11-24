@@ -93,6 +93,7 @@ module.exports = {
     startStatusUpdater(client);
     startStreamerPoller(client);
     startGamePoller(client);
+    require('../src/raid').startTimer(client);        // ends raid mode when its time is up
     await updatePanel(client);
 
     log('INFO', 'Bot fully ready');

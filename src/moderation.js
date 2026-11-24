@@ -197,7 +197,40 @@ async function perform(interaction, { action, user, reason, durationMs = null, d
   return { ok: true, case: c, text: `**Case #${c.number}** · ${user} was ${ACTIONS[action].past}${durationMs ? ` for ${duration(durationMs)}` : ''}.${dmNote}` };
 }
 
+/**
+ * An action the bot takes by itself (raid protection, AutoMod): the member is told first, then the action is done,
+ * recorded as a case and written to the mod log, exactly like one done by a moderator.
+ * `member` may be null for a ban. Returns { ok, text, case }.
+ */
+async function auto(guild, user, member, { action, reason, durationMs = null, deleteSeconds = 0, log: writeLog = true }) {
+  const me = guild.members.me;
+  const needs = NEEDS[action];
+  if (needs && !me?.permissions.has(P[needs])) return { ok: false, text: `I need the **${NEEDS_LABEL[needs]}** permission to ${action} someone.` };
+  if (member && (member.id === guild.ownerId || (member.roles?.highest && me?.roles.highest && member.roles.highest.comparePositionTo(me.roles.highest) >= 0))) {
+    return { ok: false, text: 'Their highest role is not below mine, so I cannot act on them.' };
+  }
+  const c = { action, reason, duration_ms: durationMs, number: 0 };
+  try {
+    let dmSent = false;
+    if (action !== 'warn') {   // told before the action, while a message can still reach them
+      const preview = { ...c, number: (selectOne('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM mod_cases WHERE guild_id = ?', [guild.id])?.n || 1) };
+      dmSent = await notify(guild, user, preview);
+    }
+    if (action === 'timeout') { if (!member) return { ok: false, text: 'They had already left.' }; await member.timeout(Math.min(durationMs || 600_000, MAX_TIMEOUT), reason); }
+    else if (action === 'kick') { if (!member) return { ok: false, text: 'They had already left.' }; await member.kick(reason); }
+    else if (action === 'ban') await guild.members.ban(user.id, { deleteMessageSeconds: deleteSeconds, reason });
+    else if (action === 'softban') { await guild.members.ban(user.id, { deleteMessageSeconds: deleteSeconds, reason }); await guild.members.unban(user.id, reason).catch(() => {}); }
+    const made = createCase({ guildId: guild.id, user, moderator: guild.client.user, action, reason, durationMs });
+    if (action === 'warn') await notify(guild, user, made);
+    if (writeLog) await sendLog(guild, caseEmbed(made, { user }));
+    return { ok: true, case: made, dmSent, text: `Case #${made.number}` };
+  } catch (err) {
+    const hierarchy = /Missing Permissions|50013/i.test(String(err.message) + String(err.code));
+    return { ok: false, text: hierarchy ? 'Their highest role is above mine, or I lack the permission.' : `Failed: ${err.message}` };
+  }
+}
+
 module.exports = {
   ACTIONS, DELETE_CHOICES, MAX_TIMEOUT, settings, parseDuration, createCase, getCase, history, counts, setReason,
-  caseEmbed, caseLine, sendLog, notify, blocker, perform, tagOf,
+  caseEmbed, caseLine, sendLog, notify, blocker, perform, auto, tagOf,
 };

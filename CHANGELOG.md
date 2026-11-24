@@ -1,5 +1,16 @@
 # Changelog
 
+## 5.5.3
+
+- **Raid protection** (`/setup` > Raid protection): detects a flood of joins (you choose how many people and how many seconds) and either alerts staff or starts **raid mode**. In raid mode new members you choose (everyone, new accounts, accounts with no profile picture) are kicked, timed out or banned, and invites are paused. Raid mode ends after the time you pick, or when staff end it. Staff can alert a role, choose the alert channel, and decide whether people who just arrived are dealt with too
+- **Account age gate**: refuse accounts under a number of days, any time, with the action you choose
+- **`/raidmode on | off | status`** to switch raid mode yourself
+- **AutoMod** (`/setup` > AutoMod): eight filters you switch on one by one: invite links, scam links (fake Discord and Steam sites, "free nitro" lures, your own blocked sites), all links (with an allow list), message spam, mass mentions, capitals, emoji and your own blocked words. Each has its own response (delete, delete and warn, delete and time out) and its own limits
+- Strikes: every removed message is a strike, and enough strikes in a short time earn a timeout. Staff, roles and channels you pick are ignored. Every removal is logged with what was said
+- **Discord's built-in AutoMod**: one button each adds Discord's own rules (bad language, mention spam, spam, scam lures), which block a message before anyone sees it
+- Everything automatic is a numbered case, so `/history` shows it
+- The old "possible raid" alert in Verification steps aside when Raid protection is on, so you get one alert, not two
+
 ## 5.5.2
 
 - **Welcome & leave overhaul**: each post can now be an image card, a rich embed, a card inside an embed, or plain text. Five built-in card styles (Classic, Midnight, Aurora, Sunset, Graphite), a circle or rounded avatar, and your own wording with placeholders: `{user}` `{username}` `{mention}` `{server}` `{count}` `{ordinal}` `{accountage}` `{joined}` `{rules}`. Leave posts say how long the person was in the server. **Preview** shows exactly what will be posted

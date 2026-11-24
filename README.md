@@ -14,6 +14,8 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 - Human verification with staff approval, quarantine and auto-removal
 - Moderation: warn, timeout, kick, softban, ban and unban as numbered cases with a history and a mod log, plus lock and slowmode
 - Security Check Point: a trap channel that catches spam bots and hacked accounts and softbans, kicks, bans or times them out (staff choose)
+- Raid protection: join-flood detection, raid mode with invite pause, account age gate, `/raidmode`
+- AutoMod: filters for invites, scam links, links, spam, mentions, capitals, emoji and your own words, with strikes, plus one-click Discord built-in rules
 - Streamer alerts (Twitch, Kick, YouTube), free game alerts (Epic, Steam, GOG) and game update alerts (Steam, Minecraft, Riot, any RSS feed)
 - Owner tools: announcements, status editor, maintenance mode, alerts, weekly backups
 
@@ -36,6 +38,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 | `/case`, `/history` | Look up a case, or a member's whole record | Timeout Members |
 | `/lock` `/unlock` `/slowmode` | Control a channel | Manage Channels |
 | `/purge` | Delete up to 100 messages | Manage Messages |
+| `/raidmode` | Turn raid mode on or off, or see its state | Manage Server |
 | `/owner` | The owner control hub | `OWNER_IDS` / `ADMIN_IDS` only |
 
 ---

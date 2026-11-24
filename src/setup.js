@@ -29,8 +29,9 @@ const leaderboardKit = require('./setupLeaderboard');
 const checkpointKit = require('./setupCheckpoint');
 const moderationKit = require('./setupModeration');
 const welcomeKit = require('./setupWelcome');
+const protectKit = require('./setupProtect');
 const botPermissions = require('./botPermissions');
-const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit];                 // pages that live in their own files
+const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
@@ -57,6 +58,8 @@ const PAGES = [
   { value: 'leaderboard', label: 'Voice leaderboard',      emoji: '🏆', desc: 'Top voice time and optional role rewards',},
   { value: 'moderation', label: 'Moderation',                emoji: '🔨', desc: 'Mod log and the moderation commands',},
   { value: 'checkpoint', label: 'Security Check Point',    emoji: '🚧', desc: 'A trap channel that catches spam bots and hacked accounts',},
+  { value: 'raid',      label: 'Raid protection',           emoji: '🛑', desc: 'Join-burst detection, raid mode, account age gate',},
+  { value: 'automod',   label: 'AutoMod',                    emoji: '🤖', desc: 'Invites, scam links, spam, mentions, words, strikes',},
   { value: 'announce',  label: 'Announcements',              emoji: '📣', desc: 'Where bot news and changelogs are posted',},
 ];
 
@@ -74,6 +77,9 @@ function summary(guild) {
   const free      = selectOne(`SELECT COUNT(*) AS n FROM game_subscriptions WHERE guild_id = ? AND app_id IN ${FREE_IDS}`, [guild.id])?.n || 0;
   const lbs       = require('./leaderboard').settings(guild.id);
   const cps       = require('./checkpoint').settings(guild.id);
+  const rds       = require('./raid').settings(guild.id);
+  const ams       = require('./automod').settings(guild.id);
+  const amFilters = Object.values(ams.filters).filter(f => f.on).length;
   const logsSet   = LOG_TYPES.filter(t => getLogChannel(guild.id, t.key)).length;
 
   return [
@@ -88,6 +94,8 @@ function summary(guild) {
     { key: 'leaderboard', core: false, done: lbs.rewards,                        text: lbs.rewards ? `Rewards on · ${lbs.tiers.length} tiers` : 'Leaderboard on · rewards off' },
     { key: 'moderation', core: false, done: !!getLogChannel(guild.id, 'modlog'), text: getLogChannel(guild.id, 'modlog') ? `Mod log ${chan(getLogChannel(guild.id, 'modlog'))}` : 'Choose a mod log channel' },
     { key: 'checkpoint', core: false, done: cps.enabled && exists(cps.channelId), text: cps.enabled && exists(cps.channelId) ? `On · ${chan(cps.channelId)} · ${cps.caught} caught` : 'Off. Catches spam bots and hacked accounts' },
+    { key: 'raid', core: false, done: rds.enabled || rds.gateEnabled, text: rds.active ? '🔴 Raid mode is ON' : rds.enabled ? `On · ${rds.joins} joins in ${rds.seconds}s` : rds.gateEnabled ? 'Age gate on' : 'Off. Protects against join floods' },
+    { key: 'automod', core: false, done: ams.enabled && amFilters > 0, text: ams.enabled ? `On · ${amFilters} filter${amFilters === 1 ? '' : 's'}` : 'Off. Invite, scam, spam and word filters' },
     { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Not set (falls back to another channel)' },
   ];
 }
@@ -159,6 +167,13 @@ function serverTips(guild) {
 
 // ── Views ─────────────────────────────────────────────────────────────────────
 
+/** Splits lines into groups that fit an embed field (1024 characters). */
+function chunk(lines, max = 1000) {
+  const out = [];
+  for (const l of lines) { if (out.length && out[out.length - 1].length + l.length + 1 <= max) out[out.length - 1] += `\n${l}`; else out.push(l.slice(0, max)); }
+  return out;
+}
+
 function viewHome(guild, note) {
   const items = summary(guild);
   const core = items.filter(i => i.core), optional = items.filter(i => !i.core);
@@ -178,7 +193,7 @@ function viewHome(guild, note) {
     ].filter(Boolean).join('\n\n'))
     .addFields(
       { name: 'Core', value: core.map(line).join('\n') },
-      { name: 'Optional', value: optional.map(line).join('\n') },
+      ...chunk(optional.map(line)).map((value, i) => ({ name: i === 0 ? 'Optional' : 'Optional (continued)', value })),
     )
     .setFooter({ text: 'Pick a section below · changes save instantly' });
 
