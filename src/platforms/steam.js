@@ -42,7 +42,7 @@ function isActualUpdate(item) {
 
 async function getGameNews(appId, count=5) {
   try {
-    const data = await steamFetch(`https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/?appid=${appId}&count=${count}&maxlength=5000&format=json`);
+    const data = await steamFetch(`https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/?appid=${appId}&count=${count}&maxlength=0&format=json`);
     return (data?.appnews?.newsitems||[]).filter(isActualUpdate);
   } catch (err) { log('WARN', `Steam news failed for ${appId}`, { err }); return []; }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.5.4
+
+- **Steam game updates fixed at the root.** The bot was asking Steam for a shortened summary of each post, and Steam sends that as one run of text with no line breaks, headings or bullets. It now asks for the full post, so Counter-Strike 2, Tarkov and every other Steam game show Maps, Misc and each change as proper headings and bullets, like the Minecraft and VALORANT posts
+- The "Read full notes" button now opens the post on store.steampowered.com instead of an unfamiliar akamaihd.net address that made Discord show a "Leaving Discord" warning
+- Headings written as `[ MISC ]` in the middle of a post are recognised, and the `[/*]` list-item closer is handled
+
 ## 5.5.3
 
 - **Raid protection** (`/setup` > Raid protection): detects a flood of joins (you choose how many people and how many seconds) and either alerts staff or starts **raid mode**. In raid mode new members you choose (everyone, new accounts, accounts with no profile picture) are kicked, timed out or banned, and invites are paused. Raid mode ends after the time you pick, or when staff end it. Staff can alert a role, choose the alert channel, and decide whether people who just arrived are dealt with too

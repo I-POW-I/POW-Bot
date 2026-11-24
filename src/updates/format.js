@@ -43,6 +43,10 @@ function bbcodeToHtml(input) {
   s = s.replace(/^[ \t]*\[\s*([^\[\]\n*]{1,60}?)\s*\][ \t]*$/gm, (line, text) =>
     /^\//.test(text) || new RegExp(`^(?:${BB_NAMES})(?:=|$)`, 'i').test(text.trim()) ? line : `<h2>${text.trim()}</h2>`);
 
+  // The same heading right after a closing tag or before an opening one: "[/list][ MISC ][list]"
+  s = s.replace(/(^|\n|\[\/(?:list|ulist|olist|p|h[1-6]|quote|b)\])[ \t]*\[\s*([^\[\]\n*]{1,60}?)\s*\](?=[ \t]*(?:\n|$|\[(?:list|ulist|olist|p|b|h[1-6])\b))/g, (all, before, text) =>
+    /^\//.test(text) || new RegExp(`^(?:${BB_NAMES})(?:=|$)`, 'i').test(text.trim()) ? all : `${before}<h2>${text.trim()}</h2>`);
+
   s = s
     .replace(/\[h([1-6])\]/gi, '<h$1>').replace(/\[\/h([1-6])\]/gi, '</h$1>')
     .replace(/\[(?:b)\]/gi, '<b>').replace(/\[\/b\]/gi, '</b>')
@@ -50,7 +54,7 @@ function bbcodeToHtml(input) {
     .replace(/\[p(?:=[^\]]*)?\]/gi, '<p>').replace(/\[\/p\]/gi, '</p>')
     .replace(/\[(?:list|ulist)(?:=[^\]]*)?\]/gi, '<ul>').replace(/\[\/(?:list|ulist)\]/gi, '</ul>')
     .replace(/\[olist\]/gi, '<ol>').replace(/\[\/olist\]/gi, '</ol>')
-    .replace(/\[\*\]/g, '<li>')
+    .replace(/\[\*\]/g, '<li>').replace(/\[\/\*\]/g, '</li>')
     .replace(/\[hr\]/gi, '<hr>')
     .replace(/\[quote(?:=[^\]]*)?\]/gi, '<blockquote>').replace(/\[\/quote\]/gi, '</blockquote>')
     .replace(/\[table[^\]]*\]/gi, '<table>').replace(/\[\/table\]/gi, '</table>')
