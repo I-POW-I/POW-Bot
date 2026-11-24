@@ -31,6 +31,9 @@ async function getAppDetails(appId) {
 }
 
 const UPDATE_KEYWORDS = ['update','patch','hotfix','hot fix','changelog','maintenance','build','notes','fix','release','series'];
+/** Titles that mean a patch, not a sale or an event. */
+const isUpdateTitle = (title) => UPDATE_KEYWORDS.some(kw => String(title || '').toLowerCase().includes(kw));
+
 function isActualUpdate(item) {
   const title = (item.title||'').toLowerCase();
   const ok = item.feedname==='steam_community_announcements'||item.feedname==='steam_updates'||item.feed_type===1;
@@ -81,4 +84,4 @@ async function getReviews(appId) {
 
 function getHeaderImage(appId) { return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`; }
 
-module.exports = { searchGames, getAppDetails, getGameNews, getSteamFreeGames, getReviews, getHeaderImage };
+module.exports = { searchGames, getAppDetails, getGameNews, getSteamFreeGames, getReviews, isUpdateTitle, getHeaderImage };

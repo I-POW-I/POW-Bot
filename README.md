@@ -10,7 +10,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 - Live voice control panel with Join, Leave, personal stats, user lookup and a leaderboard
 - Voice leaderboard (all time, 30 days, 7 days) with optional role rewards and an optional weekly or monthly post
 - Logs for voice activity, deleted and edited messages, members and server changes
-- Welcome and leave cards, fully editable
+- Welcome and leave posts: image card, rich embed or both, five card styles, welcome-back for returning members, welcome message and roles for new members
 - Human verification with staff approval, quarantine and auto-removal
 - Moderation: warn, timeout, kick, softban, ban and unban as numbered cases with a history and a mod log, plus lock and slowmode
 - Security Check Point: a trap channel that catches spam bots and hacked accounts and softbans, kicks, bans or times them out (staff choose)
@@ -37,14 +37,6 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 | `/lock` `/unlock` `/slowmode` | Control a channel | Manage Channels |
 | `/purge` | Delete up to 100 messages | Manage Messages |
 | `/owner` | The owner control hub | `OWNER_IDS` / `ADMIN_IDS` only |
-
----
-
-**General Information**
-
-- Terms of Service URL and Privacy Policy URL: where `docs/TERMS.md` and `docs/PRIVACY.md` are published.
-
-The permission list lives in `src/botPermissions.js`. If a feature needs a new permission, add it there and the integer, the owner server view and the setup checks all follow.
 
 ---
 

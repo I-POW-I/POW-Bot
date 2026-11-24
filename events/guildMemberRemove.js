@@ -1,8 +1,6 @@
-const { Events, EmbedBuilder, AuditLogEvent, AttachmentBuilder } = require('discord.js');
+const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { log }                    = require('../src/logger');
-const { getLogChannel, getGuildConfig } = require('../src/guildConfig');
-const { generateCard }           = require('../src/imageGenerator');
-const cards                      = require('../src/cards');
+const { getLogChannel } = require('../src/guildConfig');
 const { duration } = require('../src/duration');
 
 async function getKicker(guild, userId, windowMs = 5000) {
@@ -25,34 +23,14 @@ module.exports = {
 
   async execute(member) {
     const { guild } = member;
-    const config    = getGuildConfig(guild.id);
     const kick      = await getKicker(guild, member.id);
 
     // Keep the member history up to date (feeds /members and the verification log)
     try { require('../src/verification').onMemberLeave(member); }
     catch (err) { log('WARN', 'Could not record member leave', { guild: guild.name, err }); }
 
-    // ── 1. Leave image card ───────────────────────────────────────────────────
-    const leaveChannelId = config.leaveChannelId || config.welcomeChannelId;
-    if (leaveChannelId && config.leaveEnabled !== false) {
-      try {
-        const channel = await guild.channels.fetch(leaveChannelId);
-        if (channel?.isTextBased()) {
-          const displayName = member.displayName || member.user.username;
-          const avatarUrl   = member.user.displayAvatarURL({ dynamic: false, size: 512 });
-          const post = cards.compose(guild.id, 'leave', { user: displayName, server: guild.name, count: guild.memberCount });
-          const payload = { allowedMentions: { parse: [] } };
-          if (post.text) payload.content = post.text;
-          if (post.card) {
-            const buffer = await generateCard('leave', displayName, avatarUrl, guild.memberCount, post.image);
-            payload.files = [new AttachmentBuilder(buffer, { name: 'leave.png' })];
-          }
-          if (payload.content || payload.files) await channel.send(payload);
-        }
-      } catch (err) {
-        log('WARN', 'Failed to send leave card', { err });
-      }
-    }
+    // ── 1. Leave post (see src/welcome.js) ────────────────────────────────────
+    await require('../src/welcome').onLeave(member);
 
     // ── 2. Admin log embed ────────────────────────────────────────────────────
     const logChannelId = getLogChannel(guild.id, 'members');

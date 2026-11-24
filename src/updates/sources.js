@@ -15,7 +15,7 @@
 const steam = require('../platforms/steam');
 const { parseFeed } = require('./feed');
 const page = require('./page');
-const { toBlocks } = require('./format');
+const { toBlocks, decode } = require('./format');
 
 const MC_BASE = 'https://launchercontent.mojang.com';
 const ZD_BASE = 'https://feedback.minecraft.net/api/v2/help_center/en-us';
@@ -81,7 +81,29 @@ async function steamIcon(appId) {
   return found;
 }
 
+/**
+ * Steam's own news feed for the game. Unlike the news API (which cuts posts off and loses the line breaks and lists),
+ * the feed carries the whole post as HTML, so it is formatted exactly like the Minecraft and Riot posts.
+ */
+async function steamFeedLatest(appId, name) {
+  const feed = parseFeed(await page.fetchText(`https://store.steampowered.com/feeds/news/app/${appId}/?cc=US&l=english`, { accept: 'application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8' }));
+  const it = feed.items.find(i => steam.isUpdateTitle(i.title));
+  if (!it) return null;
+  const html = /<\w/.test(it.content) ? it.content : decode(it.content);
+  const gid = (/(\d{6,})\/?$/.exec(String(it.id)) || /(\d{6,})\/?$/.exec(String(it.url)) || [])[1] || String(it.id);   // the same id the news API used, so nothing is posted twice
+  return {
+    id: gid, title: it.title, url: it.url, body: html, bodyKind: 'html',
+    image: it.image || steam.getHeaderImage(appId), icon: await steamIcon(appId),
+    date: it.date, version: null, game: name, source: 'Steam',
+    buttons: [{ label: 'Open store page', url: `https://store.steampowered.com/app/${appId}` }],
+  };
+}
+
 async function steamLatest(appId, name) {
+  try {
+    const fromFeed = await steamFeedLatest(appId, name);
+    if (fromFeed) return fromFeed;
+  } catch { /* the feed was unreachable: use the news API below */ }
   const n = (await steam.getGameNews(appId, 5))[0];
   if (!n) return null;
   return {

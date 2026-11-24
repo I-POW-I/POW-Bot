@@ -22,4 +22,14 @@ function duration(ms, { seconds = false, short = false } = {}) {
   return out.length ? out.join(' ') : 'less than a minute';
 }
 
-module.exports = { duration };
+/** How old an account or membership is, in the unit people use: "3 days", "5 months", "2 years 3 months". */
+function age(ms) {
+  const days = Math.max(0, Math.floor(ms / 86_400_000));
+  if (days < 30) return days < 1 ? duration(ms) : unit(days, 'day');
+  const months = Math.floor(days / 30.44);
+  if (months < 12) return unit(months, 'month');
+  const y = Math.floor(months / 12), m = months % 12;
+  return m ? `${unit(y, 'year')} ${unit(m, 'month')}` : unit(y, 'year');
+}
+
+module.exports = { duration, age };

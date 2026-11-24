@@ -16,7 +16,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
-  PermissionFlagsBits, AttachmentBuilder,
+  PermissionFlagsBits,
 } = require('discord.js');
 
 const { getGuildConfig, setGuildConfig, setLogChannel, getLogChannel } = require('./guildConfig');
@@ -24,17 +24,17 @@ const { selectAll, selectOne } = require('./database');
 const { audit }  = require('./diagnostics');
 const { log }    = require('./logger');
 const verification = require('./verification');
-const cards = require('./cards');
 const alertsKit = require('./setupAlerts');
 const leaderboardKit = require('./setupLeaderboard');
 const checkpointKit = require('./setupCheckpoint');
 const moderationKit = require('./setupModeration');
+const welcomeKit = require('./setupWelcome');
 const botPermissions = require('./botPermissions');
-const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit];                 // pages that live in their own files
+const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
-  channelSelect, roleSelect, POST_PERMS, missingIn, respond,
+  channelSelect, roleSelect, missingIn, respond,
 } = require('./setupKit');
 
 const LOG_TYPES = [
@@ -48,7 +48,7 @@ const LOG_TYPES = [
 const PAGES = [
   { value: 'panel',     label: 'Voice panel',                emoji: '🎛️', desc: 'Where the control panel lives',},
   { value: 'logs',      label: 'Logs',                       emoji: '📜', desc: 'Voice, messages, members, moderation, commands',},
-  { value: 'welcome',   label: 'Welcome & leave',            emoji: '👋', desc: 'Welcome / leave cards',},
+  { value: 'welcome',   label: 'Welcome & leave',            emoji: '👋', desc: 'Welcome and leave posts, extras',},
   { value: 'verify',    label: 'Verification',               emoji: '🔐', desc: 'Verified role, human check, quarantine, auto-kick',},
   { value: 'control',   label: 'Bot control role',           emoji: '🛡️', desc: 'Who may make the bot join / leave',},
   { value: 'streamers', label: 'Streamer alerts',            emoji: '📺', desc: 'Twitch / Kick / YouTube live alerts',},
@@ -237,54 +237,6 @@ function viewLogs(guild, type, note) {
   return { embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Logs').setDescription([note, lines].filter(Boolean).join('\n\n'))], components: rows };
 }
 
-function cardSummary(guildId, type) {
-  const o = cards.options(guildId, type);
-  const text = (v) => v ? `\`${v.length > 40 ? v.slice(0, 37) + '…' : v}\`` : '*none*';
-  return `Card ${o.card ? 'on' : 'off'} · title ${text(o.title)} · subtitle ${text(o.subtitle)} · colour ${o.accent ? `\`${o.accent}\`` : '*default*'} · message ${text(o.message)}`;
-}
-
-function viewWelcome(guild, note) {
-  const c = getGuildConfig(guild.id);
-  const wOn = c.welcomeEnabled !== false, lOn = c.leaveEnabled !== false;
-  const wCard = cards.options(guild.id, 'welcome').card, lCard = cards.options(guild.id, 'leave').card;
-  return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Welcome & leave').setDescription([note,
-      `**Welcome** — ${chan(c.welcomeChannelId)} · ${wOn ? 'on' : 'off'}\n${cardSummary(guild.id, 'welcome')}`,
-      `**Leave** — ${chan(c.leaveChannelId || c.welcomeChannelId)}${c.leaveChannelId ? '' : ' *(defaults to the welcome channel)*'} · ${lOn ? 'on' : 'off'}\n${cardSummary(guild.id, 'leave')}`,
-      '**Placeholders:** `{user}` name · `{mention}` @mention · `{server}` server name · `{count}` member count'].filter(Boolean).join('\n\n'))],
-    components: [
-      channelSelect('setup:welcome:wch', 'Welcome messages channel', c.welcomeChannelId),
-      channelSelect('setup:welcome:lch', 'Leave messages channel (optional)', c.leaveChannelId),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('setup:welcome:tw').setLabel(`Welcome ${wOn ? 'ON' : 'OFF'}`).setStyle(wOn ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('setup:welcome:tl').setLabel(`Leave ${lOn ? 'ON' : 'OFF'}`).setStyle(lOn ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('setup:welcome:pw').setLabel('Preview welcome').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('setup:welcome:pl').setLabel('Preview leave').setStyle(ButtonStyle.Primary),
-        backButton(),
-      ),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('setup:welcome:ew').setLabel('Edit welcome').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('setup:welcome:el').setLabel('Edit leave').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('setup:welcome:cw').setLabel(`Welcome card ${wCard ? 'ON' : 'OFF'}`).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('setup:welcome:cl').setLabel(`Leave card ${lCard ? 'ON' : 'OFF'}`).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('setup:welcome:reset').setLabel('Reset text').setStyle(ButtonStyle.Danger),
-      ),
-    ],
-  };
-}
-
-function cardModal(guild, type) {
-  const o = cards.options(guild.id, type);
-  const input = (id, label, style, value, max, placeholder, required = false) => new ActionRowBuilder().addComponents(
-    new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setMaxLength(max).setPlaceholder(placeholder).setValue(String(value || '').slice(0, max)));
-  return new ModalBuilder().setCustomId(`setup:welcome:${type === 'welcome' ? 'wm' : 'lm'}`).setTitle(type === 'welcome' ? 'Welcome post' : 'Leave post').addComponents(
-    input('title',    'Card title',            TextInputStyle.Short,     o.title,    cards.LIMITS.title,    '{user}'),
-    input('subtitle', 'Card subtitle (blank = none)', TextInputStyle.Short, o.subtitle, cards.LIMITS.subtitle, 'Welcome to {server}'),
-    input('accent',   'Accent colour (hex)',   TextInputStyle.Short,     o.accent,   7,                     '#5865F2'),
-    input('message',  'Message above the card (blank = none)', TextInputStyle.Paragraph, o.message, cards.LIMITS.message, '{mention} welcome to {server}! You are member #{count}.'),
-  );
-}
-
 function viewVerify(guild, note) {
   const s = verification.settings(guild.id);
   const membersLog = getLogChannel(guild.id, 'members');
@@ -341,7 +293,7 @@ function viewAnnounce(guild, note) {
   };
 }
 
-const VIEWS = { home: viewHome, logs: viewLogs, panel: viewPanel, welcome: viewWelcome, verify: viewVerify, control: viewControl, announce: viewAnnounce, check: viewCheck };
+const VIEWS = { home: viewHome, logs: viewLogs, panel: viewPanel, verify: viewVerify, control: viewControl, announce: viewAnnounce, check: viewCheck };
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
@@ -391,7 +343,7 @@ async function handleInteraction(interaction, client) {
   if (page === 'home' && action === 'go') return await show(interaction.values[0]), true;   // select menu
   if (page === 'check') return await show('check'), true;
   if (kitFor(page)) return await kitFor(page).handle(interaction, { guild, by, client, page, action, arg }), true;
-  if (['panel', 'welcome', 'verify', 'control', 'announce'].includes(page) && !action) return await show(page), true;
+  if (['panel', 'verify', 'control', 'announce'].includes(page) && !action) return await show(page), true;
   if (page === 'logs' && !action) return await respond(interaction, viewLogs(guild)), true;
 
   // ── panel ──
@@ -429,65 +381,6 @@ async function handleInteraction(interaction, client) {
       if (arg === 'messages') require('./messageStore').purgeGuild(guild.id);   // stop keeping message text
       done(`log channel cleared (${arg})`);
       return await respond(interaction, viewLogs(guild, arg, noteGood('Cleared.'))), true;
-    }
-  }
-
-  // ── welcome ──
-  if (page === 'welcome') {
-    if (action === 'wch' || action === 'lch') {
-      const channel = interaction.channels.first();
-      const missing = missingIn(channel, guild, [...POST_PERMS, 'AttachFiles']);
-      if (missing.length) return await show('welcome', noteBad(`I can't post cards in ${channel}: missing **${missing.join(', ')}**.`)), true;
-      setGuildConfig(guild.id, action === 'wch' ? { welcomeChannelId: channel.id, welcomeEnabled: true } : { leaveChannelId: channel.id });
-      done(action === 'wch' ? 'welcome channel set' : 'leave channel set', `→ #${channel.name}`);
-      return await show('welcome', noteGood(`${action === 'wch' ? 'Welcome' : 'Leave'} cards go to ${channel}.`)), true;
-    }
-    if (action === 'tw' || action === 'tl') {
-      const key = action === 'tw' ? 'welcomeEnabled' : 'leaveEnabled';
-      const now = getGuildConfig(guild.id)[key] !== false;
-      setGuildConfig(guild.id, { [key]: !now });
-      done(`${action === 'tw' ? 'welcome' : 'leave'} cards ${!now ? 'enabled' : 'disabled'}`);
-      return await show('welcome'), true;
-    }
-    if (action === 'pw' || action === 'pl') {
-      await interaction.deferReply({ flags: ephemeral });
-      const type = action === 'pw' ? 'welcome' : 'leave';
-      try {
-        const { generateCard } = require('./imageGenerator');
-        const m = interaction.member, name = m.displayName || by.username;
-        const post = cards.compose(guild.id, type, { user: name, mention: `${m}`, server: guild.name, count: guild.memberCount });
-        const payload = { content: [`**${type === 'welcome' ? 'Welcome' : 'Leave'} preview**, exactly what will be posted:`, post.text].filter(Boolean).join('\n\n'), allowedMentions: { parse: [] } };
-        if (post.card) payload.files = [new AttachmentBuilder(await generateCard(type, name, by.displayAvatarURL({ size: 512 }), guild.memberCount, post.image), { name: `${type}-preview.png` })];
-        await interaction.editReply(payload);
-      } catch (err) {
-        log('ERROR', 'Card preview failed', { guild: guild.name, err });
-        await interaction.editReply({ content: 'Could not generate the preview. The bot owner has been notified.' });
-      }
-      return true;
-    }
-    if (action === 'ew' || action === 'el') { await interaction.showModal(cardModal(guild, action === 'ew' ? 'welcome' : 'leave')); return true; }
-    if (action === 'wm' || action === 'lm') {
-      const type = action === 'wm' ? 'welcome' : 'leave', k = cards.keys(type);
-      const text = (id) => interaction.fields.getTextInputValue(id).trim();
-      const rawAccent = text('accent'), accent = rawAccent ? cards.parseColour(rawAccent) : null;
-      if (rawAccent && !accent) return await show('welcome', noteBad('That is not a colour. Use a hex code such as `#5865F2`.')), true;
-      setGuildConfig(guild.id, { [k.title]: text('title') || null, [k.subtitle]: text('subtitle'), [k.message]: text('message'), [k.accent]: accent });
-      done(`${type} post customised`);
-      return await show('welcome', noteGood(`${type === 'welcome' ? 'Welcome' : 'Leave'} post saved. Press **Preview** to see it.`)), true;
-    }
-    if (action === 'cw' || action === 'cl') {
-      const type = action === 'cw' ? 'welcome' : 'leave', k = cards.keys(type);
-      const now = cards.options(guild.id, type).card;
-      setGuildConfig(guild.id, { [k.card]: !now });
-      done(`${type} card ${!now ? 'enabled' : 'disabled'}`);
-      return await show('welcome'), true;
-    }
-    if (action === 'reset') {
-      const patch = {};
-      for (const type of ['welcome', 'leave']) { const k = cards.keys(type); patch[k.title] = null; patch[k.subtitle] = null; patch[k.message] = null; patch[k.accent] = null; }
-      setGuildConfig(guild.id, patch);
-      done('welcome and leave text reset to defaults');
-      return await show('welcome', noteGood('Titles, subtitles, colours and messages are back to the defaults.')), true;
     }
   }
 

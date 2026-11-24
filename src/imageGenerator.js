@@ -12,7 +12,7 @@
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
 const W        = 640;  // Canvas width
-const H        = 320;  // Canvas height
+const H        = 350;  // Canvas height (room under the subtitle for the panel styles)
 const AVATAR_R = 96;   // Avatar radius (192px diameter)
 const AVATAR_X = W / 2;
 const AVATAR_Y = 130;
@@ -30,13 +30,53 @@ function rgba(hex, alpha) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
+const PANELS = {
+  midnight: ['#1b1f3b', '#0b0d1c'],
+  aurora:   ['#3a1c71', '#168a9a'],
+  sunset:   ['#b3345f', '#e8803a'],
+  graphite: ['#2f3136', '#1e1f22'],
+};
+
+/** A rounded rectangle path. */
+function roundedRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** The outline of the avatar: a circle or a rounded square of the same size. */
+function avatarPath(ctx, grow, shape) {
+  if (shape === 'rounded') roundedRect(ctx, AVATAR_X - AVATAR_R - grow, AVATAR_Y - AVATAR_R - grow, (AVATAR_R + grow) * 2, (AVATAR_R + grow) * 2, 36 + grow);
+  else { ctx.beginPath(); ctx.arc(AVATAR_X, AVATAR_Y, AVATAR_R + grow, 0, Math.PI * 2); }
+}
+
+/** Panel behind the card for the built-in styles. Classic draws nothing (transparent). */
+function drawPanel(ctx, style, accent, isLeave) {
+  const colours = PANELS[style];
+  if (!colours) return;
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, colours[0]); g.addColorStop(1, colours[1]);
+  roundedRect(ctx, 2, 2, W - 4, H - 4, 28);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.stroke();
+  if (style === 'midnight') {   // an accent edge down the left side
+    ctx.save(); roundedRect(ctx, 2, 2, W - 4, H - 4, 28); ctx.clip();
+    ctx.fillStyle = accent || (isLeave ? '#747F8D' : '#5865F2'); ctx.fillRect(0, 0, 10, H);
+    ctx.restore();
+  }
+}
+
 /**
  * Generate a welcome or leave card.
  * @param {'welcome'|'leave'} type
  * @param {string}  displayName  Member's display name
  * @param {string}  avatarUrl    Discord avatar URL
  * @param {number}  memberCount  Guild member count
- * @param {{ title?: string, subtitle?: string, accent?: string|null }} [opts]  Server-customised text and colour
+ * @param {{ title?: string, subtitle?: string, accent?: string|null, style?: string, shape?: string }} [opts]  Server-customised text, colour and look
  * @returns {Buffer}  PNG image buffer
  */
 async function generateCard(type, displayName, avatarUrl, memberCount, opts = {}) {
@@ -47,7 +87,9 @@ async function generateCard(type, displayName, avatarUrl, memberCount, opts = {}
   const titleText = opts.title || displayName;
   const subtitleText = opts.subtitle !== undefined ? opts.subtitle : (isLeave ? `${displayName} has left the server` : '');
 
-  // Transparent background — nothing to fill
+  // Classic is transparent; the other styles draw a panel first
+  const shape = opts.shape === 'rounded' ? 'rounded' : 'circle';
+  drawPanel(ctx, opts.style, accent, isLeave);
 
   // ── Avatar ──────────────────────────────────────────────────────────────────
 
@@ -55,8 +97,7 @@ async function generateCard(type, displayName, avatarUrl, memberCount, opts = {}
   ctx.save();
   ctx.shadowColor = accent ? rgba(accent, 0.6) : isLeave ? 'rgba(100,100,100,0.5)' : 'rgba(88,101,242,0.6)';
   ctx.shadowBlur  = 28;
-  ctx.beginPath();
-  ctx.arc(AVATAR_X, AVATAR_Y, AVATAR_R + 2, 0, Math.PI * 2);
+  avatarPath(ctx, 2, shape);
   ctx.strokeStyle = accent ? rgba(accent, 0.9) : isLeave ? 'rgba(120,120,120,0.8)' : 'rgba(255,255,255,0.25)';
   ctx.lineWidth   = 3;
   ctx.stroke();
@@ -68,8 +109,7 @@ async function generateCard(type, displayName, avatarUrl, memberCount, opts = {}
 
     // Clip avatar to circle
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(AVATAR_X, AVATAR_Y, AVATAR_R, 0, Math.PI * 2);
+    avatarPath(ctx, 0, shape);
     ctx.closePath();
     ctx.clip();
     ctx.drawImage(img, AVATAR_X - AVATAR_R, AVATAR_Y - AVATAR_R, AVATAR_R * 2, AVATAR_R * 2);
@@ -79,8 +119,7 @@ async function generateCard(type, displayName, avatarUrl, memberCount, opts = {}
 
   } catch {
     // Fallback: plain coloured circle if avatar fails to load
-    ctx.beginPath();
-    ctx.arc(AVATAR_X, AVATAR_Y, AVATAR_R, 0, Math.PI * 2);
+    avatarPath(ctx, 0, shape);
     ctx.fillStyle = accent || (isLeave ? '#747F8D' : '#5865F2');
     ctx.fill();
   }
@@ -127,4 +166,4 @@ async function generateCard(type, displayName, avatarUrl, memberCount, opts = {}
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { generateCard };
+module.exports = { generateCard, STYLE_KEYS: ['classic', ...Object.keys(PANELS)] };

@@ -57,7 +57,7 @@ const CATEGORIES = [
     id: 'members', label: 'Members and verification',
     text: [
       '**Verification**: set it up in **`/setup` > Verification**: verified role, human check, optional quarantine role, minimum account age and auto-remove. Staff get a detailed log with Approve and Kick buttons. The buttons close as soon as the member verifies.',
-      '**Welcome and leave**: **`/setup` > Welcome & leave**. Choose the channel, then edit the card title, subtitle, colour and the message above it.',
+      '**Welcome and leave**: **`/setup` > Welcome & leave**. Choose the channel, then pick how each post looks (image card, rich embed, both or text), a card style, and your own wording with placeholders like `{ordinal}` and `{accountage}`. **Extras** adds a private welcome message, roles for new members and a welcome-back line. **Preview** shows exactly what will be posted.',
       '**`/members overview | recent | pending | lookup`**: who is in the server and what\'s happening. *(Manage Server)*',
       '**`/purge`**: delete up to 100 messages. *(Manage Messages)*',
       '**Message logs**: set in **`/setup` > Logs**. To log deleted and edited messages, new messages are kept for 7 days, then deleted automatically.',

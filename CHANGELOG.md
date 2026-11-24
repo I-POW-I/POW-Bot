@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.5.2
+
+- **Welcome & leave overhaul**: each post can now be an image card, a rich embed, a card inside an embed, or plain text. Five built-in card styles (Classic, Midnight, Aurora, Sunset, Graphite), a circle or rounded avatar, and your own wording with placeholders: `{user}` `{username}` `{mention}` `{server}` `{count}` `{ordinal}` `{accountage}` `{joined}` `{rules}`. Leave posts say how long the person was in the server. **Preview** shows exactly what will be posted
+- **Extras**: a private welcome message to new members, roles given to every new member (skipped when verification is on, because verification decides roles), and a separate "welcome back" text for people who left and returned
+- Staff cannot upload their own card backgrounds, only the built-in styles
+- Existing welcome and leave settings carry over unchanged
+- **Steam game updates**: posts are now built from Steam's formatted news feed, so patch notes keep their headings and bullet points instead of one flattened paragraph. Falls back to the old source if the feed is unavailable
+
 ## 5.5.1
 
 - **Moderation commands**: `/warn`, `/timeout`, `/untimeout`, `/kick`, `/softban`, `/ban` and `/unban`. Each needs the matching Discord permission and respects role order, so nobody can act on someone above them. Replies are private to the moderator and the action is posted to the mod log
