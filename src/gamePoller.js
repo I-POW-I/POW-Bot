@@ -64,7 +64,6 @@ function buildEpicGameEmbed(game) {
     .setTitle(game.title)
     .setURL(game.url)
     .setDescription(desc)
-    .setTimestamp()
     .setFooter({ text: 'Epic Games Store • Free Game' });
 
   if (game.image) embed.setImage(game.image);
@@ -100,7 +99,6 @@ function buildSteamFreeEmbed(game, details) {
     .setTitle(game.name)
     .setURL(game.url)
     .setDescription(desc)
-    .setTimestamp()
     .setFooter({ text: 'Steam • Free Game' });
 
   const fields = [];
@@ -204,7 +202,6 @@ async function checkEpicGames(client) {
               : 'Soon';
             return `**${g.title}** — free from ${starts}${g.origPrice ? ` (normally ${g.origPrice})` : ''}`;
           }).join('\n'))
-          .setTimestamp()
           .setFooter({ text: 'Epic Games Store' });
         await channel.send({ embeds: [upEmbed] });
       }

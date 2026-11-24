@@ -28,7 +28,7 @@ module.exports = {
       return interaction.reply({ content: staff ? 'No streamers are being watched yet.' : 'No streamers are being watched in this server.', components, flags: [MessageFlags.Ephemeral] });
     }
 
-    const embed = new EmbedBuilder().setColor(0x5865F2).setTitle('Watched streamers').setTimestamp()
+    const embed = new EmbedBuilder().setColor(0x5865F2).setTitle('Watched streamers')
       .setFooter({ text: `${subs.length} streamer(s) · ${subs.filter(s => s.is_live === 1).length} live now` });
     for (const platform of Object.keys(NAMES)) {
       const list = subs.filter(s => s.platform === platform);

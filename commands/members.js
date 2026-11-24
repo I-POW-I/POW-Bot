@@ -58,7 +58,7 @@ async function overview(interaction) {
       { name: 'Right now',    value: `In voice: **${inVoice}**`, inline: true },
       { name: 'Verification funnel (7 days)', value: `Joined **${f7.joined}** → verified **${f7.verified}**${f7.joined ? ` (${Math.round(100 * f7.verified / f7.joined)}%)` : ''}\nFailed **${f7.failed}** · needed approval **${f7.blocked}** · removed **${f7.kicked}** · raid alerts **${f7.raids}**`, inline: false },
       { name: 'Newest members', value: newest, inline: false },
-    ).setTimestamp();
+    );
   if (partial) embed.setFooter({ text: 'Large server — counts use cached members only' });
   return interaction.editReply({ embeds: [embed] });
 }
@@ -114,7 +114,7 @@ async function lookup(interaction) {
       { name: `Risk: ${a.level}`, value: a.flags.length ? a.flags.map(f => `• ${f}`).join('\n') : 'No flags', inline: false },
       { name: 'Voice', value: stats.session_count ? `**${formatMs(stats.total_ms)}** in ${n(stats.session_count)} sessions · streak **${stats.streak}** day(s)` : 'No voice activity recorded', inline: false },
       { name: 'History', value: hist, inline: false },
-    ).setTimestamp();
+    );
   return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
 }
 

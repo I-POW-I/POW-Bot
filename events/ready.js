@@ -99,6 +99,8 @@ module.exports = {
     require('../src/ownerMonitor').onReady(client);   // startup notice, back-online report, digest + memory watch
     require('../src/leaderboard').start(client);            // voice reward roles for people who stay in voice for hours
     require('../src/messageStore').start();                 // deletes stored messages after 7 days
+    require('../src/backup').start(client);                 // weekly backup of the whole application to the owner's DMs
+    require('../src/retention').start(client);              // ages out member and voice history, removes data for servers the bot has left
     require('../src/verification').startSweeper(client);   // removes members who never verify (only if enabled in /setup)
   },
 };

@@ -43,18 +43,18 @@ const n  = (v) => Number(v || 0).toLocaleString('en-GB');
 const FEATURES = { streamerAlerts: 'Streamer alerts (Twitch / Kick / YouTube)', gameAlerts: 'Game alerts (free games and patch notes)' };
 
 const SECTIONS = [
-  { key: 'overview',  label: 'Overview',                 desc: 'System, usage, services and safety settings' },
-  { key: 'servers',   label: 'Servers',                  desc: 'Every server the bot is in' },
-  { key: 'alerts',    label: 'Alerts',                   desc: 'Where alerts go, mute, console digest, memory restart' },
-  { key: 'status',    label: 'Bot status',               desc: 'The rotating status line under the bot\'s name', ownerOnly: true },
-  { key: 'announce',  label: 'Announcements',            desc: 'Send a message to servers you choose', ownerOnly: true },
-  { key: 'control',   label: 'Maintenance and features', desc: 'Maintenance mode, global switches, commands', ownerOnly: true },
-  { key: 'blocks',    label: 'Blocked users and servers', desc: 'Stop someone using the bot', ownerOnly: true },
-  { key: 'audit',     label: 'Recent changes',           desc: 'What was changed through the bot, and by whom' },
+  { key: 'overview',  emoji: '📊', label: 'Overview',                 desc: 'System, usage, services and safety settings' },
+  { key: 'servers',   emoji: '🌐', label: 'Servers',                  desc: 'Every server the bot is in' },
+  { key: 'alerts',    emoji: '🔔', label: 'Alerts',                   desc: 'Where alerts go, mute, console digest, memory restart' },
+  { key: 'status',    emoji: '💬', label: 'Bot status',               desc: 'The rotating status line under the bot\'s name', ownerOnly: true },
+  { key: 'announce',  emoji: '📣', label: 'Announcements',            desc: 'Send a message to servers you choose', ownerOnly: true },
+  { key: 'control',   emoji: '🛠️', label: 'Maintenance and features', desc: 'Maintenance mode, global switches, commands', ownerOnly: true },
+  { key: 'blocks',    emoji: '⛔', label: 'Blocked users and servers', desc: 'Stop someone using the bot', ownerOnly: true },
+  { key: 'audit',     emoji: '🧾', label: 'Recent changes',           desc: 'What was changed through the bot, and by whom' },
 ];
 
 /** Component actions only the owner (not ADMIN_IDS) may use. */
-const OWNER_ONLY = /^owner:(ann_|announce|al_(ch|lvl|dig|mem|dm|rm)|srv_act|blk_|mt_|ft|st_|op_cmds|yes|no)/;
+const OWNER_ONLY = /^owner:(ann_|announce|al_(ch|lvl|dig|mem|dm|rm)|srv_act|blk_|mt_|ft|st_|op_cmds|op_backup|yes|no)/;
 
 // ── Pending confirmations ─────────────────────────────────────────────────────
 
@@ -113,7 +113,7 @@ function viewHome(client, userId, note) {
     .setFooter({ text: owner ? 'Bot owner' : 'Bot admin' });
 
   const menu = new StringSelectMenuBuilder().setCustomId('owner:go').setPlaceholder('Open a section…')
-    .addOptions(SECTIONS.filter(s => owner || !s.ownerOnly).map(s => ({ label: s.label, value: s.key, description: s.desc })));
+    .addOptions(SECTIONS.filter(s => owner || !s.ownerOnly).map(s => ({ label: s.label, value: s.key, description: s.desc, emoji: s.emoji })));
   return { embeds: [embed], components: [row(menu), row(btn('owner:op_restart', 'Restart bot', ButtonStyle.Danger), btn('owner:op_logs', 'Console logs'), btn('owner:op_digest', 'Send digest'), btn('owner:home', 'Refresh'))] };
 }
 
@@ -349,18 +349,25 @@ const statusTextModal = (customId, title, value = '') => new ModalBuilder().setC
 
 // ── Maintenance and features ──────────────────────────────────────────────────
 
+function backupLine(b) {
+  if (!b?.lastAt && !b?.error) return 'weekly, none sent yet';
+  const sent = b.lastAt ? `last sent ${ts(b.lastAt)} (${(b.size / 1048576).toFixed(1)} MB, ${b.scope})` : 'none sent yet';
+  return `weekly, ${sent}${b.error ? `\nThe last attempt failed: ${b.error}` : ''}`;
+}
+
 function viewControl(note) {
   const cfg = globalConfig.get(), m = cfg.maintenance, f = cfg.features;
   const embed = new EmbedBuilder().setColor(m.enabled ? AMBER : BLUE).setTitle('Maintenance and features').setDescription([note,
     `**Maintenance mode**: ${m.enabled ? `on since ${ts(m.since)}${m.message ? `\nEveryone except you and your bot admins sees: "${m.message}"` : ''}` : 'off'}`,
     ...Object.entries(FEATURES).map(([k, label]) => `**${label}**: ${f[k] !== false ? 'on' : 'off'}`),
+    `**Backup**: ${backupLine(cfg.backup)}`,
     '',
     'Maintenance mode pauses the bot for everyone except you. The switches turn a feature off in every server at once. Re-registering commands wipes and re-creates the slash commands (use it if one looks out of date).'].filter(Boolean).join('\n'));
   return { embeds: [embed], components: [
     row(btn('owner:mt_toggle', m.enabled ? 'Turn maintenance OFF' : 'Turn maintenance ON', m.enabled ? ButtonStyle.Success : ButtonStyle.Danger),
       btn('owner:ft:streamerAlerts', `Streamer alerts: ${f.streamerAlerts !== false ? 'ON' : 'OFF'}`, f.streamerAlerts !== false ? ButtonStyle.Success : ButtonStyle.Secondary),
       btn('owner:ft:gameAlerts', `Game alerts: ${f.gameAlerts !== false ? 'ON' : 'OFF'}`, f.gameAlerts !== false ? ButtonStyle.Success : ButtonStyle.Secondary)),
-    row(btn('owner:op_cmds', 'Re-register commands'), back()),
+    row(btn('owner:op_cmds', 'Re-register commands'), btn('owner:op_backup', 'Back up now'), back()),
   ] };
 }
 
@@ -576,6 +583,13 @@ async function handleComponent(interaction, client) {
     case 'op_cmds': {
       const nonce = remember({ kind: 'commands', userId: uid });
       await interaction.reply({ embeds: [new EmbedBuilder().setColor(AMBER).setTitle('Re-register slash commands?').setDescription('Wipes every global and per-server command, then registers the current set again. Commands can be missing for a short moment.')], components: [confirmRow(nonce, 'Re-register')], flags: ephemeral });
+      return true;
+    }
+    case 'op_backup': {
+      await interaction.deferUpdate();
+      const res = await require('./backup').run(client);
+      audit({ action: 'Backup requested', actor: interaction.user, details: res.ok ? 'sent' : res.error });
+      await show(interaction, viewControl(res.ok ? 'The backup was sent to your DMs.' : `The backup failed: ${res.error}`));
       return true;
     }
     case 'mt_toggle': {

@@ -14,8 +14,8 @@ const chan = (id) => id ? `<#${id}>` : '*not set*';
 const role = (id) => id ? `<@&${id}>` : '*not set*';
 const onOff = (v) => v ? 'on' : 'off';
 
-const noteBad  = (text) => `**Problem:** ${text}`;
-const noteGood = (text) => text;
+const noteBad  = (text) => `⚠️ **Problem:** ${text}`;
+const noteGood = (text) => `✅ ${text}`;
 
 const backButton = (page = 'home', label = 'Back') =>
   new ButtonBuilder().setCustomId(`setup:${page}`).setLabel(label).setStyle(ButtonStyle.Secondary);

@@ -29,10 +29,9 @@ module.exports = {
 
     const transcript = lines.join('\n');
     const embed = new EmbedBuilder()
-      .setTitle('Messages bulk deleted')
+      .setTitle('🗑️ Messages bulk deleted')
       .setColor(0xED4245)
-      .setDescription(`**${messages.size}** messages were deleted at once in <#${firstMessage.channelId}>.${known < messages.size ? `\n*${messages.size - known} of them weren't recorded.*` : ''}`)
-      .setTimestamp();
+      .setDescription(`**${messages.size}** messages were deleted at once in <#${firstMessage.channelId}>.${known < messages.size ? `\n*${messages.size - known} of them weren't recorded.*` : ''}`);
 
     const payload = { embeds: [embed] };
     if (transcript.length <= 900) embed.addFields({ name: 'Transcript', value: `\`\`\`text\n${transcript || '(nothing recorded)'}\n\`\`\`` });

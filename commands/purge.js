@@ -105,7 +105,6 @@ module.exports = {
                   .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) })
                   .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
                   .addFields(fields)
-                  .setTimestamp()
                   
               ],
             });

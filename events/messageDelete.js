@@ -70,8 +70,7 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setColor(0xED4245)
-      .setTitle(fromBot ? 'Bot message deleted' : 'Message deleted')
-      .setTimestamp();
+      .setTitle(fromBot ? '🗑️ Bot message deleted' : '🗑️ Message deleted');
 
     if (author) {
       embed

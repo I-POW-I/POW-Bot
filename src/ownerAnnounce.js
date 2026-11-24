@@ -94,7 +94,7 @@ function targetFor(guild, d) {
 
 function viewHome(note) {
   const select = new StringSelectMenuBuilder().setCustomId('owner:ann_style').setPlaceholder('Choose a style to start')
-    .addOptions(Object.entries(announcements.STYLES).map(([value, s]) => ({ label: s.label, value, description: s.desc.slice(0, 100) })));
+    .addOptions(Object.entries(announcements.STYLES).map(([value, s]) => ({ label: s.label, value, description: s.desc.slice(0, 100), emoji: s.emoji })));
   return {
     content: null,
     embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Announcements').setDescription([note,

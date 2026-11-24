@@ -78,7 +78,7 @@ module.exports = {
 
       const embed = new EmbedBuilder()
         .setColor(kick ? 0xFF7043 : 0xED4245)
-        .setTitle(kick ? 'Member kicked' : 'Member left')
+        .setTitle(kick ? '👢 Member kicked' : '👋 Member left')
         .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true }) })
         .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
         .addFields(
@@ -86,8 +86,7 @@ module.exports = {
           { name: 'Time in Server', value: timeInServer,             inline: true  },
           { name: 'Member count',   value: `${guild.memberCount}`,   inline: true  },
           { name: '\u200b',         value: '\u200b',                 inline: true  },
-        )
-        .setTimestamp();
+        );
 
       if (kick) {
         embed.addFields(

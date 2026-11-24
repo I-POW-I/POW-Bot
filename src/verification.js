@@ -167,8 +167,7 @@ function buildJoinLog(member, a, prior, s) {
       { name: `⚠️ Risk: ${a.level}`, value: a.flags.length ? a.flags.map(f => `• ${f}`).join('\n') : 'No risk flags found', inline: false },
       { name: '🔐 Verification', value: !waiting ? (user.bot ? 'Not required for bots' : 'Not set up for this server') : `Pending — ${s.mode === 'captcha' ? 'human check' : 'button'}${s.minAgeDays && a.ageDays < s.minAgeDays ? ` · **account under ${s.minAgeDays} day(s): staff approval needed**` : ''}`, inline: false },
     )
-    .setFooter({ text: `${guild.name} · Verification log` })
-    .setTimestamp();
+    .setFooter({ text: `${guild.name} · Verification log` });
   return embed;
 }
 
@@ -320,7 +319,7 @@ async function complete({ guild, member, method, attempts = 0, startedAt = Date.
       { name: '🏷️ Roles',  value: `+ ${given.role.name}${s.unverifiedRoleId ? '\n− unverified' : ''}`, inline: true },
       { name: `⚠️ Risk: ${a.level}`, value: a.flags.length ? a.flags.map(f => `• ${f}`).join('\n') : 'No risk flags', inline: false },
     )
-    .setFooter({ text: `${guild.name} · Verification log` }).setTimestamp();
+    .setFooter({ text: `${guild.name} · Verification log` });
   await postStaffLog(guild, { embeds: [embed] });
   ownerFeed(`Member verified — ${guild.name}`, [
     { name: 'User', value: member.user.tag }, { name: 'Method', value: method }, { name: 'Account age', value: ageText(a.ageDays) }, { name: 'Risk', value: a.level },
@@ -343,7 +342,7 @@ async function checkRaid(guild, s) {
   raidAlerted.set(guild.id, now);
   memberLog.record(guild.id, '0', 'raid', { joins: recent.length });
   log('WARN', 'Possible raid: many joins in one minute', { guild: guild.name, joins: recent.length });
-  await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('🚨 Possible raid').setDescription(`**${recent.length}** members joined in the last minute (alert threshold: ${s.raidThreshold}). Consider turning on a higher Discord verification level or pausing invites.`).setTimestamp()] });
+  await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('🚨 Possible raid').setDescription(`**${recent.length}** members joined in the last minute (alert threshold: ${s.raidThreshold}). Consider turning on a higher Discord verification level or pausing invites.`)] });
   ownerFeed(`Possible raid — ${guild.name}`, [{ name: 'Joins in 60s', value: String(recent.length) }], 'WARN');
 }
 
@@ -417,7 +416,7 @@ async function handleStart(interaction, client, guildId) {
       memberLog.record(guild.id, member.id, 'verify_blocked', { reason: 'account too new', ageDays: a.ageDays });
       log('INFO', 'Verification needs staff approval (new account)', { guild: guild.name, user: member.user.tag, age: ageText(a.ageDays) });
       const sent = await postStaffLog(guild, {
-        embeds: [new EmbedBuilder().setColor(0xFAA61A).setTitle('⏳ Staff approval needed').setDescription(`${member} tried to verify but their account is **${ageText(a.ageDays)}** old (the minimum is **${s.minAgeDays}** day(s)).`).setThumbnail(member.user.displayAvatarURL()).setTimestamp()],
+        embeds: [new EmbedBuilder().setColor(0xFAA61A).setTitle('⏳ Staff approval needed').setDescription(`${member} tried to verify but their account is **${ageText(a.ageDays)}** old (the minimum is **${s.minAgeDays}** day(s)).`).setThumbnail(member.user.displayAvatarURL())],
         components: [staffButtons(guild.id, member.id)],
       });
       trackLog(guild.id, member.id, sent);
@@ -472,7 +471,7 @@ async function handleModal(interaction, client, guildId, nonce) {
       lockouts.set(key, Date.now() + LOCKOUT_MS);
       memberLog.record(guild.id, member.id, 'verify_fail', { attempts: session.attempts });
       log('INFO', 'Verification failed (too many wrong codes)', { guild: guild.name, user: member.user.tag });
-      const sent = await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('❌ Verification failed').setDescription(`${member} entered the wrong code **${MAX_ATTEMPTS}** times and is locked out for 10 minutes.`).setTimestamp()], components: [staffButtons(guild.id, member.id)] });
+      const sent = await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('❌ Verification failed').setDescription(`${member} entered the wrong code **${MAX_ATTEMPTS}** times and is locked out for 10 minutes.`)], components: [staffButtons(guild.id, member.id)] });
       trackLog(guild.id, member.id, sent);
       return reply(`That wasn't right, and you're out of attempts. You can try again ${ts(Date.now() + LOCKOUT_MS)}.`);
     }
@@ -599,7 +598,7 @@ async function sweep(client) {
       memberLog.record(guild.id, member.id, 'kicked_unverified', { minutes: s.kickMinutes });
       log('INFO', 'Unverified member removed', { guild: guild.name, user: member.user.tag, after: `${s.kickMinutes} min` });
       await closeLogs(guild, member.id, 'Removed: did not verify in time');
-      await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xFAA61A).setTitle('👢 Unverified member removed').setDescription(`**${member.user.tag}** (\`${member.id}\`) did not verify within **${s.kickMinutes}** minutes.`).setTimestamp()] });
+      await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xFAA61A).setTitle('👢 Unverified member removed').setDescription(`**${member.user.tag}** (\`${member.id}\`) did not verify within **${s.kickMinutes}** minutes.`)] });
     }
   }
 }

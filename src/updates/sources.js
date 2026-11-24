@@ -1,6 +1,6 @@
 /**
  * Game update sources — every source returns the same "update" shape:
- *   { id, title, url, body, bodyKind, image, icon, date, version, game, source, color, buttons }
+ *   { id, title, url, body, bodyKind, image, icon, date, version, game, source, buttons }
  * which src/updates/format.js turns into the readable card.
  *
  * A subscription row (game_subscriptions) keeps its source in app_id:
@@ -21,28 +21,28 @@ const MC_BASE = 'https://launchercontent.mojang.com';
 const ZD_BASE = 'https://feedback.minecraft.net/api/v2/help_center/en-us';
 
 const SOURCES = {
-  steam:     { label: 'Steam',            color: 0x1B6FA8, beta: false, games: null },
-  minecraft: { label: 'Minecraft',        color: 0x5D9B3A, beta: false, games: [
+  steam:     { label: 'Steam',            beta: false, games: null },
+  minecraft: { label: 'Minecraft',        beta: false, games: [
     { value: 'java',            name: 'Java Edition — releases' },
     { value: 'java-snapshots',  name: 'Java Edition — snapshots' },
     { value: 'bedrock',         name: 'Bedrock Edition — releases' },
     { value: 'bedrock-preview', name: 'Bedrock Edition — Beta & Preview' },
   ] },
-  riot:      { label: 'Riot Games',       color: 0xD13639, beta: true, games: [
+  riot:      { label: 'Riot Games',       beta: true, games: [
     { value: 'lol',      name: 'League of Legends' },
     { value: 'valorant', name: 'VALORANT' },
     { value: 'tft',      name: 'Teamfight Tactics' },
   ] },
-  fortnite:  { label: 'Epic Games (Fortnite)', color: 0x7B4DD6, beta: true, games: [
+  fortnite:  { label: 'Epic Games (Fortnite)', beta: true, games: [
     { value: 'patch-notes', name: 'Fortnite — patch notes & news' },
   ] },
-  blizzard:  { label: 'Blizzard',         color: 0x148EFF, beta: true, games: [
+  blizzard:  { label: 'Blizzard',         beta: true, games: [
     { value: 'overwatch',   name: 'Overwatch' },
     { value: 'diablo4',     name: 'Diablo IV' },
     { value: 'wow',         name: 'World of Warcraft' },
     { value: 'hearthstone', name: 'Hearthstone' },
   ] },
-  rss:       { label: 'RSS / Atom feed',  color: 0x4A90D9, beta: false, games: null },
+  rss:       { label: 'RSS / Atom feed',  beta: false, games: null },
 };
 
 // Pages for the "beta" sources: where the list of articles is, and which links are patch notes.
@@ -78,13 +78,30 @@ const verFrom = (s) => (/(\d+(?:\.\d+){1,3}[a-z]?|\d{2}w\d{2}[a-z])/i.exec(Strin
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
 
+const iconCache = new Map();
+
+/** The game's cover art from Steam's CDN, used as the small picture in the corner of the post. */
+async function steamIcon(appId) {
+  if (iconCache.has(appId)) return iconCache.get(appId);
+  const base = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}`;
+  let found = null;
+  for (const file of ['library_600x900.jpg', 'capsule_231x87.jpg']) {
+    try {
+      const res = await fetch(`${base}/${file}`, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+      if (res.ok) { found = `${base}/${file}`; break; }
+    } catch { /* try the next one */ }
+  }
+  iconCache.set(appId, found);
+  return found;
+}
+
 async function steamLatest(appId, name) {
   const n = (await steam.getGameNews(appId, 5))[0];
   if (!n) return null;
   return {
     id: String(n.gid), title: n.title, url: n.url, body: n.contents, bodyKind: 'auto',
-    image: steam.getHeaderImage(appId), icon: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/capsule_184x69.jpg`,
-    date: (n.date || 0) * 1000 || null, version: null, game: name, source: 'Steam', color: SOURCES.steam.color,
+    image: steam.getHeaderImage(appId), icon: await steamIcon(appId),
+    date: (n.date || 0) * 1000 || null, version: null, game: name, source: 'Steam',
     buttons: [{ label: 'Open store page', url: `https://store.steampowered.com/app/${appId}` }],
   };
 }
@@ -105,7 +122,7 @@ async function minecraftJava(value, name) {
   return {
     id: String(e.id || e.version), title: e.title || `Minecraft ${e.version}`, url: `https://minecraft.wiki/w/Java_Edition_${encodeURIComponent(e.version)}`,
     body, bodyKind: 'html', image: e.image?.url ? absolute(e.image.url, MC_BASE) : null, icon: null,
-    date: Date.parse(e.date) || null, version: e.version, game: name || 'Minecraft: Java Edition', source: 'Minecraft', color: SOURCES.minecraft.color, buttons: [],
+    date: Date.parse(e.date) || null, version: e.version, game: name || 'Minecraft: Java Edition', source: 'Minecraft', buttons: [],
   };
 }
 
@@ -125,7 +142,7 @@ async function minecraftBedrock(value, name) {
   if (!a) return null;
   return {
     id: String(a.id), title: a.title, url: a.html_url, body: a.body, bodyKind: 'html', image: firstImage(a.body), icon: null,
-    date: Date.parse(a.created_at) || null, version: verFrom(a.title), game: name || 'Minecraft: Bedrock Edition', source: 'Minecraft', color: SOURCES.minecraft.color, buttons: [],
+    date: Date.parse(a.created_at) || null, version: verFrom(a.title), game: name || 'Minecraft: Bedrock Edition', source: 'Minecraft', buttons: [],
   };
 }
 
@@ -142,7 +159,7 @@ async function pageLatest(key, cfg, sourceId) {
   const title = (m.title || '').replace(/\s*[|–-]\s*(League of Legends|VALORANT|Fortnite|Blizzard News|Overwatch|Diablo.*|World of Warcraft|Hearthstone|Site)\s*$/i, '').trim() || cfg.name;
   return {
     id: url, title, url, body: page.mainContent(art), bodyKind: 'html', image: m.image || null, icon: null,
-    date: Date.parse(m.published || '') || null, version: verFrom(title), game: cfg.name, source: SOURCES[sourceId].label, color: SOURCES[sourceId].color, buttons: [],
+    date: Date.parse(m.published || '') || null, version: verFrom(title), game: cfg.name, source: SOURCES[sourceId].label, buttons: [],
   };
 }
 
@@ -152,7 +169,7 @@ async function rssLatest(url, name) {
   if (!it) return null;
   return {
     id: String(it.id), title: it.title, url: it.url, body: it.content, bodyKind: 'html', image: it.image, icon: null,
-    date: it.date, version: null, game: name || feed.title || new URL(url).hostname, source: 'RSS', color: SOURCES.rss.color, buttons: [],
+    date: it.date, version: null, game: name || feed.title || new URL(url).hostname, source: 'RSS', buttons: [],
   };
 }
 

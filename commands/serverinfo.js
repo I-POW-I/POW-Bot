@@ -66,7 +66,6 @@ module.exports = {
         { name: 'Content filter',  value: CONTENT_FILTER[guild.explicitContentFilter] || '—', inline: true },
         { name: 'Locale',          value: guild.preferredLocale || '—', inline: true },
       )
-      .setTimestamp()
       .setFooter({ text: guild.name });
 
     if (features) embed.addFields({ name: 'Features', value: features, inline: false });

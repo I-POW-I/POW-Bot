@@ -5,9 +5,10 @@
  *
  * Blocks: { t:'h', text, level } · { t:'p', text } · { t:'li', text, ordered, n } · { t:'hr' }
  *
- * The card shows a one-line summary, then grouped bullet lists (a few per section, with
- * "…and N more"), the game image at the bottom, and a "Read full notes" button — instead
- * of one giant wall of text.
+ * The card follows the layout patch-note trackers use: the game name, a linked title, then the notes
+ * themselves with large section headings, smaller sub-headings and bullet lists, a small game icon in
+ * the corner, and a "Read full notes" button. Long notes are cut at a sentence boundary with a count of
+ * what was left out.
  */
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
@@ -27,7 +28,7 @@ const safeChar = (code) => { try { return String.fromCodePoint(code); } catch { 
 const truncate = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, Math.max(0, n - 1)).trimEnd() + '…' : s; };
 
 /** One-line clean-up: collapse spaces, keep **bold**. */
-const tidy = (s) => String(s).replace(/[ \t\u00A0]+/g, ' ').replace(/\s*\n\s*/g, ' ').replace(/\*\*\s*\*\*/g, '').replace(/\*\s*\*/g, '').trim();
+const tidy = (s) => String(s).replace(/[ \t\u00A0]+/g, ' ').replace(/\s*\n\s*/g, ' ').replace(/\*\*\s*\*\*/g, '').trim();
 
 // ── BBCode (Steam) → HTML ─────────────────────────────────────────────────────
 
@@ -36,6 +37,11 @@ const BB_NAMES = 'p|h[1-6]|b|i|u|s|strike|spoiler|url|img|list|ulist|olist|hr|qu
 function bbcodeToHtml(input) {
   let s = String(input).replace(/\r\n?/g, '\n').replace(/\\n/g, '\n').replace(/\{STEAM_CLAN_IMAGE\}/g, 'https://clan.fastly.steamstatic.com/images');
   s = s.replace(/\[noparse\]([\s\S]*?)\[\/noparse\]/gi, (_, x) => x.replace(/</g, '&lt;'));
+  s = s.replace(/\\([\[\]])/g, '$1');   // Valve escapes brackets with a backslash: \[ MAPS ]
+
+  // A line that is only "[ Maps ]" is a section heading (Valve's patch-note style), not a BBCode tag
+  s = s.replace(/^[ \t]*\[\s*([^\[\]\n*]{1,60}?)\s*\][ \t]*$/gm, (line, text) =>
+    /^\//.test(text) || new RegExp(`^(?:${BB_NAMES})(?:=|$)`, 'i').test(text.trim()) ? line : `<h2>${text.trim()}</h2>`);
 
   s = s
     .replace(/\[h([1-6])\]/gi, '<h$1>').replace(/\[\/h([1-6])\]/gi, '</h$1>')
@@ -80,14 +86,16 @@ function htmlToBlocks(html) {
       const text = tidy(line);
       if (!text) continue;
       const m = BULLET_LINE.exec(text);
-      if (m) blocks.push({ t: 'li', text: text.slice(m[0].length), ordered: /^\d/.test(m[0]), n: parseInt(m[0], 10) || 0 });
+      const bold = /^\*\*([^*]{1,70}?)\*\*:?$/.exec(text);
+      if (m) blocks.push({ t: 'li', text: text.slice(m[0].length), ordered: /^\d/.test(m[0]), n: parseInt(m[0], 10) || 0, depth: 0 });
+      else if (bold) blocks.push({ t: 'h', text: bold[1].trim(), level: 4 });   // a line that is only bold text is a sub-heading
       else blocks.push({ t: 'p', text });
     }
   };
   const closeLi = () => {
     if (!inLi) return;
     const text = tidy(buf); buf = ''; inLi = false;
-    if (text) blocks.push({ t: 'li', text, ordered: liOrdered, n: liN });
+    if (text) blocks.push({ t: 'li', text, ordered: liOrdered, n: liN, depth: Math.max(0, lists.length - 1) });
   };
 
   const tokens = cleaned.match(/<\/?[a-zA-Z][^>]*>|[^<]+|</g) || [];
@@ -140,105 +148,62 @@ function toBlocks(raw, kind = 'auto') {
 
 // ── Blocks → card ─────────────────────────────────────────────────────────────
 
-const CATS = [
-  ['fixes',     /\b(fix(?:es|ed)?|bug|bugs|issue|issues|resolved|crash)\b/i,      'fix'],
-  ['balance',   /\b(balance|nerf|buff|tuning|adjust)/i,                           'balance change'],
-  ['additions', /\b(added|adds|addition|introduc\w*|now available|new (?:feature|content|mode|map|item|skin|agent|champion|weapon)s?)\b/i, 'addition'],
-  ['changes',   /\b(change|changes|update|updated|improv|tweak|rework|general)/i, 'change'],
-];
-const catOf = (text) => (CATS.find(([, re]) => re.test(text)) || [])[0] || null;
-/** An item is classified by how it STARTS ("Fixed an issue…"), not by words later in the sentence ("…once the fix is complete"). */
-const leadWords = (text) => String(text).split(/\s+/).slice(0, 6).join(' ');
+const ORANGE = 0xF0A030;
+const BODY_LIMIT = 3800;     // embed descriptions hold 4096 characters
 
-/** Group blocks into { intro:[], sections:[{name, items:[{text,ordered}], lines:[]}] } */
-function structure(blocks) {
-  const intro = [], sections = [];
-  let cur = null;
-  for (const b of blocks) {
-    if (b.t === 'hr') { cur = null; continue; }
-    if (b.t === 'h') { cur = { name: b.text, items: [], lines: [] }; sections.push(cur); continue; }
-    if (b.t === 'li') {
-      if (!cur) { cur = { name: 'Changes', items: [], lines: [], implicit: true }; sections.push(cur); }
-      cur.items.push({ text: b.text, ordered: b.ordered });
-    } else if (b.t === 'p') {
-      if (!cur) intro.push(b.text);
-      else cur.lines.push(b.text);
-    }
+/** "MAPS" → "Maps"; mixed-case headings and words with digits (CS2) are left alone. */
+const headingCase = (text) => {
+  const t = String(text).replace(/[:\s]+$/, '').trim();
+  if (t !== t.toUpperCase() || !/[A-Z]{3,}/.test(t)) return t;
+  return t.split(' ').map(w => (/\d/.test(w) || w.length < 2 ? w : w[0] + w.slice(1).toLowerCase())).join(' ');
+};
+
+const sameTitle = (a, b) => { const n = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); return !!n(a) && (n(a) === n(b) || n(b).includes(n(a))); };
+
+/**
+ * Blocks → Discord markdown: "##" for main sections, "###" for sub-headings, "-" bullets.
+ * Stops before BODY_LIMIT and says how many changes were left out.
+ */
+function renderBody(blocks, title) {
+  const list = blocks.slice();
+  while (list[0] && (list[0].t === 'hr' || (list[0].t === 'h' && list[0].level === 1 && sameTitle(list[0].text, title)))) list.shift();
+
+  const levels = [...new Set(list.filter(b => b.t === 'h').map(b => b.level))].sort((a, b) => a - b);
+  const mark = (level) => (level === levels[0] ? '##' : '###');
+
+  const out = [];
+  let used = 0, left = 0, full = false;
+  for (const b of list) {
+    if (b.t === 'hr') continue;
+    let line;
+    if (b.t === 'h') line = `${mark(b.level)} ${truncate(headingCase(b.text), 100)}`;
+    else if (b.t === 'li') line = `${'  '.repeat(Math.min(b.depth || 0, 2))}${b.ordered && b.n ? `${b.n}.` : '-'} ${truncate(b.text, 220)}`;
+    else line = truncate(b.text, 300);
+
+    const gap = b.t === 'h' && out.length ? '\n' : '';
+    if (full || used + line.length + gap.length + 1 > BODY_LIMIT) { full = true; if (b.t === 'li') left++; continue; }
+    if (gap) out.push('');
+    out.push(line); used += line.length + gap.length + 1;
   }
-  const out = sections.filter(s => s.items.length || s.lines.length);
-  for (const s of out) {
-    if (s.implicit && s.items.length) {
-      const fixes = s.items.filter(i => CATS[0][1].test(leadWords(i.text))).length;
-      s.name = fixes / s.items.length >= 0.6 ? 'Fixes' : 'Changes';
-    }
-  }
-  return { intro, sections: out };
+  while (out.length && (/^#{2,3} /.test(out[out.length - 1]) || out[out.length - 1] === '')) out.pop();   // never end on a bare heading
+  if (left) out.push('', `*…and ${left} more in the full notes*`);
+  return out.join('\n');
 }
-
-function describeCounts(sections) {
-  const tally = {}; let total = 0;
-  for (const s of sections) {
-    const headCat = s.implicit ? null : catOf(s.name);
-    const items = s.items.length ? s.items.map(i => i.text) : (s.lines.length ? [s.lines.join(' ')] : []);
-    for (const text of items) {
-      total++;
-      const cat = headCat || catOf(leadWords(text));
-      if (cat) tally[cat] = (tally[cat] || 0) + 1;
-    }
-  }
-  if (!total) return '';
-  const label = { fixes: ['fix', 'fixes'], balance: ['balance change', 'balance changes'], additions: ['addition', 'additions'], changes: ['change', 'changes'] };
-  const parts = Object.entries(tally).filter(([k]) => k !== 'changes').map(([k, v]) => `${v} ${label[k][v === 1 ? 0 : 1]}`);
-  return `**${total} change${total === 1 ? '' : 's'}**${parts.length ? ' · ' + parts.join(' · ') : ''}`;
-}
-
-const bulletLine = (item, i, max = 150) => `${item.ordered ? `${i + 1}.` : '•'} ${truncate(item.text, max)}`;
 
 /**
  * Build the Discord message for one update.
- * @param {object} u  { game, source, title, url, body, bodyKind, image, icon, date, version, color, buttons }
+ * @param {object} u  { game, source, title, url, body, bodyKind, image, icon, buttons }
  * @returns {{ embeds: EmbedBuilder[], components: ActionRowBuilder[] }}
  */
 function buildUpdateCard(u) {
   const { blocks, images } = toBlocks(u.body, u.bodyKind || 'auto');
-  const { intro, sections } = structure(blocks);
-  const image = u.image || images.find(x => /^https?:\/\//.test(x)) || null;
+  const thumb = u.icon || u.image || images.find(x => /^https?:\/\//.test(x)) || null;
 
-  const embed = new EmbedBuilder().setColor(u.color || 0x1B6FA8);
-  embed.setAuthor({ name: truncate(`${u.game}${u.source ? ` · ${u.source}` : ''}`, 250), ...(u.icon ? { iconURL: u.icon } : {}) });
+  const embed = new EmbedBuilder().setColor(ORANGE).setAuthor({ name: truncate(u.game || u.source || 'Game update', 250) });
   if (u.title) embed.setTitle(truncate(u.title, 250));
   if (u.url) embed.setURL(u.url);
-
-  const summary = describeCounts(sections);
-  const lead = intro.find(p => p.length > 25 && !BULLET_LINE.test(p)) || intro[0] || '';
-  const desc = [lead ? truncate(lead, 320) : '', summary].filter(Boolean).join('\n\n');
-  if (desc) embed.setDescription(desc);
-
-  // Sections → fields, within Discord's limits (4096 desc, 1024 per field, ~6000 total)
-  let budget = 3200;
-  const MAX_FIELDS = 5, PER = 5;
-  const shown = sections.slice(0, MAX_FIELDS);
-  for (const s of shown) {
-    if (budget < 250) break;
-    let value;
-    if (s.items.length) {
-      const lines = s.items.slice(0, PER).map((it, i) => bulletLine(it, i, 150));
-      const more = s.items.length - PER;
-      value = lines.join('\n') + (more > 0 ? `\n*…and ${more} more*` : '');
-    } else {
-      value = truncate(s.lines.slice(0, 2).join('\n'), 400);
-    }
-    value = truncate(value, 1000);
-    embed.addFields({ name: truncate(s.name, 120), value, inline: false });
-    budget -= value.length + s.name.length;
-  }
-  const hidden = sections.length - shown.length;
-  if (hidden > 0) embed.addFields({ name: '​', value: `*…plus ${hidden} more section${hidden === 1 ? '' : 's'} in the full notes*`, inline: false });
-
-  if (!embed.data.description && !embed.data.fields?.length) embed.setDescription('*Open the full notes to read this update.*');
-  if (image) embed.setImage(image);          // game image at the bottom
-  embed.setFooter({ text: [u.source, u.version ? `build ${u.version}` : null].filter(Boolean).join(' · ') || 'Game update' });
-  if (u.date) embed.setTimestamp(new Date(u.date));
+  embed.setDescription(renderBody(blocks, u.title) || '*Open the full notes to read this update.*');
+  if (thumb) embed.setThumbnail(thumb);
 
   const buttons = [];
   if (u.url) buttons.push(new ButtonBuilder().setLabel('Read full notes').setStyle(ButtonStyle.Link).setURL(u.url));
@@ -246,4 +211,4 @@ function buildUpdateCard(u) {
   return { embeds: [embed], components: buttons.length ? [new ActionRowBuilder().addComponents(buttons)] : [] };
 }
 
-module.exports = { decode, truncate, bbcodeToHtml, htmlToBlocks, toBlocks, structure, describeCounts, buildUpdateCard };
+module.exports = { decode, truncate, bbcodeToHtml, htmlToBlocks, toBlocks, renderBody, buildUpdateCard };

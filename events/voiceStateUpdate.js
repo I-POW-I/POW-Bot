@@ -28,8 +28,7 @@ function base(member, colour, title) {
     .setColor(colour)
     .setAuthor({ name: member.user.username, iconURL: member.user.displayAvatarURL({ dynamic: true }) })
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-    .setTitle(title)
-    .setTimestamp();
+    .setTitle(title);
 }
 
 function formatDuration(ms) {
@@ -103,7 +102,7 @@ module.exports = {
             // Check your server audit logs to see who dragged the bot
             const draggedBy = await getMoveMod(newState.guild, newChannel.id);
 
-            const embed = base(newState.member, C.forceLeave, 'Bot intercepted unauthorized move')
+            const embed = base(newState.member, C.forceLeave, '🛑 Bot intercepted unauthorized move')
               .setDescription(`The application caught an unapproved drag action and successfully rubber-banded itself back to its assigned room.`)
               .addFields(
                 { name: 'Intercepted in', value: `<#${newChannel.id}>`, inline: true },
@@ -144,7 +143,7 @@ module.exports = {
       joinTimes.set(key, Date.now());
       startSession(member.user.id, guild.id, newChannel.id, newChannel.name);
 
-      await sendLog(guild, base(member, C.join, 'Member joined voice')
+      await sendLog(guild, base(member, C.join, '🔊 Member joined voice')
         .addFields(
           { name: 'Channel',     value: `<#${newChannel.id}>`, inline: true },
           { name: 'Members now', value: `${newChannel.members.size}`,        inline: true },
@@ -167,7 +166,7 @@ module.exports = {
       const disconnectedBy = await getDisconnectMod(guild);
 
       if (disconnectedBy) {
-        await sendLog(guild, base(member, C.forceLeave, 'Member Disconnected by Moderator')
+        await sendLog(guild, base(member, C.forceLeave, '🔌 Member disconnected by moderator')
           .addFields(
             { name: 'Channel',         value: `<#${oldChannel.id}>`, inline: true },
             { name: 'Was in',          value: duration || 'Unknown',  inline: true },
@@ -175,7 +174,7 @@ module.exports = {
             { name: 'Disconnected by', value: disconnectedBy,         inline: false },
           ));
       } else {
-        await sendLog(guild, base(member, C.leave, 'Member left voice')
+        await sendLog(guild, base(member, C.leave, '🔇 Member left voice')
           .addFields(
             { name: 'Channel', value: `<#${oldChannel.id}>`, inline: true },
             { name: 'Was in',  value: duration || 'Unknown',  inline: true },
@@ -238,7 +237,7 @@ module.exports = {
       if (newState.streaming) {
         streamTimes.set(key, Date.now());
         startStreamSession(member.id, guild.id);
-        await sendLog(guild, base(member, C.streamStart, 'Member started streaming')
+        await sendLog(guild, base(member, C.streamStart, '📡 Member started streaming')
           .addFields(
             { name: 'Channel', value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
             { name: '\u200b',  value: '\u200b',                                  inline: true },
@@ -250,7 +249,7 @@ module.exports = {
           : null;
         streamTimes.delete(key);
         endStreamSession(member.id, guild.id);
-        await sendLog(guild, base(member, C.streamStop, 'Member stopped streaming')
+        await sendLog(guild, base(member, C.streamStop, '⏹️ Member stopped streaming')
           .addFields(
             { name: 'Channel',      value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
             { name: 'Streamed for', value: duration || 'Unknown',                     inline: true },

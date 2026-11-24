@@ -118,19 +118,6 @@ async function init() {
         UNIQUE(guild_id, app_id)
       );
       CREATE INDEX IF NOT EXISTS idx_game_guild ON game_subscriptions (guild_id);
-
-      CREATE TABLE IF NOT EXISTS game_subscriptions (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        guild_id     TEXT    NOT NULL,
-        app_id       TEXT    NOT NULL,
-        game_name    TEXT,
-        channel_id   TEXT    NOT NULL,
-        role_id      TEXT,
-        last_post_id TEXT,
-        color        INTEGER,
-        UNIQUE(guild_id, app_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_game_guild ON game_subscriptions (guild_id);
     `);
 
     save();
@@ -140,6 +127,7 @@ async function init() {
       'ALTER TABLE streamer_subscriptions ADD COLUMN last_updated_at INTEGER',
       'ALTER TABLE game_subscriptions ADD COLUMN color INTEGER',
       'ALTER TABLE message_store ADD COLUMN author_bot INTEGER DEFAULT 0',
+      'ALTER TABLE vc_sessions ADD COLUMN summary INTEGER DEFAULT 0',
     ];
     for (const m of migrations) {
       try { db.run(m); save(); } catch (_) { /* column already exists */ }
@@ -361,9 +349,10 @@ function getOpenSession(userId, guildId) {
 
 function getUserStats(userId, guildId) {
   const base = selectOne(
-    `SELECT COUNT(*) AS session_count, COALESCE(SUM(duration_ms),0) AS total_ms,
-            COALESCE(AVG(duration_ms),0) AS avg_ms, COALESCE(MAX(duration_ms),0) AS longest_session_ms,
-            MAX(left_at) AS last_seen
+    `SELECT COUNT(CASE WHEN summary = 1 THEN NULL ELSE 1 END) AS session_count, COALESCE(SUM(duration_ms),0) AS total_ms,
+            COALESCE(AVG(CASE WHEN summary = 1 THEN NULL ELSE duration_ms END),0) AS avg_ms,
+            COALESCE(MAX(CASE WHEN summary = 1 THEN NULL ELSE duration_ms END),0) AS longest_session_ms,
+            MAX(CASE WHEN summary = 1 THEN NULL ELSE left_at END) AS last_seen
      FROM vc_sessions WHERE user_id = ? AND guild_id = ? AND duration_ms IS NOT NULL`,
     [userId, guildId]
   ) || { session_count: 0, total_ms: 0, avg_ms: 0, longest_session_ms: 0, last_seen: null };
@@ -380,7 +369,7 @@ function getUserStats(userId, guildId) {
 
 function getServerTotals(guildId) {
   return selectOne(
-    'SELECT COUNT(*) AS total_sessions, COALESCE(SUM(duration_ms),0) AS total_ms FROM vc_sessions WHERE guild_id = ? AND duration_ms IS NOT NULL',
+    'SELECT COUNT(CASE WHEN summary = 1 THEN NULL ELSE 1 END) AS total_sessions, COALESCE(SUM(duration_ms),0) AS total_ms FROM vc_sessions WHERE guild_id = ? AND duration_ms IS NOT NULL',
     [guildId]
   ) || { total_sessions: 0, total_ms: 0 };
 }

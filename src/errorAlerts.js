@@ -133,7 +133,6 @@ function buildEmbed({ level, title, description, fields = [], codeBlocks = [] })
   const embed = new EmbedBuilder()
     .setColor(COLOURS[level] ?? COLOURS.ERROR)
     .setTitle(trunc(redact(title), 250))
-    .setTimestamp()
     .setFooter({ text: footerText() });
 
   const parts = [];

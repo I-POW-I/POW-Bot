@@ -39,8 +39,7 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
-      .setTitle('Message edited')
-      .setTimestamp()
+      .setTitle('✏️ Message edited')
       .setAuthor({ name: author.tag, iconURL: author.displayAvatarURL({ dynamic: true }) })
       .setThumbnail(author.displayAvatarURL({ dynamic: true, size: 256 }))
       .addFields(

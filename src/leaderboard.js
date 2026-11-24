@@ -3,7 +3,8 @@
  *
  * Voice time comes from vc_sessions (src/database.js). Time in the server's AFK channel is not counted.
  * Settings live in the server config (src/guildConfig.js) under `leaderboard`:
- *   { rewards: boolean, autoRoles: boolean, tiers: [{ hours, name, roleId }] }
+ *   { rewards: boolean, autoRoles: boolean, tiers: [{ hours, name, roleId }],
+ *     post: { frequency: 'off' | 'weekly' | 'monthly', channelId, lastKey } }
  *
  * Rewards work as a ladder: a member holds the role of the highest tier they have reached,
  * and lower tier roles managed here are removed when they move up.
@@ -27,14 +28,21 @@ const PRESETS = {
 };
 const MAX_TIERS = 8, MAX_HOURS = 10_000, TOP = 10, SCAN = 50;
 const BLUE = 0x5865F2;
+const MEDALS = ['🥇', '🥈', '🥉'];
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+const FREQUENCIES = { weekly: { label: 'Weekly', period: 'week' }, monthly: { label: 'Monthly', period: 'month' } };
+
 function settings(guildId) {
   const s = getGuildConfig(guildId).leaderboard || {};
-  return { rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: Array.isArray(s.tiers) ? s.tiers : [] };
+  const p = s.post || {};
+  return {
+    rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: Array.isArray(s.tiers) ? s.tiers : [],
+    post: { frequency: FREQUENCIES[p.frequency] ? p.frequency : 'off', channelId: p.channelId || null, lastKey: p.lastKey || null },
+  };
 }
-const save = (guildId, s) => setGuildConfig(guildId, { leaderboard: { rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: s.tiers } });
+const save = (guildId, s) => setGuildConfig(guildId, { leaderboard: { rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: s.tiers, post: s.post } });
 
 const defaultName = (hours) => `Voice ${hours}h`;
 const sortTiers = (tiers) => [...tiers].sort((a, b) => a.hours - b.hours);
@@ -108,8 +116,8 @@ async function board(guild, period) {
 async function view(guild, period = 'all', viewerId = null) {
   if (!PERIODS[period]) period = 'all';
   const ranking = await board(guild, period);
-  const lines = ranking.slice(0, TOP).map((r, i) => `**${i + 1}.** <@${r.id}> · ${duration(r.ms)}`);
-  const embed = new EmbedBuilder().setColor(BLUE).setTitle(`Voice leaderboard: ${guild.name}`)
+  const lines = ranking.slice(0, TOP).map((r, i) => `${MEDALS[i] || `**${i + 1}.**`} <@${r.id}> · ${duration(r.ms)}`);
+  const embed = new EmbedBuilder().setColor(BLUE).setTitle(`🏆 Voice leaderboard: ${guild.name}`)
     .setDescription(lines.length ? lines.join('\n') : 'No voice time recorded yet. Join a voice channel to get on the board.')
     .setFooter({ text: `${PERIODS[period].label} · the AFK channel is not counted` });
   if (viewerId) {
@@ -119,6 +127,60 @@ async function view(guild, period = 'all', viewerId = null) {
   const select = new StringSelectMenuBuilder().setCustomId('lb:period').setPlaceholder('Time period')
     .addOptions(Object.entries(PERIODS).map(([value, p]) => ({ label: p.label, value, default: value === period })));
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
+}
+
+// ── Scheduled post ────────────────────────────────────────────────────────────
+
+const POST_HOUR_UTC = 9;
+
+/** Identifies the current week (Monday start) or month, so each is posted once. */
+function periodKey(frequency, date = new Date()) {
+  if (frequency === 'monthly') return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, '0')}-${String(monday.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Turn the scheduled post on (or off). The first post goes out at the start of the next week or month. */
+function setPost(guildId, frequency, channelId) {
+  const s = settings(guildId);
+  const on = !!FREQUENCIES[frequency];
+  s.post = { frequency: on ? frequency : 'off', channelId: channelId || s.post.channelId, lastKey: on ? periodKey(frequency) : null };
+  save(guildId, s);
+  return s;
+}
+
+/** The weekly or monthly leaderboard message. */
+async function postView(guild, frequency) {
+  const { label, period } = FREQUENCIES[frequency];
+  const ranking = (await board(guild, period)).slice(0, TOP);
+  const lines = ranking.map((r, i) => `${MEDALS[i] || `**${i + 1}.**`} <@${r.id}> · ${duration(r.ms)}`);
+  return {
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle(`🏆 ${label} voice leaderboard`)
+      .setDescription(lines.length ? lines.join('\n') : 'Nobody spent time in voice this period.')
+      .setFooter({ text: `${PERIODS[period].label} · the AFK channel is not counted` })],
+    allowedMentions: { parse: [] },
+  };
+}
+
+/** Post the leaderboard in every server whose schedule is due. Checked hourly. */
+async function postDue(client, now = new Date()) {
+  if (now.getUTCHours() < POST_HOUR_UTC) return 0;
+  let sent = 0;
+  for (const guild of client.guilds.cache.values()) {
+    const s = settings(guild.id), { frequency, channelId, lastKey } = s.post;
+    if (frequency === 'off' || !channelId) continue;
+    const key = periodKey(frequency, now);
+    if (key === lastKey) continue;
+    s.post.lastKey = key; save(guild.id, s);   // mark first: a failed post is not retried every hour
+    try {
+      const channel = await guild.channels.fetch(channelId).catch(() => null);
+      if (!channel?.isTextBased()) { log('WARN', 'Scheduled leaderboard channel is gone', { guild: guild.name }); continue; }
+      await channel.send(await postView(guild, frequency));
+      sent++;
+    } catch (err) { log('WARN', 'Could not post the scheduled leaderboard', { guild: guild.name, err }); }
+  }
+  return sent;
 }
 
 // ── Roles ─────────────────────────────────────────────────────────────────────
@@ -194,6 +256,8 @@ function onVoiceLeave(guild, member) {
 
 /** People who stay in voice for hours are checked every 15 minutes. */
 function start(client) {
+  const posts = setInterval(() => postDue(client).catch(err => log('WARN', 'Scheduled leaderboard check failed', { err })), 3_600_000);
+  posts.unref?.();
   const timer = setInterval(async () => {
     for (const guild of client.guilds.cache.values()) {
       const s = settings(guild.id);
@@ -207,6 +271,6 @@ function start(client) {
 }
 
 module.exports = {
-  PERIODS, PRESETS, MAX_TIERS, settings, save, ladder, presetLadder, parseLadder, defaultName, sortTiers,
+  PERIODS, PRESETS, FREQUENCIES, MAX_TIERS, settings, setPost, periodKey, postView, postDue, save, ladder, presetLadder, parseLadder, defaultName, sortTiers,
   totalFor, duration, view, ensureRoles, roleProblems, syncMember, syncAll, onVoiceLeave, start, canManageRoles,
 };

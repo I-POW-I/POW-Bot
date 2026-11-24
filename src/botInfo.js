@@ -89,8 +89,7 @@ function buildBotInfoEmbed(guildId, client, { responseMs, detailed = true } = {}
 
   const embed = new EmbedBuilder()
     .setTitle('Server & Bot info')
-    .setColor(connected ? 0x57F287 : 0xED4245)
-    .setTimestamp();
+    .setColor(connected ? 0x57F287 : 0xED4245);
 
   const container = detailed ? [
     { name: 'Container cluster', value: c(dv.cluster || process.env.DISCLOUD_CLUSTER || 'ASTRA'), inline: true },
@@ -258,7 +257,7 @@ async function buildOwnerEmbeds(client) {
     { name: 'Memory auto-restart', value: c(settings.memoryPercent > 0 ? `at ${settings.memoryPercent}%` : 'off'), inline: true },
     { name: 'Blocked',           value: c(`${Object.keys(cfg.blacklist.users).length} users · ${Object.keys(cfg.blacklist.guilds).length} servers`), inline: true },
     { name: 'Feature switches',  value: flags, inline: false },
-  ).setTimestamp();
+  );
 
   return [system_, usage, services];
 }

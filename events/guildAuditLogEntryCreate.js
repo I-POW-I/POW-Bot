@@ -39,7 +39,7 @@ module.exports = {
       if (!logChannel?.isTextBased()) return;
       const { title, colour } = LABELS[entry.action] || { title: 'Audit event', colour: 0x5865F2 };
       const executor = entry.executor ? `${entry.executor} — ${entry.executor.tag}` : 'Unknown';
-      const embed = new EmbedBuilder().setColor(colour).setTitle(title).setTimestamp();
+      const embed = new EmbedBuilder().setColor(colour).setTitle(title);
       if (entry.executor) embed.setAuthor({ name: entry.executor.tag, iconURL: entry.executor.displayAvatarURL?.({ dynamic: true }) });
       embed.addFields({ name: 'By', value: executor, inline: true });
       const target = entry.target;

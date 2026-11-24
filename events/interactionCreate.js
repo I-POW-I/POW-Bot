@@ -76,6 +76,7 @@ const DELEGATES = [
   () => require('../src/setup').handleInteraction,        // /setup screens
   () => require('../src/verification').handleInteraction, // verify button, human check, "Why?"
   () => require('../commands/help').handleComponent,      // /help category menu
+  () => require('../commands/privacy').handleComponent,   // /privacy delete buttons
 ];
 
 async function handle(interaction, client) {
@@ -131,7 +132,7 @@ async function handle(interaction, client) {
                     { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : '—',            inline: true },
                     ...(cmdArgs ? [{ name: 'Options', value: cmdArgs, inline: false }] : []),
                   )
-                  .setTimestamp(),
+                  ,
               ],
             });
           }
@@ -217,7 +218,7 @@ async function handle(interaction, client) {
                       { name: 'Used by', value: `${interaction.member || interaction.user} — ${interaction.user.tag}`, inline: true },
                       { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : '—',            inline: true },
                     )
-                    .setTimestamp(),
+                    ,
                 ],
               });
             }

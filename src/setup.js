@@ -27,6 +27,7 @@ const verification = require('./verification');
 const cards = require('./cards');
 const alertsKit = require('./setupAlerts');
 const leaderboardKit = require('./setupLeaderboard');
+const botPermissions = require('./botPermissions');
 const KITS = [alertsKit, leaderboardKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
@@ -43,16 +44,16 @@ const LOG_TYPES = [
 ];
 
 const PAGES = [
-  { value: 'panel',     label: 'Voice panel',                desc: 'Where the control panel lives',},
-  { value: 'logs',      label: 'Logs',                       desc: 'Voice, messages, members, moderation, commands',},
-  { value: 'welcome',   label: 'Welcome & leave',            desc: 'Welcome / leave cards',},
-  { value: 'verify',    label: 'Verification',               desc: 'Verified role, human check, quarantine, auto-kick',},
-  { value: 'control',   label: 'Bot control role',           desc: 'Who may make the bot join / leave',},
-  { value: 'streamers', label: 'Streamer alerts',            desc: 'Twitch / Kick / YouTube live alerts',},
-  { value: 'updates',   label: 'Game update alerts',         desc: 'Patch notes: Steam, Minecraft, Riot, Fortnite, Blizzard, RSS',},
-  { value: 'free',      label: 'Free game alerts',           desc: 'Epic Games Store and Steam free games',},
-  { value: 'leaderboard', label: 'Voice leaderboard',      desc: 'Top voice time and optional role rewards',},
-  { value: 'announce',  label: 'Announcements',              desc: 'Where bot news and changelogs are posted',},
+  { value: 'panel',     label: 'Voice panel',                emoji: '🎛️', desc: 'Where the control panel lives',},
+  { value: 'logs',      label: 'Logs',                       emoji: '📜', desc: 'Voice, messages, members, moderation, commands',},
+  { value: 'welcome',   label: 'Welcome & leave',            emoji: '👋', desc: 'Welcome / leave cards',},
+  { value: 'verify',    label: 'Verification',               emoji: '🔐', desc: 'Verified role, human check, quarantine, auto-kick',},
+  { value: 'control',   label: 'Bot control role',           emoji: '🛡️', desc: 'Who may make the bot join / leave',},
+  { value: 'streamers', label: 'Streamer alerts',            emoji: '📺', desc: 'Twitch / Kick / YouTube live alerts',},
+  { value: 'updates',   label: 'Game update alerts',         emoji: '🎮', desc: 'Patch notes: Steam, Minecraft, Riot, Fortnite, Blizzard, RSS',},
+  { value: 'free',      label: 'Free game alerts',           emoji: '🎁', desc: 'Epic Games Store and Steam free games',},
+  { value: 'leaderboard', label: 'Voice leaderboard',      emoji: '🏆', desc: 'Top voice time and optional role rewards',},
+  { value: 'announce',  label: 'Announcements',              emoji: '📣', desc: 'Where bot news and changelogs are posted',},
 ];
 
 
@@ -127,7 +128,26 @@ function checkPermissions(guild) {
   if (vs.kickMinutes && !me.permissions.has(F.KickMembers)) problems.push('**Auto-kick** is on but I\'m missing **Kick Members**.');
   if (LOG_TYPES.some(t => getLogChannel(guild.id, t.key)) && !me.permissions.has(F.ViewAuditLog)) problems.push('**Logs** — I\'m missing **View Audit Log**, so changes will show without who made them.');
 
-  return { problems, good };
+  return { problems, good, tips: serverTips(guild) };
+}
+
+/** Things that are not broken yet but cause trouble later: my role's position, and channels I can't see. */
+function serverTips(guild) {
+  const me = guild.members.me, F = PermissionFlagsBits, tips = [];
+  if (!me) return tips;
+
+  const missing = botPermissions.missingServerWide(guild);
+  if (missing.length) tips.push(`I'm missing **${missing.join(', ')}**. Features that need ${missing.length === 1 ? 'it' : 'them'} won't work. Re-invite me with the full permissions, or add ${missing.length === 1 ? 'it' : 'them'} to my role.`);
+
+  const above = guild.roles.cache.filter(r => r.id !== guild.id && !r.managed && r.position > me.roles.highest.position).size;
+  if (above > 0) tips.push(`**${above}** role(s) are above mine. I can't change or remove members who hold them. Move my role near the top of the list: Server Settings, Roles, drag it up.`);
+
+  const list = (channels) => `${channels.slice(0, 6).map(c => `<#${c.id}>`).join(' ')}${channels.length > 6 ? ` and ${channels.length - 6} more` : ''}`;
+  const blindText = guild.channels.cache.filter(c => c.isTextBased() && !c.isThread() && !c.permissionsFor(me)?.has(F.ViewChannel)).map(c => c);
+  if (blindText.length) tips.push(`I can't see ${blindText.length} text channel(s): ${list(blindText)}. If that's not on purpose, a channel or category setting is blocking my role.`);
+  const blindVoice = guild.channels.cache.filter(c => c.isVoiceBased() && !c.permissionsFor(me)?.has(F.Connect)).map(c => c);
+  if (blindVoice.length) tips.push(`I can't join ${blindVoice.length} voice channel(s): ${list(blindVoice)}.`);
+  return tips;
 }
 
 // ── Views ─────────────────────────────────────────────────────────────────────
@@ -135,7 +155,7 @@ function checkPermissions(guild) {
 function viewHome(guild, note) {
   const items = summary(guild);
   const core = items.filter(i => i.core), optional = items.filter(i => !i.core);
-  const line = (i) => `${i.done ? 'Done' : i.core ? 'Needs setup' : 'Optional'} · **${PAGES.find(p => p.value === i.key).label}** — ${i.text}`;
+  const line = (i) => `${i.done ? '✅ Done' : i.core ? '⚠️ Needs setup' : '▫️ Optional'} · **${PAGES.find(p => p.value === i.key).label}** — ${i.text}`;
   const coreDone = core.filter(i => i.done).length;
 
   const embed = new EmbedBuilder()
@@ -147,7 +167,7 @@ function viewHome(guild, note) {
         '2. **Logs** — choose where logs are posted',
         '3. **Welcome & leave** — choose a welcome channel',
         '4. **Verification** — pick the verified role, then the channel for the verify message',
-        '_Everything saves the moment you pick it. Press **Permission check** at any time to see what is missing._'].join('\n') : null,
+        '_Everything saves the moment you pick it. Press **Permission check** at any time to see what is missing. Keep my role near the top of the role list so I can manage roles and members._'].join('\n') : null,
     ].filter(Boolean).join('\n\n'))
     .addFields(
       { name: 'Core', value: core.map(line).join('\n') },
@@ -156,7 +176,7 @@ function viewHome(guild, note) {
     .setFooter({ text: 'Pick a section below · changes save instantly' });
 
   const menu = new StringSelectMenuBuilder().setCustomId('setup:home:go').setPlaceholder('Choose what to configure…')
-    .addOptions(PAGES.map(p => ({ label: p.label, value: p.value, description: p.desc })));
+    .addOptions(PAGES.map(p => ({ label: p.label, value: p.value, description: p.desc, emoji: p.emoji })));
   return {
     embeds: [embed],
     components: [
@@ -170,15 +190,16 @@ function viewHome(guild, note) {
 }
 
 function viewCheck(guild) {
-  const { problems, good } = checkPermissions(guild);
+  const { problems, good, tips } = checkPermissions(guild);
   const embed = new EmbedBuilder()
-    .setColor(problems.length ? RED : GREEN)
+    .setColor(problems.length ? RED : tips.length ? AMBER : GREEN)
     .setTitle('Permission check')
     .setDescription(problems.length
       ? `Found **${problems.length}** problem(s) that would stop features working:\n\n${problems.join('\n')}`
-      : '**Everything I need is in place.**')
-    .setTimestamp();
+      : '**Everything you have set up is working.**');
+  if (tips.length) embed.addFields({ name: 'Worth fixing', value: tips.join('\n\n').slice(0, 1000) });
   if (good.length) embed.addFields({ name: 'Working', value: good.join('\n').slice(0, 1000) });
+  embed.addFields({ name: 'Keeping me trouble free', value: 'Leave my role near the top of the role list and don\'t block it in channel or category settings. I never need Administrator.' });
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('setup:check').setLabel('Check again').setStyle(ButtonStyle.Primary), backButton())] };
 }

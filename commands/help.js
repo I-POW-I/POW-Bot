@@ -53,10 +53,11 @@ const CATEGORIES = [
   {
     id: 'info', label: 'Information',
     text: [
-      'Server staff can turn on **role rewards** for voice time in **`/setup` > Voice leaderboard**: pick a ladder (or make your own) and I create the roles.',
+      'Server staff can turn on **role rewards** for voice time in **`/setup` > Voice leaderboard**: pick a ladder (or make your own) and I create the roles. You can also have the leaderboard posted weekly or monthly.',
       '',
       '**`/leaderboard`**: the voice time ranking for this server.',
       '**`/changelog`**: what changed in the bot, newest first.',
+      '**`/privacy`**: see what the bot has stored about you and delete it.',
       '**`/serverinfo`**: details about this server.',
       '**`/botinfo`**: status, latency, memory, services, last error. *(server admins)*',
     ],

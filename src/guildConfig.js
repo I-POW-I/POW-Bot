@@ -38,6 +38,12 @@ function setGuildConfig(guildId, updates) {
   writeAll(all);
 }
 
+/** Forget everything stored for a server (used when the bot is removed from it). */
+function deleteGuildConfig(guildId) {
+  const all = readAll();
+  if (all[guildId]) { delete all[guildId]; writeAll(all); }
+}
+
 function getLogChannel(guildId, type) {
   return getGuildConfig(guildId).logChannels?.[type] || null;
 }
@@ -93,7 +99,7 @@ function getBotControlRoleId(guildId) {
 }
 
 module.exports = {
-  getGuildConfig,  setGuildConfig,
+  getGuildConfig,  setGuildConfig,  deleteGuildConfig,
   getLogChannel,   setLogChannel,
   setLastChannel,  clearLastChannel,
   setStats,        getStats,

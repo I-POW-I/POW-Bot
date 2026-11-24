@@ -32,7 +32,7 @@ module.exports = {
       await channel.send({
         embeds: [new EmbedBuilder()
           .setColor(0x5865F2)
-          .setTitle('Thanks for adding POW-Bot!')
+          .setTitle('👋 Thanks for adding POW-Bot!')
           .setDescription([
             'A server admin can set everything up in one place:',
             '',
@@ -40,6 +40,8 @@ module.exports = {
             '**`/help`** — what every command does.',
             '',
             'Members need nothing — the voice panel does the rest.',
+            '',
+            '**Tip:** drag my role near the top of the role list (Server Settings, Roles) and don\'t block it in channel settings, so I can manage roles and post everywhere I need to.',
           ].join('\n'))],
       });
     } catch (err) {

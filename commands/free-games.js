@@ -45,7 +45,6 @@ function epicEmbed(game) {
     .setTitle(game.title)
     .setURL(game.url)
     .setDescription(desc)
-    .setTimestamp()
     .setFooter({ text: 'Epic Games Store • Free Game' });
 
   if (game.image) embed.setImage(game.image);
@@ -81,7 +80,6 @@ function steamEmbed(game, details) {
     .setTitle(game.name)
     .setURL(game.url)
     .setDescription(desc)
-    .setTimestamp()
     .setFooter({ text: 'Steam • Free Game' });
 
   const fields = [];
@@ -150,7 +148,6 @@ async function showCurrent(interaction) {
           return `**${g.title}** — free from ${starts}${g.origPrice ? ` (normally ${g.origPrice})` : ''}`;
         }).join('\n')
       )
-      .setTimestamp()
       .setFooter({ text: 'Epic Games Store' });
 
     if (firstReply) {

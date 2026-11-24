@@ -10,14 +10,14 @@
 
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
-  ModalBuilder, TextInputBuilder, TextInputStyle,
+  ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType,
 } = require('discord.js');
 
 const kit = require('./setupKit');
 const lb = require('./leaderboard');
 const { audit } = require('./diagnostics');
 
-const { BLUE, role, onOff, noteBad, noteGood, backButton, roleSelect, respond } = kit;
+const { BLUE, role, chan, onOff, noteBad, noteGood, backButton, roleSelect, channelSelect, missingIn, respond } = kit;
 
 const PAGES = ['leaderboard'];
 const owns = (page) => PAGES.includes(page);
@@ -35,6 +35,7 @@ function viewLeaderboard(guild, user, note) {
   const embed = new EmbedBuilder().setColor(BLUE).setTitle('Voice leaderboard and rewards').setDescription([note,
     'The leaderboard is always available from the voice panel and `/leaderboard`. Time in the AFK channel is not counted.',
     '',
+    `**Scheduled post:** ${s.post.frequency === 'off' ? 'off' : `${lb.FREQUENCIES[s.post.frequency].label.toLowerCase()} in ${chan(s.post.channelId)}`}`,
     `**Rewards:** ${onOff(s.rewards)}`,
     `**Roles:** ${s.autoRoles ? 'the bot creates them' : 'you choose them'}`,
     s.tiers.length ? `\n**Ladder**\n${s.tiers.map(t => tierLine(t, s)).join('\n')}` : '\nNo ladder yet. Choose one below.',
@@ -53,7 +54,8 @@ function viewLeaderboard(guild, user, note) {
     new ActionRowBuilder().addComponents(
       button('setup:leaderboard:rewards', `Rewards: ${onOff(s.rewards)}`, s.rewards ? ButtonStyle.Success : ButtonStyle.Secondary),
       button('setup:leaderboard:auto', `Roles: ${s.autoRoles ? 'bot creates them' : 'I choose them'}`),
-      button('setup:leaderboard:apply', 'Apply to members now', ButtonStyle.Primary, !s.rewards)),
+      button('setup:leaderboard:apply', 'Apply to members now', ButtonStyle.Primary, !s.rewards),
+      button('setup:leaderboard:post', 'Scheduled post')),
   ];
   if (!s.autoRoles && s.tiers.length) {
     components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('setup:leaderboard:tierpick').setPlaceholder('Choose the role for a tier')
@@ -69,6 +71,28 @@ function viewTierRole(guild, index) {
   return {
     embeds: [new EmbedBuilder().setColor(BLUE).setTitle(`Role for ${t.hours} hours`).setDescription(`Choose the role members get at **${t.hours} hours** of voice time. My highest role must be above it.`)],
     components: [roleSelect(`setup:leaderboard:tierrole:${index}`, 'Choose a role', t.roleId), new ActionRowBuilder().addComponents(backButton('leaderboard'))],
+  };
+}
+
+function viewPost(guild, note) {
+  const { post } = lb.settings(guild.id);
+  const freq = new StringSelectMenuBuilder().setCustomId('setup:leaderboard:postfreq').setPlaceholder('How often?')
+    .addOptions([
+      { label: 'Off', value: 'off', default: post.frequency === 'off' },
+      { label: 'Weekly', value: 'weekly', description: 'Mondays, the top 10 of the last 7 days', default: post.frequency === 'weekly' },
+      { label: 'Monthly', value: 'monthly', description: 'The 1st of each month, the top 10 of the last 30 days', default: post.frequency === 'monthly' },
+    ]);
+  return {
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Scheduled leaderboard post').setDescription([note,
+      'Post the voice leaderboard automatically. Posts go out at 09:00 UTC. Turning it on starts with the next week or month, nothing is posted straight away.',
+      '',
+      `**Frequency:** ${post.frequency === 'off' ? 'off' : lb.FREQUENCIES[post.frequency].label.toLowerCase()}`,
+      `**Channel:** ${chan(post.channelId)}`].filter(Boolean).join('\n'))],
+    components: [
+      new ActionRowBuilder().addComponents(freq),
+      channelSelect('setup:leaderboard:postchan', 'Choose the channel', post.channelId, [ChannelType.GuildText, ChannelType.GuildAnnouncement]),
+      new ActionRowBuilder().addComponents(backButton('leaderboard')),
+    ],
   };
 }
 
@@ -107,6 +131,22 @@ async function handle(interaction, { guild, by, action, arg }) {
       return show(res.error ? noteBad(res.error) : noteGood(res.created.length ? `Created: ${res.created.join(', ')}.` : 'The bot now creates the roles.'));
     }
     return show(noteGood(s.autoRoles ? 'The bot will create the roles when you turn rewards on.' : 'Choose a role for each tier below.'));
+  }
+  if (action === 'post') return respond(interaction, viewPost(guild));
+  if (action === 'postfreq') {
+    const choice = interaction.values[0];
+    if (choice !== 'off' && !s.post.channelId) return respond(interaction, viewPost(guild, noteBad('Choose a channel first, then pick how often.')));
+    lb.setPost(guild.id, choice, null);
+    audit({ action: 'Setup: scheduled leaderboard', actor: by, guild, details: choice });
+    return respond(interaction, viewPost(guild, noteGood(choice === 'off' ? 'The scheduled post is off.' : `The ${choice} post is on. The first one goes out at the start of the next ${choice === 'weekly' ? 'week' : 'month'}.`)));
+  }
+  if (action === 'postchan') {
+    const channel = interaction.channels.first();
+    const missing = channel ? missingIn(channel, guild) : [];
+    if (missing.length) return respond(interaction, viewPost(guild, noteBad(`I can't post in ${channel}. I need: ${missing.join(', ')}.`)));
+    s.post.channelId = channel?.id || null; lb.save(guild.id, s);
+    audit({ action: 'Setup: scheduled leaderboard channel', actor: by, guild, details: channel ? `#${channel.name}` : 'cleared' });
+    return respond(interaction, viewPost(guild, noteGood(`Posts will go to ${channel}.`)));
   }
   if (action === 'tierpick') return respond(interaction, viewTierRole(guild, Number(interaction.values[0])));
   if (action === 'tierrole') {

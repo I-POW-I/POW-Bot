@@ -22,7 +22,7 @@ const safe = (text) => String(text).replace(/```/g, "'''");
 
 const STYLES = {
   changelog: {
-    label: 'Changelog', desc: 'Title and a coloured list of what was added, fixed and removed',
+    label: 'Changelog', emoji: '📋', desc: 'Title and a coloured list of what was added, fixed and removed',
     fields: [
       field('title', 'Title', { max: 80, placeholder: 'POW-Bot 5.3 update' }),
       field('added', 'Added or improved (one per line)', { long: true, required: false, placeholder: 'Voice leaderboard with role rewards' }),
@@ -39,24 +39,24 @@ const STYLES = {
     kind: 'changelog',
   },
   update: {
-    label: 'Update', desc: 'A general announcement about the bot',
+    label: 'Update', emoji: '📣', desc: 'A general announcement about the bot',
     fields: [field('title', 'Title', { max: 100 }), field('body', 'Message', { long: true, max: 1500 })],
-    render: (v) => ({ embeds: [new EmbedBuilder().setColor(COLOURS.update).setTitle(v.title).setDescription(v.body).setFooter({ text: 'POW-Bot' }).setTimestamp()] }),
+    render: (v) => ({ embeds: [new EmbedBuilder().setColor(COLOURS.update).setTitle(v.title).setDescription(v.body).setFooter({ text: 'POW-Bot' })] }),
     kind: 'update',
   },
   maintenance: {
-    label: 'Maintenance notice', desc: 'Planned downtime, with when and for how long',
+    label: 'Maintenance notice', emoji: '🔧', desc: 'Planned downtime, with when and for how long',
     fields: [
       field('when', 'When', { placeholder: 'Tonight at 23:00 (UK time)' }),
       field('duration', 'Expected duration', { placeholder: 'About 10 minutes' }),
       field('details', 'What members should know', { long: true, required: false, max: 800, placeholder: 'The bot will be offline briefly. Nothing needs to be done.' }),
     ],
     render: (v) => ({ embeds: [new EmbedBuilder().setColor(COLOURS.maintenance).setTitle('Scheduled maintenance')
-      .setDescription(v.details || null).addFields({ name: 'When', value: v.when, inline: true }, { name: 'Expected duration', value: v.duration, inline: true }).setFooter({ text: 'POW-Bot' }).setTimestamp()] }),
+      .setDescription(v.details || null).addFields({ name: 'When', value: v.when, inline: true }, { name: 'Expected duration', value: v.duration, inline: true }).setFooter({ text: 'POW-Bot' })] }),
     kind: 'maintenance',
   },
   incident: {
-    label: 'Incident update', desc: 'Something went wrong: investigating, identified, monitoring or resolved',
+    label: 'Incident update', emoji: '🚨', desc: 'Something went wrong: investigating, identified, monitoring or resolved',
     fields: [
       field('status', 'Status', { max: 20, placeholder: 'Investigating, Identified, Monitoring or Resolved' }),
       field('title', 'What happened', { max: 100 }),
@@ -66,18 +66,18 @@ const STYLES = {
       const status = ['investigating', 'identified', 'monitoring', 'resolved'].find(s => s.startsWith(String(v.status).trim().toLowerCase().slice(0, 4)) && String(v.status).trim().length >= 4);
       if (!status) return { error: 'Status must be Investigating, Identified, Monitoring or Resolved.' };
       const label = status[0].toUpperCase() + status.slice(1);
-      return { embeds: [new EmbedBuilder().setColor(COLOURS[status]).setTitle(v.title).setDescription(v.details).addFields({ name: 'Status', value: label, inline: true }).setFooter({ text: 'POW-Bot' }).setTimestamp()] };
+      return { embeds: [new EmbedBuilder().setColor(COLOURS[status]).setTitle(v.title).setDescription(v.details).addFields({ name: 'Status', value: label, inline: true }).setFooter({ text: 'POW-Bot' })] };
     },
     kind: 'incident',
   },
   event: {
-    label: 'Event or news', desc: 'Something happening, with a date',
+    label: 'Event or news', emoji: '🎉', desc: 'Something happening, with a date',
     fields: [field('title', 'Title', { max: 100 }), field('when', 'When', { required: false, placeholder: 'Saturday 14 December, 19:00' }), field('details', 'Details', { long: true, max: 1200 })],
-    render: (v) => ({ embeds: [new EmbedBuilder().setColor(COLOURS.event).setTitle(v.title).setDescription(v.details).addFields(...(v.when ? [{ name: 'When', value: v.when, inline: true }] : [])).setFooter({ text: 'POW-Bot' }).setTimestamp()] }),
+    render: (v) => ({ embeds: [new EmbedBuilder().setColor(COLOURS.event).setTitle(v.title).setDescription(v.details).addFields(...(v.when ? [{ name: 'When', value: v.when, inline: true }] : [])).setFooter({ text: 'POW-Bot' })] }),
     kind: 'event',
   },
   plain: {
-    label: 'Plain message', desc: 'Just text, no embed',
+    label: 'Plain message', emoji: '💬', desc: 'Just text, no embed',
     fields: [field('title', 'Heading (optional)', { required: false, max: 100 }), field('body', 'Message', { long: true, max: 1800 })],
     render: (v) => ({ content: [v.title ? `**${v.title}**` : null, v.body].filter(Boolean).join('\n') }),
     kind: 'plain',
