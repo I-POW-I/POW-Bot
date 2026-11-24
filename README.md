@@ -1,6 +1,6 @@
 # POW-Bot
 
-A Discord bot that stays in a voice channel 24/7, keeps call timers running, logs voice activity and message changes, and gives servers a leaderboard, alerts, verification and a live control panel. One `/setup` command configures everything for server staff, and one `/owner` command gives the bot owner full control.
+A Discord bot that stays in a voice channel 24/7, keeps call timers running, logs voice activity and message changes, and gives servers a leaderboard, alerts, verification and a live control panel. One `/setup` command configures everything for server owners/staff.
 
 ---
 
@@ -12,7 +12,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 - Logs for voice activity, deleted and edited messages, members and server changes
 - Welcome and leave cards, fully editable
 - Human verification with staff approval, quarantine and auto-removal
-- Streamer alerts (Twitch, Kick, YouTube), free game alerts (Epic, Steam) and game update alerts (Steam, Minecraft, Riot, Fortnite, Blizzard, any RSS feed)
+- Streamer alerts (Twitch, Kick, YouTube), free game alerts (Epic, Steam, GOG) and game update alerts (Steam, Minecraft, Riot, Fortnite, Blizzard, any RSS feed)
 - Owner tools: announcements, status editor, maintenance mode, alerts, weekly backups
 
 ---

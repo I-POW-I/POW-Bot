@@ -6,8 +6,9 @@
  * "Message logs" channel set in /setup, new messages are kept in the database for 7 days.
  *
  *  • only servers with a Message log channel set (nothing is stored anywhere else)
- *  • never webhooks, never the log channel itself
- *  • messages from other bots only when the server turns on "Log deleted bot messages" in /setup (never this bot's own)
+ *  • never webhooks, and never ordinary messages in the log channel itself
+ *  • messages from other bots only when the server turns on "Log deleted bot messages" in /setup
+ *  • this bot's own messages only inside the server's log channels, so a deleted log entry is noticed
  *  • a message is removed as soon as its deletion has been logged
  *  • everything older than 7 days is deleted automatically (hourly), plus a hard row cap
  *  • clearing the Message log channel in /setup (or the bot leaving) deletes that server's rows
@@ -25,11 +26,18 @@ const botLoggingOn = (guildId) => getGuildConfig(guildId).logBotMessages === tru
 
 const isOwnMessage = (message) => !!message.client?.user && message.author?.id === message.client.user.id;
 
-/** Whether a message from a bot should be kept and logged. */
+/** Is this one of the server's log channels (any log type)? */
+const isLogChannel = (guildId, channelId) => Object.values(getGuildConfig(guildId).logChannels || {}).includes(channelId);
+
+/** This bot's own post inside a log channel: kept so that deleting a log entry is itself logged. */
+const wantsOwn = (message) => isOwnMessage(message) && !!message.guild && isLogChannel(message.guild.id, message.channelId);
+
+/** Whether a message from another bot should be kept and logged. */
 const wantsBot = (message) => !!message.author?.bot && !message.webhookId && !isOwnMessage(message) && !!message.guild && botLoggingOn(message.guild.id);
 
 function shouldStore(message) {
   if (!message.guild || !message.author || message.webhookId) return false;
+  if (wantsOwn(message)) return !!getLogChannel(message.guild.id, 'messages');
   if (message.author.bot && !wantsBot(message)) return false;
   const logChannel = getLogChannel(message.guild.id, 'messages');
   return !!logChannel && message.channelId !== logChannel;
@@ -71,7 +79,7 @@ function updateContent(message, newContent) {
 
 function remove(id) { run('DELETE FROM message_store WHERE id = ?', [String(id)]); }
 /** Forget stored bot messages (when the server switches bot logging off). */
-function purgeBots(guildId) { run('DELETE FROM message_store WHERE guild_id = ? AND author_bot = 1', [String(guildId)]); }
+function purgeBots(guildId) { run('DELETE FROM message_store WHERE guild_id = ? AND author_bot = 1 AND author_id != ?', [String(guildId), String(require('./client').user?.id || '')]); }
 function purgeGuild(guildId) { run('DELETE FROM message_store WHERE guild_id = ?', [String(guildId)]); }
 
 /** Delete anything past retention, and trim to the row cap. */
@@ -92,4 +100,4 @@ function stop() { clearInterval(timer); timer = null; }
 
 const count = (guildId) => selectOne('SELECT COUNT(*) AS n FROM message_store' + (guildId ? ' WHERE guild_id = ?' : ''), guildId ? [guildId] : [])?.n || 0;
 
-module.exports = { botLoggingOn, wantsBot, describe, purgeBots, record, get, updateContent, remove, purgeGuild, purgeOld, start, stop, count, shouldStore, RETENTION_MS };
+module.exports = { botLoggingOn, wantsBot, isLogChannel, describe, purgeBots, record, get, updateContent, remove, purgeGuild, purgeOld, start, stop, count, shouldStore, RETENTION_MS };

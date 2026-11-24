@@ -2,6 +2,7 @@ const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { log }           = require('../src/logger');
 const { getLogChannel } = require('../src/guildConfig');
 const store             = require('../src/messageStore');
+const { duration } = require('../src/duration');
 
 async function getDeleter(guild, targetUserId, channelId, windowMs = 5000) {
   try {
@@ -18,14 +19,8 @@ async function getDeleter(guild, targetUserId, channelId, windowMs = 5000) {
 
 function getMessageAge(createdAt) {
   if (!createdAt) return null;
-  const ms      = Date.now() - createdAt.getTime();
-  const minutes = Math.floor(ms / 60000);
-  const hours   = Math.floor(minutes / 60);
-  const days    = Math.floor(hours / 24);
-  if (days > 0)    return `${days}d ${hours % 24}h ago`;
-  if (hours > 0)   return `${hours}h ${minutes % 60}m ago`;
-  if (minutes > 0) return `${minutes}m ago`;
-  return 'Just now';
+  const ms = Date.now() - createdAt.getTime();
+  return ms < 60_000 ? 'Just now' : `${duration(ms)} ago`;
 }
 
 module.exports = {
@@ -38,10 +33,11 @@ module.exports = {
 
     // What we know: the live message if it was cached, otherwise the copy kept in the database
     const stored = store.get(message.id);
-    // Other bots' messages are only logged when the server switched that on; this bot's own never are
+    // Other bots' messages are only logged when the server switched that on. This bot's own are logged only
+    // inside the server's log channels, so that deleting a log entry is noticed
     const fromBot = !!(message.author?.bot || stored?.author_bot);
-    const ownMessage = message.author?.id === message.client?.user?.id;
-    if (fromBot && (ownMessage || !store.botLoggingOn(guild.id))) { if (stored) store.remove(message.id); return; }
+    const ownMessage = (message.author?.id || stored?.author_id) === message.client?.user?.id;
+    if (fromBot && !(ownMessage ? store.isLogChannel(guild.id, message.channelId) : store.botLoggingOn(guild.id))) { if (stored) store.remove(message.id); return; }
 
     const channelId = getLogChannel(guild.id, 'messages');
     if (!channelId) return;
@@ -70,7 +66,7 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setColor(0xED4245)
-      .setTitle(fromBot ? '🗑️ Bot message deleted' : '🗑️ Message deleted');
+      .setTitle(ownMessage ? '🗑️ POW-Bot log deleted' : fromBot ? '🗑️ Bot message deleted' : '🗑️ Message deleted');
 
     if (author) {
       embed

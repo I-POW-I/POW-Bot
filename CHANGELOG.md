@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.4.1
+
+- Durations read naturally everywhere: `1 day 1 hour 10 minutes` instead of `34h 10m`
+- Voice panel redesigned: status, channel, members in voice, connected time, uptime and memory, with the top three this week at the bottom
+- Voice leaderboard and `/streamers` lists spaced out so they are easier to read
+- Free games: Epic, Steam and GOG each have their own on/off button in `/setup` > Free games. `/free-games` shows all three
+- Deleted POW-Bot log messages are now logged like any other deleted message
+
 ## 5.4.0
 
 - Game update posts redesigned: game name, linked title, large section headings, sub-headings and bullet lists, a small game icon, and the Read full notes and Open store page buttons

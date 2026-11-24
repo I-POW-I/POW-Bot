@@ -14,6 +14,7 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, PermissionFlags
 const { selectAll, selectOne } = require('./database');
 const { getGuildConfig, setGuildConfig } = require('./guildConfig');
 const { log } = require('./logger');
+const { duration } = require('./duration');
 
 const HOUR = 3_600_000, DAY = 86_400_000;
 const PERIODS = {
@@ -29,6 +30,9 @@ const PRESETS = {
 const MAX_TIERS = 8, MAX_HOURS = 10_000, TOP = 10, SCAN = 50;
 const BLUE = 0x5865F2;
 const MEDALS = ['🥇', '🥈', '🥉'];
+
+/** One entry per block, with space between them so a long list stays readable. */
+const rankLines = (ranking) => ranking.map((r, i) => `${MEDALS[i] || `**${i + 1}.**`} <@${r.id}>\n${duration(r.ms)}`).join('\n\n');
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -96,10 +100,6 @@ function totalFor(guild, userId, period = 'all') {
   return Number(row?.ms || 0);
 }
 
-function duration(ms) {
-  const m = Math.floor(ms / 60_000), h = Math.floor(m / 60);
-  return h > 0 ? `${h.toLocaleString('en-GB')}h ${m % 60}m` : `${m}m`;
-}
 
 /** The ranking, limited to people still in the server (and not bots). */
 async function board(guild, period) {
@@ -116,9 +116,9 @@ async function board(guild, period) {
 async function view(guild, period = 'all', viewerId = null) {
   if (!PERIODS[period]) period = 'all';
   const ranking = await board(guild, period);
-  const lines = ranking.slice(0, TOP).map((r, i) => `${MEDALS[i] || `**${i + 1}.**`} <@${r.id}> · ${duration(r.ms)}`);
+  const lines = ranking.slice(0, TOP);
   const embed = new EmbedBuilder().setColor(BLUE).setTitle(`🏆 Voice leaderboard: ${guild.name}`)
-    .setDescription(lines.length ? lines.join('\n') : 'No voice time recorded yet. Join a voice channel to get on the board.')
+    .setDescription(lines.length ? rankLines(lines) : 'No voice time recorded yet. Join a voice channel to get on the board.')
     .setFooter({ text: `${PERIODS[period].label} · the AFK channel is not counted` });
   if (viewerId) {
     const at = ranking.findIndex(r => r.id === viewerId);
@@ -154,10 +154,10 @@ function setPost(guildId, frequency, channelId) {
 async function postView(guild, frequency) {
   const { label, period } = FREQUENCIES[frequency];
   const ranking = (await board(guild, period)).slice(0, TOP);
-  const lines = ranking.map((r, i) => `${MEDALS[i] || `**${i + 1}.**`} <@${r.id}> · ${duration(r.ms)}`);
+  const lines = ranking;
   return {
     embeds: [new EmbedBuilder().setColor(BLUE).setTitle(`🏆 ${label} voice leaderboard`)
-      .setDescription(lines.length ? lines.join('\n') : 'Nobody spent time in voice this period.')
+      .setDescription(lines.length ? rankLines(lines) : 'Nobody spent time in voice this period.')
       .setFooter({ text: `${PERIODS[period].label} · the AFK channel is not counted` })],
     allowedMentions: { parse: [] },
   };
@@ -272,5 +272,5 @@ function start(client) {
 
 module.exports = {
   PERIODS, PRESETS, FREQUENCIES, MAX_TIERS, settings, setPost, periodKey, postView, postDue, save, ladder, presetLadder, parseLadder, defaultName, sortTiers,
-  totalFor, duration, view, ensureRoles, roleProblems, syncMember, syncAll, onVoiceLeave, start, canManageRoles,
+  totals, totalFor, duration, view, ensureRoles, roleProblems, syncMember, syncAll, onVoiceLeave, start, canManageRoles,
 };

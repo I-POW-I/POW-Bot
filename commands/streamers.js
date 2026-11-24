@@ -11,6 +11,18 @@ const { selectAll } = require('../src/database');
 
 const NAMES = { kick: 'Kick', twitch: 'Twitch', youtube: 'YouTube' };
 
+/** Two lines per streamer with a gap between them, cut at a whole entry if the list is long. */
+function listValue(list) {
+  const entries = list.map(s => `${s.is_live === 1 ? '🟢' : '⚫'} **${s.display_name || s.username}**${s.is_live === 1 ? ' · live now' : ''}\nAlerts in <#${s.discord_channel_id}>${s.role_id ? ` · pings <@&${s.role_id}>` : ''}`);
+  let out = '';
+  for (const [i, e] of entries.entries()) {
+    const next = out ? `${out}\n\n${e}` : e;
+    if (next.length > 960) return `${out}\n\n…and ${entries.length - i} more`;
+    out = next;
+  }
+  return out;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('streamers')
@@ -35,7 +47,7 @@ module.exports = {
       if (!list.length) continue;
       embed.addFields({
         name: NAMES[platform],
-        value: list.map(s => `**${s.display_name || s.username}** · ${s.is_live === 1 ? 'live now' : 'offline'} → <#${s.discord_channel_id}>${s.role_id ? ` · <@&${s.role_id}>` : ''}`).join('\n').slice(0, 1020),
+        value: listValue(list),
       });
     }
     return interaction.reply({ embeds: [embed], components, flags: [MessageFlags.Ephemeral] });

@@ -21,6 +21,7 @@
  */
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, Routes } = require('discord.js');
+const { duration } = require('./duration');
 
 const DEDUPE_WINDOW_MS = 10 * 60_000;
 const MAX_PER_MINUTE   = 6;
@@ -89,10 +90,7 @@ function redact(text) {
 
 const trunc = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
-function formatUptime(sec) {
-  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
-  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
-}
+const formatUptime = (sec) => duration(sec * 1000);
 
 function footerText() {
   let ram = '';

@@ -16,6 +16,7 @@ const { ActivityType } = require('discord.js');
 const globalConfig = require('./globalConfig');
 const { log } = require('./logger');
 const { selectOne } = require('./database');
+const { duration } = require('./duration');
 
 const TYPES = {
   playing:   { label: 'Playing',   type: ActivityType.Playing },
@@ -59,10 +60,7 @@ const settings = () => ({ status: STATUSES.includes(cfg().status) ? cfg().status
 
 const clampRotate = (n) => Math.min(MAX_ROTATE, Math.max(MIN_ROTATE, Math.round(Number(n)) || 30));
 
-function uptimeText() {
-  const s = Math.floor(process.uptime()), d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+const uptimeText = () => duration(process.uptime() * 1000, { short: true });
 
 let hoursCache = { at: 0, value: 0 };
 /** Total hours spent in voice across every server (looked up at most once a minute). */

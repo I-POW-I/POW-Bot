@@ -1,3 +1,4 @@
+const { duration } = require('./duration');
 /**
  * Stores metadata for every active voice connection.
  * Key: guildId
@@ -38,15 +39,7 @@ function getAllEntries() {
 }
 
 function formatUptime(joinedAt) {
-  const ms           = Date.now() - new Date(joinedAt).getTime();
-  const totalSeconds = Math.floor(ms / 1000);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`;
-  return `${s}s`;
+  return duration(Date.now() - new Date(joinedAt).getTime(), { seconds: true });
 }
 
 module.exports = { setConnection, clearConnection, incrementReconnect, getEntry, getAllEntries, formatUptime };

@@ -59,7 +59,7 @@ const PAGES = [
 
 // ── Status ────────────────────────────────────────────────────────────────────
 
-const FREE_IDS = "('epic', 'steam_free')";
+const FREE_IDS = require('./freeGames').SQL_IDS;
 
 function summary(guild) {
   const c  = getGuildConfig(guild.id);
@@ -79,7 +79,7 @@ function summary(guild) {
     { key: 'control', core: false, done: !!c.botControlRoleId,                     text: c.botControlRoleId ? role(c.botControlRoleId) : 'Only the server owner can control the bot' },
     { key: 'streamers', core: false, done: streamers > 0,                          text: streamers ? `${streamers} streamer(s) watched` : 'None yet' },
     { key: 'updates', core: false, done: games > 0,                                text: games ? `${games} game(s) watched` : 'None yet' },
-    { key: 'free',    core: false, done: free > 0,                                 text: free ? 'On' : 'Off' },
+    { key: 'free',    core: false, done: free > 0,                                 text: free ? `${free} on` : 'Off' },
     { key: 'leaderboard', core: false, done: lbs.rewards,                        text: lbs.rewards ? `Rewards on · ${lbs.tiers.length} tiers` : 'Leaderboard on · rewards off' },
     { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Not set (falls back to another channel)' },
   ];
@@ -344,7 +344,7 @@ async function postPanel(guild, channel, client, by) {
   if (existing.panelChannelId && existing.panelMessageId) {
     try { const old = await guild.channels.fetch(existing.panelChannelId); await (await old?.messages.fetch(existing.panelMessageId))?.delete(); } catch { /* already gone */ }
   }
-  const message = await channel.send({ embeds: [buildPanelEmbed(guild.id)], components: buildPanelButtons() });
+  const message = await channel.send({ embeds: [buildPanelEmbed(guild.id, guild)], components: buildPanelButtons(guild.id) });
   setGuildConfig(guild.id, { panelChannelId: channel.id, panelMessageId: message.id });
   log('INFO', 'Control panel deployed', { guild: guild.name, channel: channel.name, by: by.tag });
 }

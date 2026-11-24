@@ -8,6 +8,7 @@ const { log }                      = require('../src/logger');
 const { getLogChannel }            = require('../src/guildConfig');
 const { joinTimes, streamTimes }   = require('../src/memberTracker');
 const { startSession, endSession, startStreamSession, endStreamSession } = require('../src/database');
+const { duration } = require('../src/duration');
 
 const C = {
   join:           0x57F287,
@@ -31,15 +32,7 @@ function base(member, colour, title) {
     .setTitle(title);
 }
 
-function formatDuration(ms) {
-  const s   = Math.floor(ms / 1000);
-  const h   = Math.floor(s / 3600);
-  const m   = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}h ${m}m ${sec}s`;
-  if (m > 0) return `${m}m ${sec}s`;
-  return `${sec}s`;
-}
+const formatDuration = (ms) => duration(ms, { seconds: true });
 
 async function getMuteDeafMod(guild, userId, windowMs = 4000) {
   try {

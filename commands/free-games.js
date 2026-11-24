@@ -1,5 +1,5 @@
 /**
- * /free-games: shows the games that are free right now on Epic + Steam.
+ * /free-games: shows the games that are free right now on Epic, Steam and GOG.
  * Staff also get a button to the setup page (/setup -> Free game alerts) where the alerts are turned on and off.
  */
 
@@ -11,6 +11,8 @@ const {
 const { selectOne }                 = require('../src/database');
 const { getFreeGames }      = require('../src/platforms/epicGames');
 const { getSteamFreeGames, getAppDetails } = require('../src/platforms/steam');
+const { getGiveaways, buildGiveawayEmbed } = require('../src/platforms/giveaways');
+const { SQL_IDS } = require('../src/freeGames');
 
 const EPIC_COLOUR  = 0x0078F2;
 const STEAM_COLOUR = 0x1B2838;
@@ -104,17 +106,18 @@ async function showCurrent(interaction) {
   await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
   // Fetch both platforms in parallel
-  const [epicData, steamGames] = await Promise.all([
+  const [epicData, steamGames, gogGames] = await Promise.all([
     getFreeGames(),
     getSteamFreeGames(),
+    getGiveaways('gog').then(list => list || []),
   ]);
 
   const epicCurrent  = epicData.current  || [];
   const epicUpcoming = epicData.upcoming || [];
 
-  if (!epicCurrent.length && !steamGames.length) {
+  if (!epicCurrent.length && !steamGames.length && !gogGames.length) {
     return interaction.editReply({
-      content: 'No free games available right now on Epic or Steam. Check back soon!',
+      content: 'No free games available right now on Epic, Steam or GOG. Check back soon.',
     });
   }
 
@@ -165,6 +168,12 @@ async function showCurrent(interaction) {
     await send(embed, row);
   }
 
+  // ── GOG free games ────────────────────────────────────────────────────────
+  for (const game of gogGames) {
+    const { embed, row } = buildGiveawayEmbed(game, 'GOG');
+    await send(embed, row);
+  }
+
   // If nothing posted at all (shouldn't happen but just in case)
   if (firstReply) {
     await interaction.editReply({ content: 'No free games found right now.' });
@@ -174,7 +183,7 @@ async function showCurrent(interaction) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('free-games')
-    .setDescription('Games that are free right now on Epic Games Store and Steam')
+    .setDescription('Games that are free right now on Epic, Steam and GOG')
     .setContexts(InteractionContextType.Guild),
 
   async execute(interaction) {
@@ -182,7 +191,7 @@ module.exports = {
 
     // Staff also see where this server's alerts go, with a shortcut to the setup page
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return;
-    const row = selectOne("SELECT channel_id, role_id FROM game_subscriptions WHERE guild_id = ? AND app_id IN ('epic', 'steam_free')", [interaction.guildId]);
+    const row = selectOne(`SELECT channel_id, role_id FROM game_subscriptions WHERE guild_id = ? AND app_id IN ${SQL_IDS}`, [interaction.guildId]);
     return interaction.followUp({
       content: row ? `Free game alerts are posted in <#${row.channel_id}>${row.role_id ? ` and ping <@&${row.role_id}>` : ''}.` : 'Free game alerts are off for this server.',
       components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setup:free').setLabel('Manage free game alerts').setStyle(ButtonStyle.Primary))],

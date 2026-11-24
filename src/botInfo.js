@@ -21,6 +21,7 @@ const globalConfig = require('./globalConfig');
 const diagnostics  = require('./diagnostics');
 const { getStats }                  = require('./guildConfig');
 const { getServerTotals, formatMs, selectOne, selectAll } = require('./database');
+const { duration } = require('./duration');
 
 const HEALTHY = [VoiceConnectionStatus.Ready, VoiceConnectionStatus.Signalling, VoiceConnectionStatus.Connecting];
 const isConnected = (guildId) => { const c = getVoiceConnection(guildId); return !!c && HEALTHY.includes(c.state.status); };
@@ -29,10 +30,7 @@ const c  = (v) => `\`${v}\``;
 const ts = (ms) => `<t:${Math.floor(ms / 1000)}:R>`;
 const n  = (v) => Number(v || 0).toLocaleString('en-GB');
 
-function uptime(sec) {
-  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
-  return d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+const uptime = (sec) => duration(sec * 1000);
 
 function fileSize(file) {
   try { const b = fs.statSync(file).size; return b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`; }

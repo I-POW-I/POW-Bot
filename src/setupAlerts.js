@@ -47,7 +47,7 @@ function draftOf(guildId, userId, page) {
 const button = (id, label, style = ButtonStyle.Secondary, disabled = false) =>
   new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
 
-const FREE_IDS = "('epic', 'steam_free')";
+const FREE_IDS = require('./freeGames').SQL_IDS;
 
 // ── Streamers ─────────────────────────────────────────────────────────────────
 
@@ -350,34 +350,41 @@ async function handleUpdates(interaction, { guild, by, action, arg, client }) {
 
 // ── Free games ────────────────────────────────────────────────────────────────
 
-const FREE_NAMES = { epic: 'Epic Games Free Games', steam_free: 'Steam Free Games' };
+const { STORES, IDS } = require('./freeGames');
 const freeRows = (guildId) => selectAll(`SELECT * FROM game_subscriptions WHERE guild_id = ? AND app_id IN ${FREE_IDS}`, [guildId]);
 
+/** Point every followed store at one channel and role. The first time, all stores are switched on. */
 function saveFree(guild, channelId, roleId) {
-  for (const appId of ['epic', 'steam_free']) {
-    const ex = selectOne('SELECT id FROM game_subscriptions WHERE guild_id = ? AND app_id = ?', [guild.id, appId]);
-    if (ex) run('UPDATE game_subscriptions SET channel_id = ?, role_id = ? WHERE id = ?', [channelId, roleId, ex.id]);
-    else run('INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id) VALUES (?, ?, ?, ?, ?)', [guild.id, appId, FREE_NAMES[appId], channelId, roleId]);
+  const rows = freeRows(guild.id);
+  if (!rows.length) {
+    for (const appId of IDS) run('INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id) VALUES (?, ?, ?, ?, ?)', [guild.id, appId, STORES[appId].rowName, channelId, roleId]);
+    return;
   }
+  for (const row of rows) run('UPDATE game_subscriptions SET channel_id = ?, role_id = ? WHERE id = ?', [channelId, roleId, row.id]);
 }
 
 function viewFree(guild, note) {
-  const rows = freeRows(guild.id), current = rows[0];
+  const rows = freeRows(guild.id), current = rows[0], on = new Set(rows.map(r => r.app_id));
+  const stores = IDS.map(id => `${on.has(id) ? 'On' : 'Off'}: ${STORES[id].label}`);
   return {
     embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Free game alerts').setDescription([note,
-      `Channel: ${current ? chan(current.channel_id) : '*off*'}`,
+      `Channel: ${current ? chan(current.channel_id) : '*not set*'}`,
       `Ping: ${current?.role_id ? role(current.role_id) : '*none*'}`,
       '',
-      'Posts each new free game from the Epic Games Store and Steam as its own message. Pick a channel to turn it on.'].filter(v => v !== null && v !== undefined).join('\n'))],
+      '**Stores**',
+      ...stores,
+      '',
+      current ? 'Each new free game is posted as its own message. Use the buttons to follow or stop following a store.' : 'Pick a channel to start. Epic, Steam and GOG are all switched on, and you can turn any of them off.'].filter(v => v !== null && v !== undefined).join('\n'))],
     components: [
       channelSelect('setup:free:ch', 'Post free games in…', current?.channel_id, ALERT_CHANNELS),
       roleSelect('setup:free:role', 'Role to ping (optional)', current?.role_id, true),
-      new ActionRowBuilder().addComponents(button('setup:free:off', 'Turn off', ButtonStyle.Danger, !current), backButton()),
+      new ActionRowBuilder().addComponents(...IDS.map(id => button(`setup:free:store:${id}`, `${STORES[id].short}: ${on.has(id) ? 'on' : 'off'}`, on.has(id) ? ButtonStyle.Success : ButtonStyle.Secondary, !current))),
+      new ActionRowBuilder().addComponents(button('setup:free:off', 'Turn all off', ButtonStyle.Danger, !current), backButton()),
     ],
   };
 }
 
-async function handleFree(interaction, { guild, by, action }) {
+async function handleFree(interaction, { guild, by, action, arg }) {
   const show = (note) => respond(interaction, viewFree(guild, note));
   const current = freeRows(guild.id)[0];
 
@@ -395,6 +402,15 @@ async function handleFree(interaction, { guild, by, action }) {
     saveFree(guild, current.channel_id, r?.id || null);
     audit({ action: 'Free game ping changed', actor: by, guild, details: r ? `@${r.name}` : 'no ping' });
     return show(noteGood(r ? `Now pings ${r}.` : 'No longer pings a role.'));
+  }
+  if (action === 'store') {
+    if (!current || !STORES[arg]) return show(noteBad('Choose a channel first.'));
+    const existing = selectOne('SELECT id FROM game_subscriptions WHERE guild_id = ? AND app_id = ?', [guild.id, arg]);
+    if (existing) run('DELETE FROM game_subscriptions WHERE id = ?', [existing.id]);
+    else run('INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id) VALUES (?, ?, ?, ?, ?)', [guild.id, arg, STORES[arg].rowName, current.channel_id, current.role_id]);
+    audit({ action: `Free games on ${STORES[arg].label}`, actor: by, guild, details: existing ? 'off' : 'on' });
+    if (!freeRows(guild.id).length) return show(noteGood(`${STORES[arg].label} is off. No stores are followed, so free game alerts are off.`));
+    return show(noteGood(`${STORES[arg].label} is now ${existing ? 'off' : 'on'}.`));
   }
   if (action === 'off') {
     run(`DELETE FROM game_subscriptions WHERE guild_id = ? AND app_id IN ${FREE_IDS}`, [guild.id]);

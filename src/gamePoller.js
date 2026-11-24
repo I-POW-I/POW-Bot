@@ -3,7 +3,7 @@
  *
  * Game updates     — every 15 minutes (Steam, Minecraft, Riot, Fortnite, Blizzard, RSS — see src/updates/)
  * Epic free games  — every 6 hours
- * Steam free games — every 3 hours (increased from 6 to catch short-window promos)
+ * Steam and GOG free games — every 3 hours (short-window promos)
  */
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
@@ -14,6 +14,7 @@ const { getGiveaways, buildGiveawayEmbed } = require('./platforms/giveaways');
 const { fetchLatest, isUpdateKey } = require('./updates/sources');
 const { buildUpdateCard } = require('./updates/format');
 const { getFreeGames } = require('./platforms/epicGames');
+const { STORES } = require('./freeGames');
 
 const UPDATE_INTERVAL     = 15 * 60 * 1000;
 const EPIC_INTERVAL       =  6 * 60 * 60 * 1000;
@@ -141,7 +142,7 @@ const warnOnce = (key, message, ctx) => {
 /** Check every game-update subscription (one fetch per game, shared by all servers watching it). */
 async function pollUpdates(client) {
   if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
-  const subs = selectAll("SELECT * FROM game_subscriptions WHERE app_id != 'epic' AND app_id != 'steam_free'", []);
+  const subs = selectAll(`SELECT * FROM game_subscriptions WHERE app_id NOT IN ${require('./freeGames').SQL_IDS}`, []);
   const fetched = new Map();   // app_id → update | null | Error
 
   for (const sub of subs) {
@@ -214,24 +215,26 @@ async function checkEpicGames(client) {
   }
 }
 
-// ── Check Steam free games ─────────────────────────────────────────────────────
-async function checkSteamFreeGames(client) {
+// ── Steam and GOG free games ───────────────────────────────────────────────────
+/** Post new free-to-keep games for one store ('steam_free' or 'gog_free') to every server that follows it. */
+async function checkGiveaways(client, appId) {
   if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
-  const subs = selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', ['steam_free']);
+  const subs = selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', [appId]);
   if (!subs.length) return;
+  const { label, platform } = STORES[appId];
 
-  // 1) GamerPower (tracks Steam free-to-keep promotions reliably)   2) fall back to the old Steam store check
+  // GamerPower tracks free-to-keep promotions reliably. For Steam only, fall back to the store's own listing
   let games;
-  const giveaways = await getGiveaways('steam');
+  const giveaways = await getGiveaways(platform);
   if (giveaways) {
-    games = giveaways.map(g => ({ key: g.id, build: async () => buildGiveawayEmbed(g, 'Steam') }));
-  } else {
-    warnOnce('gamerpower', 'GamerPower unreachable — using the direct Steam check for free games', {});
+    games = giveaways.map(g => ({ key: g.id, build: async () => buildGiveawayEmbed(g, label) }));
+  } else if (appId === 'steam_free') {
+    warnOnce('gamerpower', 'GamerPower unreachable, using the direct Steam check for free games', {});
     games = (await getSteamFreeGames().catch(() => [])).map(g => ({
       key: String(g.appid),
       build: async () => buildSteamFreeEmbed(g, await getAppDetails(g.appid).catch(() => null)),
     }));
-  }
+  } else { warnOnce('gamerpower', 'GamerPower unreachable, skipping GOG free games', {}); return; }
   if (!games.length) return;
 
   for (const sub of subs) {
@@ -252,9 +255,9 @@ async function checkSteamFreeGames(client) {
 
       const allSeen = [...new Set([...seenIds, ...games.map(g => g.key)])].slice(-200).join(',');
       run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [allSeen, sub.id]);
-      log('INFO', `Posted ${newGames.length} Steam free game(s)`, { guild: sub.guild_id });
+      log('INFO', `Posted ${newGames.length} ${label} free game(s)`, { guild: sub.guild_id });
     } catch (err) {
-      log('WARN', 'Failed to post Steam free games', { err });
+      log('WARN', `Failed to post ${label} free games`, { err });
     }
   }
 }
@@ -275,11 +278,12 @@ function startGamePoller(client) {
     setInterval(() => checkEpicGames(client), EPIC_INTERVAL);
   }, 30000);
 
-  // Steam free games — every 3 hours
+  // Steam and GOG free games — every 3 hours
   setTimeout(() => {
-    checkSteamFreeGames(client);
-    setInterval(() => checkSteamFreeGames(client), STEAM_FREE_INTERVAL);
+    const both = () => { checkGiveaways(client, 'steam_free'); checkGiveaways(client, 'gog_free'); };
+    both();
+    setInterval(both, STEAM_FREE_INTERVAL);
   }, 40000);
 }
 
-module.exports = { startGamePoller, pollUpdates, checkSteamFreeGames, postUpdate };
+module.exports = { startGamePoller, pollUpdates, checkGiveaways, postUpdate };

@@ -59,7 +59,7 @@ const PAGES = {
 
 // ── Keys ──────────────────────────────────────────────────────────────────────
 
-const FREE_KEYS = new Set(['epic', 'steam_free']);
+const FREE_KEYS = new Set(require('../freeGames').IDS);
 
 /** app_id stored in the database → { source, value } (source null = a free-games row). */
 function parseKey(appId) {

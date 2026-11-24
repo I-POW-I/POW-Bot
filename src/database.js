@@ -10,6 +10,7 @@
 const path    = require('path');
 const fs      = require('fs');
 const { log } = require('./logger');
+const { duration } = require('./duration');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_PATH  = path.join(DATA_DIR, 'pow-bot.db');
@@ -312,16 +313,7 @@ function calcStreak(userId, guildId) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-function formatMs(ms) {
-  if (!ms || ms <= 0) return '0m';
-  const totalS = Math.floor(ms / 1000);
-  const d = Math.floor(totalS / 86400);
-  const h = Math.floor((totalS % 86400) / 3600);
-  const m = Math.floor((totalS % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h ${m}m`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
+const formatMs = (ms) => duration(ms);
 
 function startSession(userId, guildId, channelId, channelName) {
   run(

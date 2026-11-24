@@ -1,7 +1,7 @@
 /**
  * Free-to-keep giveaways via GamerPower (https://www.gamerpower.com/api) — free, no API key.
  *
- *   getGiveaways('steam')  → [{ id, title, worth, image, description, instructions, url, endDate, platforms }]
+ *   getGiveaways('steam' | 'gog')  → [{ id, title, worth, image, description, instructions, url, endDate, platforms }]
  *                            or null when GamerPower can't be reached (callers fall back to the old Steam check)
  */
 
@@ -34,9 +34,11 @@ async function getGiveaways(platform = 'steam', type = 'game') {
   } catch { return null; }
 }
 
+const COLOURS = { Steam: 0x1B2838, GOG: 0x86328A };
+
 function buildGiveawayEmbed(g, store = 'Steam') {
   const embed = new EmbedBuilder()
-    .setColor(0x1B2838)
+    .setColor(COLOURS[store] || 0x1B2838)
     .setAuthor({ name: `${store} · Free to keep` })
     .setTitle(truncate(g.title, 250))
     .setDescription(truncate(String(g.description).replace(/\s+/g, ' ').trim(), 350) || null)

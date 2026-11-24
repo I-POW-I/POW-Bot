@@ -9,6 +9,7 @@ const store                                = require('./connectionStore');
 const { getGuildConfig } = require('./guildConfig');
 const { getUserStats, formatMs, getStreamStats }  = require('./database');
 const { joinTimes }           = require('./memberTracker');
+const { duration } = require('./duration');
 
 const PRESENCE_INTERVAL  = 60 * 1000;
 
@@ -25,24 +26,10 @@ function isConnected(guildId) {
   return conn && HEALTHY.includes(conn.state.status);
 }
 
-function getProcessUptime() {
-  const s = Math.floor(process.uptime());
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+const getProcessUptime = () => duration(process.uptime() * 1000);
 
 /** Format ms with seconds — for live session durations. */
-function formatLive(ms) {
-  if (!ms || ms <= 0) return '0s';
-  const totalS = Math.floor(ms / 1000);
-  const h   = Math.floor(totalS / 3600);
-  const m   = Math.floor((totalS % 3600) / 60);
-  const sec = totalS % 60;
-  if (h > 0) return `${h}h ${m}m ${sec}s`;
-  if (m > 0) return `${m}m ${sec}s`;
-  return `${sec}s`;
-}
+const formatLive = (ms) => duration(ms, { seconds: true });
 
 // ── Presence ──────────────────────────────────────────────────────────────────
 // The rotating status is owned by presence.js (managed by the bot owner in /owner).
@@ -67,57 +54,68 @@ function buildPanelEmbed(guildId, guild = null) {
   const isGhost   = entry && !getVoiceConnection(guildId);
 
   // Same RAM reading as the Discloud dashboard (see src/system.js); falls back to the process's own RSS
-  const memMB     = `\`${require('./system').formatMemory()}\``;
+  const memMB     = require('./system').formatMemory();
   let colour, statusLine, channelLine, vcUptime, processUp, membersInVc;
 
 
   if (connected && entry) {
     colour      = 0x57F287;
-    statusLine  = 'Connected';
-    channelLine = `**${entry.channelName}**`;
+    statusLine  = '🟢 Online';
+    channelLine = entry.channelName;
     vcUptime    = store.formatUptime(entry.joinedAt);
     processUp   = getProcessUptime();
 
   // Live member count in the VC (excluding bots)
     if (guild) {
       const ch = guild.channels.cache.get(entry.channelId);
-      membersInVc = ch ? `${ch.members.filter(m => !m.user.bot).size}` : '0';
+      const count = ch ? ch.members.filter(m => !m.user.bot).size : 0;
+      membersInVc = `${count} ${count === 1 ? 'member' : 'members'}`;
     } else {
-      membersInVc = '0';
+      membersInVc = '0 members';
     }
 
   } else if (isGhost) {
     colour      = 0xFEE75C;
-    statusLine  = 'Idle';
+    statusLine  = '🟡 Idle';
     channelLine = entry.channelName;
     vcUptime    = '—';
     processUp   = getProcessUptime();
-    membersInVc = '0';
+    membersInVc = '0 members';
   } else {
     colour      = 0xED4245;
-    statusLine  = 'Sleeping...';
+    statusLine  = '🔴 Offline';
     channelLine = '—';
     vcUptime    = '—';
     processUp   = getProcessUptime();
-    membersInVc = '0';
+    membersInVc = '0 members';
   }
 
-  return new EmbedBuilder()
-    .setTitle('POW-Bot')
+  const embed = new EmbedBuilder()
+    .setTitle('Voice panel')
     .setColor(colour)
     .addFields(
-      // Row 1: System Metrics
       { name: 'Status', value: statusLine, inline: true },
-      { name: 'Uptime', value: `\`${processUp}\``, inline: true },
+      { name: 'Channel', value: channelLine, inline: true },
+      { name: 'In voice', value: membersInVc, inline: true },
+      { name: 'Connected for', value: vcUptime, inline: true },
+      { name: 'Bot uptime', value: processUp, inline: true },
       { name: 'Memory', value: memMB, inline: true },
-      
-      // Row 2: Voice Channel Session Details
-      { name: 'Current VC', value: channelLine, inline: true },
-      { name: 'VC Uptime', value: `\`${vcUptime}\``, inline: true },
-      { name: 'Members In VC', value: `\`${membersInVc}\``, inline: true }
     )
     .setFooter({ text: 'Last updated' })
     .setTimestamp();
+
+  const top = guild ? topThisWeek(guild) : null;
+  if (top) embed.addFields({ name: 'Top this week', value: top, inline: false });
+  return embed;
+}
+
+/** The three people with the most voice time in the last 7 days, or null when nobody has any. */
+function topThisWeek(guild) {
+  const rows = require('./leaderboard').totals(guild, 'week', 8)
+    .map(r => ({ ...r, member: guild.members.cache.get(r.user_id) })).filter(r => r.member && !r.member.user.bot).slice(0, 3);
+  if (!rows.length) return null;
+  const medals = ['🥇', '🥈', '🥉'];
+  return rows.map((r, i) => `${medals[i]} **${r.member.displayName}** · ${duration(Number(r.ms))}`).join('\n');
 }
 
 // ── Member profile embed ──────────────────────────────────────────────────────
@@ -130,9 +128,7 @@ function buildMemberEmbed(member, guild) {
   let timeInServer = null;
   if (member.joinedAt) {
     const diff = Date.now() - member.joinedTimestamp;
-    const d    = Math.floor(diff / 86400000);
-    const h    = Math.floor((diff % 86400000) / 3600000);
-    timeInServer = d > 0 ? `${d}d ${h}h` : `${h}h`;
+    timeInServer = duration(diff);
   }
 
   const ageMs     = Date.now() - user.createdAt.getTime();
@@ -231,7 +227,8 @@ function buildMemberEmbed(member, guild) {
 
 // ── Panel buttons ─────────────────────────────────────────────────────────────
 
-function buildPanelButtons() {
+function buildPanelButtons(guildId = null) {
+  const inCall = guildId ? isConnected(guildId) : true;   // Leave is greyed out when there is nothing to leave
   // Row 1: Connection Basics
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -243,6 +240,7 @@ function buildPanelButtons() {
       .setCustomId('bot_leave')
       .setLabel('Leave')
       .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!inCall)
   );
 
   // Row 2: Identity & Discovery
@@ -308,7 +306,7 @@ async function updatePanel(client) {
       const updatedEmbed = buildPanelEmbed(guild.id, guild);
       await message.edit({ 
         embeds: [updatedEmbed],
-        components: buildPanelButtons() // Keeps buttons interactive on update
+        components: buildPanelButtons(guild.id)
       });
     } catch (err) {
       log('WARN', 'Could not update panel', { guild: guild.name, err });

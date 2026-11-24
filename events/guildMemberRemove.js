@@ -3,6 +3,7 @@ const { log }                    = require('../src/logger');
 const { getLogChannel, getGuildConfig } = require('../src/guildConfig');
 const { generateCard }           = require('../src/imageGenerator');
 const cards                      = require('../src/cards');
+const { duration } = require('../src/duration');
 
 async function getKicker(guild, userId, windowMs = 5000) {
   try {
@@ -63,12 +64,7 @@ module.exports = {
 
       const user    = member.user;
       const joinedAt = member.joinedAt;
-      const timeInServer = joinedAt ? (() => {
-        const diff = Date.now() - joinedAt.getTime();
-        const d    = Math.floor(diff / 86400000);
-        const h    = Math.floor((diff % 86400000) / 3600000);
-        return d > 0 ? `${d}d ${h}h` : `${h}h`;
-      })() : 'Unknown';
+      const timeInServer = joinedAt ? duration(Date.now() - joinedAt.getTime()) : 'Unknown';
 
       const roles = member.roles?.cache
         .filter(r => r.id !== guild.id)

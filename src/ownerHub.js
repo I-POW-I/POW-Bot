@@ -34,6 +34,7 @@ const { buildOwnerEmbeds } = require('./botInfo');
 const { audit }    = require('./diagnostics');
 const { log }      = require('./logger');
 const { selectOne, formatMs } = require('./database');
+const { duration } = require('./duration');
 
 const BLUE = 0x5865F2, RED = 0xED4245, AMBER = 0xFAA61A;
 const ephemeral = [MessageFlags.Ephemeral];
@@ -88,10 +89,7 @@ const say = (interaction, content) => interaction.reply({ content, flags: epheme
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 
-function uptimeText(sec) {
-  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
-  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+const uptimeText = (sec) => duration(sec * 1000);
 
 function viewHome(client, userId, note) {
   const owner = isOwner(userId);
