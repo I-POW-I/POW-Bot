@@ -1,6 +1,6 @@
 # POW-Bot
 
-A Discord bot that stays in a voice channel 24/7, keeps call timers running, logs voice activity and message changes, and gives servers a leaderboard, alerts, verification and a live control panel. One `/setup` command configures everything for server owners/staff.
+A Discord bot that stays in a voice channel 24/7, keeps call timers running, logs voice activity and message changes, and gives servers a leaderboard, alerts, verification and a live control panel. One `/setup` command configures everything for server staff, and one `/owner` command gives the bot owner full control.
 
 ---
 
@@ -35,19 +35,6 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 
 ---
 
-## Discord Developer Portal
-
-**Installation / invite**
-
-- Scopes: `bot` and `applications.commands`
-- Permissions integer: `271707266` (View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Connect, Speak, Manage Roles, Kick Members, Manage Messages, View Audit Log)
-- The bot never needs Administrator.
-
-**Bot tab**
-
-- Public Bot: on. Require OAuth2 Code Grant: off.
-- Privileged intents: **Server Members** and **Message Content** on. Both need approval once the bot is in 75 servers.
-
 **General Information**
 
 - Terms of Service URL and Privacy Policy URL: where `docs/TERMS.md` and `docs/PRIVACY.md` are published.
@@ -68,7 +55,7 @@ What is stored and for how long:
 
 - Stored message text: 7 days
 - Join and leave history: 90 days
-- Voice and live sessions: 1 year (voice time is then kept as a total)
+- Voice and live stats: kept until the bot leaves the server, unless the server turns on the yearly reset (1 January)
 - Everything for a server is deleted when the bot is removed from it
 - Members can delete their own data with `/privacy`
 

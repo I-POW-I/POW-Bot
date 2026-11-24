@@ -50,6 +50,8 @@ module.exports = {
         value: listValue(list),
       });
     }
-    return interaction.reply({ embeds: [embed], components, flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ embeds: [embed] });
+    // The manage button is only for staff, so it is sent privately
+    if (staff) await interaction.followUp({ content: 'Add or remove streamers:', components, flags: [MessageFlags.Ephemeral] });
   },
 };

@@ -36,6 +36,7 @@ function viewLeaderboard(guild, user, note) {
     'The leaderboard is always available from the voice panel and `/leaderboard`. Time in the AFK channel is not counted.',
     '',
     `**Scheduled post:** ${s.post.frequency === 'off' ? 'off' : `${lb.FREQUENCIES[s.post.frequency].label.toLowerCase()} in ${chan(s.post.channelId)}`}`,
+    `**Yearly reset:** ${s.yearlyReset ? 'on, stats start fresh every 1 January' : 'off, stats are kept until the bot leaves the server'}`,
     `**Rewards:** ${onOff(s.rewards)}`,
     `**Roles:** ${s.autoRoles ? 'the bot creates them' : 'you choose them'}`,
     s.tiers.length ? `\n**Ladder**\n${s.tiers.map(t => tierLine(t, s)).join('\n')}` : '\nNo ladder yet. Choose one below.',
@@ -56,6 +57,8 @@ function viewLeaderboard(guild, user, note) {
       button('setup:leaderboard:auto', `Roles: ${s.autoRoles ? 'bot creates them' : 'I choose them'}`),
       button('setup:leaderboard:apply', 'Apply to members now', ButtonStyle.Primary, !s.rewards),
       button('setup:leaderboard:post', 'Scheduled post')),
+    new ActionRowBuilder().addComponents(
+      button('setup:leaderboard:yearly', `Yearly reset: ${onOff(s.yearlyReset)}`, s.yearlyReset ? ButtonStyle.Success : ButtonStyle.Secondary)),
   ];
   if (!s.autoRoles && s.tiers.length) {
     components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('setup:leaderboard:tierpick').setPlaceholder('Choose the role for a tier')
@@ -131,6 +134,23 @@ async function handle(interaction, { guild, by, action, arg }) {
       return show(res.error ? noteBad(res.error) : noteGood(res.created.length ? `Created: ${res.created.join(', ')}.` : 'The bot now creates the roles.'));
     }
     return show(noteGood(s.autoRoles ? 'The bot will create the roles when you turn rewards on.' : 'Choose a role for each tier below.'));
+  }
+  if (action === 'yearly') {
+    if (s.yearlyReset) {
+      await interaction.deferUpdate();
+      s.yearlyReset = false; lb.save(guild.id, s);
+      audit({ action: 'Setup: yearly voice reset', actor: by, guild, details: 'off' });
+      return show(noteGood('Yearly reset is off. Stats are kept until the bot leaves the server.'));
+    }
+    return respond(interaction, { embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('Turn on the yearly reset?').setDescription(
+      `On **1 January (UTC)** all voice and live stats from before the new year are deleted, so the leaderboard starts fresh.\n\n**Turning it on now deletes everything recorded before 1 January ${new Date().getUTCFullYear()}** the next time the bot checks (within a few hours). This can't be undone.`)],
+      components: [new ActionRowBuilder().addComponents(button('setup:leaderboard:yearlyon', 'Turn on the yearly reset', ButtonStyle.Danger), backButton('leaderboard'))] });
+  }
+  if (action === 'yearlyon') {
+    await interaction.deferUpdate();
+    s.yearlyReset = true; lb.save(guild.id, s);
+    audit({ action: 'Setup: yearly voice reset', actor: by, guild, details: 'on' });
+    return show(noteGood('Yearly reset is on. Stats start fresh every 1 January.'));
   }
   if (action === 'post') return respond(interaction, viewPost(guild));
   if (action === 'postfreq') {

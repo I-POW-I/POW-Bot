@@ -9,7 +9,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { log }            = require('./logger');
 const { selectAll, run } = require('./database');
-const { getAppDetails, getSteamFreeGames } = require('./platforms/steam');
+const { getSteamFree, buildSteamFreeEmbed } = require('./platforms/steamFree');
 const { getGiveaways, buildGiveawayEmbed } = require('./platforms/giveaways');
 const { fetchLatest, isUpdateKey } = require('./updates/sources');
 const { buildUpdateCard } = require('./updates/format');
@@ -21,7 +21,6 @@ const EPIC_INTERVAL       =  6 * 60 * 60 * 1000;
 const STEAM_FREE_INTERVAL =  3 * 60 * 60 * 1000; // 3h — catches shorter promotions
 
 const EPIC_COLOUR  = 0x0078F2;
-const STEAM_COLOUR = 0x1B2838;
 
 function formatTagLine(tags) {
   if (!tags?.length) return null;
@@ -72,48 +71,6 @@ function buildEpicGameEmbed(game) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setLabel('Claim free game')
-      .setURL(game.url)
-      .setStyle(ButtonStyle.Link)
-  );
-  return { embed, row };
-}
-
-// ── Steam free game embed — one per game ─────────────────────────────────────
-function buildSteamFreeEmbed(game, details) {
-  const origFormatted = details?.price?.initial
-    ? `~~$${(details.price.initial / 100).toFixed(2)}~~`
-    : null;
-  const expiryLine = game.discountExpiry
-    ? `Free until <t:${game.discountExpiry}:D>`
-    : 'Free to Keep';
-
-  const desc = [
-    details?.description || null,
-    '',
-    [origFormatted, `**FREE** — ${expiryLine}`].filter(Boolean).join(' '),
-    '',
-    `[Open in browser ↗](${game.url})`,
-  ].filter(v => v !== null).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setColor(STEAM_COLOUR)
-    .setTitle(game.name)
-    .setURL(game.url)
-    .setDescription(desc)
-    .setFooter({ text: 'Steam • Free Game' });
-
-  const fields = [];
-  if (details?.releaseDate) fields.push({ name: 'Released',  value: details.releaseDate, inline: true });
-  if (details?.platforms)   fields.push({ name: 'Platforms', value: details.platforms,   inline: true });
-  if (details?.reviews)     fields.push({ name: 'Reviews',   value: details.reviews,     inline: true });
-  if (fields.length) embed.addFields(fields);
-
-  const img = details?.screenshots?.[0] || game.headerImage;
-  if (img) embed.setImage(img);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setLabel('Claim on Steam')
       .setURL(game.url)
       .setStyle(ButtonStyle.Link)
   );
@@ -223,18 +180,15 @@ async function checkGiveaways(client, appId) {
   if (!subs.length) return;
   const { label, platform } = STORES[appId];
 
-  // GamerPower tracks free-to-keep promotions reliably. For Steam only, fall back to the store's own listing
+  // Steam comes straight from the Steam store. GOG uses GamerPower, which lists GOG's own giveaways
   let games;
-  const giveaways = await getGiveaways(platform);
-  if (giveaways) {
+  if (appId === 'steam_free') {
+    games = (await getSteamFree()).map(g => ({ key: g.key, build: async () => buildSteamFreeEmbed(g) }));
+  } else {
+    const giveaways = await getGiveaways(platform);
+    if (!giveaways) { warnOnce('gamerpower', 'GamerPower unreachable, skipping GOG free games', {}); return; }
     games = giveaways.map(g => ({ key: g.id, build: async () => buildGiveawayEmbed(g, label) }));
-  } else if (appId === 'steam_free') {
-    warnOnce('gamerpower', 'GamerPower unreachable, using the direct Steam check for free games', {});
-    games = (await getSteamFreeGames().catch(() => [])).map(g => ({
-      key: String(g.appid),
-      build: async () => buildSteamFreeEmbed(g, await getAppDetails(g.appid).catch(() => null)),
-    }));
-  } else { warnOnce('gamerpower', 'GamerPower unreachable, skipping GOG free games', {}); return; }
+  }
   if (!games.length) return;
 
   for (const sub of subs) {

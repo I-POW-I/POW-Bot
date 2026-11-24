@@ -1,3 +1,4 @@
+
 # POW-Bot privacy policy
 
 Last updated: 24 November 2026
@@ -9,8 +10,8 @@ This explains what POW-Bot stores, why, for how long, and how to have it removed
 | What | Why | How long |
 |---|---|---|
 | **Server settings**: channel IDs, role IDs, and the options chosen in `/setup` | So the features work | Until the bot is removed from the server |
-| **Voice sessions**: your Discord user ID, the server, the voice channel and when you joined and left | Voice stats, streaks, the leaderboard and role rewards | 1 year in detail. After that the sessions are merged into one running total per channel, with no dates |
-| **Live sessions**: when you went live in a voice channel | Voice stats | 1 year |
+| **Voice sessions**: your Discord user ID, the server, the voice channel and when you joined and left | Voice stats, streaks, the leaderboard and role rewards | Kept until the bot is removed from the server. A server can choose a yearly reset, which deletes everything from before 1 January |
+| **Live sessions**: when you went live in a voice channel | Voice stats | Same as voice sessions |
 | **Join and leave history**: user ID, server and time | Member overview and verification risk checks | 90 days |
 | **Recent messages**: text, attachment names, author ID and tag | Only in servers that switched on the deleted and edited message logs. Lets the log show what was removed | 7 days |
 | **Watched streamers, games and feeds** | Alerts | Until the server removes them or the bot leaves |

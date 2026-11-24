@@ -10,12 +10,11 @@ const {
 } = require('discord.js');
 const { selectOne }                 = require('../src/database');
 const { getFreeGames }      = require('../src/platforms/epicGames');
-const { getSteamFreeGames, getAppDetails } = require('../src/platforms/steam');
+const { getSteamFree, buildSteamFreeEmbed } = require('../src/platforms/steamFree');
 const { getGiveaways, buildGiveawayEmbed } = require('../src/platforms/giveaways');
 const { SQL_IDS } = require('../src/freeGames');
 
 const EPIC_COLOUR  = 0x0078F2;
-const STEAM_COLOUR = 0x1B2838;
 
 function epicEmbed(game) {
   const endsAt   = game.endsAt
@@ -61,54 +60,13 @@ function epicEmbed(game) {
   return { embed, row };
 }
 
-function steamEmbed(game, details) {
-  const origFormatted = details?.price?.initial
-    ? `~~$${(details.price.initial / 100).toFixed(2)}~~`
-    : null;
-  const expiryLine = game.discountExpiry
-    ? `Free until <t:${game.discountExpiry}:D>`
-    : 'Free to Keep';
-
-  const desc = [
-    details?.description || null,
-    '',
-    [origFormatted, `**FREE** — ${expiryLine}`].filter(Boolean).join(' '),
-    '',
-    `[Open in browser ↗](${game.url})`,
-  ].filter(v => v !== null).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setColor(STEAM_COLOUR)
-    .setTitle(game.name)
-    .setURL(game.url)
-    .setDescription(desc)
-    .setFooter({ text: 'Steam • Free Game' });
-
-  const fields = [];
-  if (details?.releaseDate) fields.push({ name: 'Released',  value: details.releaseDate, inline: true });
-  if (details?.platforms)   fields.push({ name: 'Platforms', value: details.platforms,   inline: true });
-  if (fields.length) embed.addFields(fields);
-
-  const img = details?.screenshots?.[0] || game.headerImage;
-  if (img) embed.setImage(img);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setLabel('Claim on Steam')
-      .setURL(game.url)
-      .setStyle(ButtonStyle.Link)
-  );
-
-  return { embed, row };
-}
-
 async function showCurrent(interaction) {
   await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
   // Fetch both platforms in parallel
   const [epicData, steamGames, gogGames] = await Promise.all([
     getFreeGames(),
-    getSteamFreeGames(),
+    getSteamFree(),
     getGiveaways('gog').then(list => list || []),
   ]);
 
@@ -163,8 +121,7 @@ async function showCurrent(interaction) {
 
   // ── Steam free games ──────────────────────────────────────────────────────
   for (const game of steamGames) {
-    const details = await getAppDetails(game.appid).catch(() => null);
-    const { embed, row } = steamEmbed(game, details);
+    const { embed, row } = buildSteamFreeEmbed(game);
     await send(embed, row);
   }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.4.2
+
+- `/botinfo` is now a short public post for everyone: status, latency, uptime, version and whether the bot is in voice there. The bot owner also gets the full system details, privately. Fixes the "Unable to show bot info" error
+- `/leaderboard`, `/streamers` and `/botinfo` are posted in the channel. `/leaderboard` has a period option (all time, 7 or 30 days)
+- Voice and live stats are kept until the bot leaves a server. A server can opt in to a yearly reset on 1 January in `/setup` > Voice leaderboard
+- Steam free games now come straight from the Steam store, in the same layout as PatchBot: price, release date, reviews and platforms. Games that need another account are no longer posted
+- Game updates: **Send latest post as a test** in `/setup` > Game updates > Manage alerts, and the add confirmation points to it
+
 ## 5.4.1
 
 - Durations read naturally everywhere: `1 day 1 hour 10 minutes` instead of `34h 10m`

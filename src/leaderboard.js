@@ -42,11 +42,11 @@ function settings(guildId) {
   const s = getGuildConfig(guildId).leaderboard || {};
   const p = s.post || {};
   return {
-    rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: Array.isArray(s.tiers) ? s.tiers : [],
+    yearlyReset: !!s.yearlyReset, rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: Array.isArray(s.tiers) ? s.tiers : [],
     post: { frequency: FREQUENCIES[p.frequency] ? p.frequency : 'off', channelId: p.channelId || null, lastKey: p.lastKey || null },
   };
 }
-const save = (guildId, s) => setGuildConfig(guildId, { leaderboard: { rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: s.tiers, post: s.post } });
+const save = (guildId, s) => setGuildConfig(guildId, { leaderboard: { yearlyReset: !!s.yearlyReset, rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: s.tiers, post: s.post } });
 
 const defaultName = (hours) => `Voice ${hours}h`;
 const sortTiers = (tiers) => [...tiers].sort((a, b) => a.hours - b.hours);

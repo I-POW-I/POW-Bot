@@ -70,6 +70,15 @@ async function getSteamFreeGames() {
   } catch (err) { log('WARN', 'Steam free games check failed', { err }); return []; }
 }
 
+/** Review summary for a game: { label: 'Very Positive', positive, total } */
+async function getReviews(appId) {
+  try {
+    const data = await steamFetch(`https://store.steampowered.com/appreviews/${appId}?json=1&language=all&purchase_type=all&num_per_page=0`);
+    const q = data?.query_summary;
+    return q ? { label: q.review_score_desc || null, positive: q.total_positive || 0, total: q.total_reviews || 0 } : null;
+  } catch { return null; }
+}
+
 function getHeaderImage(appId) { return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`; }
 
-module.exports = { searchGames, getAppDetails, getGameNews, getSteamFreeGames, getHeaderImage };
+module.exports = { searchGames, getAppDetails, getGameNews, getSteamFreeGames, getReviews, getHeaderImage };

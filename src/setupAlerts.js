@@ -220,7 +220,7 @@ function viewUpdateList(guild) {
   const menu = new StringSelectMenuBuilder().setCustomId('setup:updates:pick').setPlaceholder('Pick an alert to change…')
     .addOptions(subs.map(s => ({ label: alertLabel(s).slice(0, 100), value: String(s.id), description: `#${guild.channels.cache.get(s.channel_id)?.name || 'deleted-channel'}` })));
   return {
-    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Manage game update alerts').setDescription(subs.length ? 'Pick an alert to change its channel or ping, post its latest update, or remove it.' : 'No alerts yet.')],
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Manage game update alerts').setDescription(subs.length ? 'Pick an alert to change its channel or ping, send its latest post as a test (it never pings the role), or remove it.' : 'No alerts yet.')],
     components: subs.length ? [new ActionRowBuilder().addComponents(menu), new ActionRowBuilder().addComponents(backButton('updates'))] : [new ActionRowBuilder().addComponents(backButton('updates'))],
   };
 }
@@ -232,7 +232,7 @@ function viewUpdateOne(guild, sub, note) {
     components: [
       channelSelect(`setup:updates:och:${sub.id}`, 'Move this alert to another channel…', sub.channel_id, ALERT_CHANNELS),
       roleSelect(`setup:updates:orole:${sub.id}`, 'Role to ping (deselect for none)', sub.role_id, true),
-      new ActionRowBuilder().addComponents(button(`setup:updates:otest:${sub.id}`, 'Post latest update now', ButtonStyle.Primary), button(`setup:updates:orm:${sub.id}`, 'Remove alert', ButtonStyle.Danger), backButton('updates:manage', 'Back to list')),
+      new ActionRowBuilder().addComponents(button(`setup:updates:otest:${sub.id}`, 'Send latest post as a test', ButtonStyle.Primary), button(`setup:updates:orm:${sub.id}`, 'Remove alert', ButtonStyle.Danger), backButton('updates:manage', 'Back to list')),
     ],
   };
 }
@@ -266,7 +266,7 @@ async function addUpdate(guild, by, d) {
   run('INSERT INTO game_subscriptions (guild_id, app_id, game_name, channel_id, role_id, last_post_id) VALUES (?, ?, ?, ?, ?, ?)',
     [guild.id, key, name, channel.id, d.roleId || null, latest ? String(latest.id) : null]);
   audit({ action: 'Game update alert added', actor: by, guild, details: `${name} (${SOURCES[d.source].label}) → #${channel.name}` });
-  return { ok: true, text: `Now watching **${name}** (${SOURCES[d.source].label}) in ${channel}${d.roleId ? `, pinging ${role(d.roleId)}` : ''}.${latest ? ` Latest right now: *${latest.title}*. Only newer updates will be posted.` : ' No updates found yet; the next one will be posted automatically.'}${extra}` };
+  return { ok: true, text: `Now watching **${name}** (${SOURCES[d.source].label}) in ${channel}${d.roleId ? `, pinging ${role(d.roleId)}` : ''}.${latest ? ` Latest right now: *${latest.title}*. Only newer updates will be posted. To see how a post looks, open **Manage alerts** and press **Send latest post as a test**.` : ' No updates found yet; the next one will be posted automatically.'}${extra}` };
 }
 
 async function handleUpdates(interaction, { guild, by, action, arg, client }) {

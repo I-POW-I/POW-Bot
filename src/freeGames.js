@@ -3,13 +3,13 @@
  * any combination switched on, all posting to the same channel and pinging the same role.
  *
  *   epic        Epic Games Store (Epic's own free games feed)
- *   steam_free  Steam, games that are free to keep for a limited time (GamerPower)
+ *   steam_free  Steam, games at 100% off for a limited time (straight from the Steam store)
  *   gog_free    GOG, games that are free to keep for a limited time (GamerPower)
  */
 
 const STORES = {
   epic:       { label: 'Epic Games Store', short: 'Epic',  rowName: 'Epic Games Free Games' },
-  steam_free: { label: 'Steam',            short: 'Steam', rowName: 'Steam Free Games', platform: 'steam' },
+  steam_free: { label: 'Steam',            short: 'Steam', rowName: 'Steam Free Games' },
   gog_free:   { label: 'GOG',              short: 'GOG',   rowName: 'GOG Free Games',   platform: 'gog' },
 };
 

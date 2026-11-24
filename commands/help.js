@@ -12,7 +12,7 @@ const CATEGORIES = [
     text: [
       '**`/setup`**: set up the whole bot in one place: voice panel, logs, welcome and leave posts, verification, streamer, game and free game alerts. It shows a checklist and checks my permissions. *(Manage Server)*',
       '**`/help`**: this guide.',
-      '**`/botinfo`**: full status, latency, memory and services. *(server admins)*',
+      '**`/botinfo`**: status, latency and version.',
       '',
       'Members don\'t need any commands. The **voice panel** does everything.',
     ],
@@ -59,7 +59,7 @@ const CATEGORIES = [
       '**`/changelog`**: what changed in the bot, newest first.',
       '**`/privacy`**: see what the bot has stored about you and delete it.',
       '**`/serverinfo`**: details about this server.',
-      '**`/botinfo`**: status, latency, memory, services, last error. *(server admins)*',
+      '**`/botinfo`**: status, latency and version. The bot owner also gets the full system details privately.',
     ],
   },
 ];
