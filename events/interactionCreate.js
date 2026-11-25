@@ -50,7 +50,8 @@ async function handle(interaction, client) {
 
       // Post to command log channel if configured
       const { getLogChannel } = require('../src/guildConfig');
-      const cmdLogId = interaction.guild ? getLogChannel(interaction.guild.id, 'commands') : null;
+      // the bot owner's own /owner screens are never written to a server's log
+      const cmdLogId = interaction.guild && interaction.commandName !== 'owner' ? getLogChannel(interaction.guild.id, 'commands') : null;
       if (cmdLogId) {
         try {
           const { EmbedBuilder } = require('discord.js');
@@ -111,7 +112,7 @@ async function handle(interaction, client) {
         try {
           const { getLogChannel: _glc } = require('../src/guildConfig');
           const { EmbedBuilder: _EB2 } = require('discord.js');
-          const btnLogId = _glc(interaction.guild.id, 'commands');
+          const btnLogId = String(interaction.customId).startsWith('owner:') ? null : _glc(interaction.guild.id, 'commands');
           if (btnLogId) {
             const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
             if (btnCh?.isTextBased()) {

@@ -229,6 +229,10 @@ async function menu(interaction, client) {
     const pick = interaction.values[0];
     if (pick === 'mywrapped') return openWrapped(interaction);
     if (pick === 'lookup') return lookupPrompt(interaction);
+    if (pick === 'busy' || pick === 'recap' || pick === 'swrapped') {
+      await interaction.deferReply({ flags: EPHEMERAL });
+      return interaction.editReply(pick === 'busy' ? await wrapped.busyTimes(guild) : pick === 'recap' ? await wrapped.weeklyRecap(guild, interaction.user.id) : await wrapped.serverWrapped(guild));
+    }
     return say(interaction, 'That option is not available.');
   }
   if (id === 'bot_join_pick' || id === 'bot_join_channel') {

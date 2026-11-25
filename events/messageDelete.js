@@ -23,16 +23,22 @@ async function copyImage(a) {
   } catch { return null; }
 }
 
+// Discord merges several deletes by the same moderator in the same channel into one audit entry and counts them up,
+// so an entry is recognised as new either by its age or by its count having gone up since it was last seen
+const seenCounts = new Map();
 async function getDeleter(guild, targetUserId, channelId, windowMs = 5000) {
   try {
     const logs  = await guild.fetchAuditLogs({ type: AuditLogEvent.MessageDelete, limit: 5 });
-    const entry = logs.entries.find(e =>
-      e.target?.id === targetUserId &&
-      e.extra?.channel?.id === channelId &&
-      (Date.now() - e.createdTimestamp) < windowMs
-    );
-    if (!entry || entry.executor?.id === targetUserId) return null;
-    return `${entry.executor} — ${entry.executor.tag}`;
+    let found = null;
+    for (const e of logs.entries.values()) {
+      const count = Number(e.extra?.count || 1), before = seenCounts.get(e.id);
+      seenCounts.set(e.id, count);
+      if (found || e.target?.id !== targetUserId || e.extra?.channel?.id !== channelId) continue;
+      if (Date.now() - e.createdTimestamp < windowMs || (before != null && count > before)) found = e;
+    }
+    if (seenCounts.size > 200) for (const k of [...seenCounts.keys()].slice(0, 100)) seenCounts.delete(k);
+    if (!found || found.executor?.id === targetUserId) return null;
+    return `${found.executor} — ${found.executor.tag}`;
   } catch { return null; }
 }
 
@@ -82,7 +88,6 @@ module.exports = {
     let author = message.author;
     if (!author && authorId) author = await (client || require('../src/client')).users.fetch(authorId).catch(() => null);
     const authorLabel = author ? `${message.member || author} — ${author.tag}` : `<@${authorId}>${stored?.author_tag ? ` — ${stored.author_tag}` : ''}`;
-    const channelName = guild.channels.cache.get(message.channelId)?.name;
     const sentAt      = message.createdAt || (stored ? new Date(stored.created_at) : null);
     const deletedBy   = authorId ? await getDeleter(guild, authorId, message.channelId) : null;
 
@@ -98,7 +103,7 @@ module.exports = {
 
     embed.addFields(
       { name: 'Author',  value: authorLabel,                                                                  inline: true },
-      { name: 'Channel', value: `<#${message.channelId}>${channelName ? ` (#${channelName})` : ''}`,          inline: true },
+      { name: 'Channel', value: `<#${message.channelId}>`,                  inline: true },
       { name: 'Sent',    value: getMessageAge(sentAt) || '—',                                                 inline: true },
     );
 
@@ -112,20 +117,23 @@ module.exports = {
       inline: false,
     });
 
-    const files = [];
+    // the log entry is one message; a deleted picture follows as its own message holding only the picture
+    let picture = null;
     if (attachments.length > 0) {
       const list = attachments.map(a => `[${a.name}](${a.url})`).join('\n');
       embed.addFields({ name: `Attachments (${attachments.length})`, value: list.slice(0, 1024), inline: false });
       const firstImage = attachments.find(isImage);
       if (firstImage) {
         const copy = await copyImage(firstImage);
-        if (copy) { files.push(new AttachmentBuilder(copy.buf, { name: copy.name })); embed.setImage(`attachment://${copy.name}`); }
-        else embed.setImage(firstImage.url);
+        const shot = new EmbedBuilder().setColor(0xED4245);
+        if (copy) { picture = { embeds: [shot.setImage(`attachment://${copy.name}`)], files: [new AttachmentBuilder(copy.buf, { name: copy.name })], plainEmbeds: true }; }
+        else picture = { embeds: [shot.setImage(firstImage.url)], plainEmbeds: true };
       }
     }
 
     try {
-      await logChannel.send({ embeds: [embed], files });
+      await logChannel.send({ embeds: [embed] });
+      if (picture) await logChannel.send(picture);
     } catch (err) {
       log('WARN', 'Failed to send message delete log', { err });
     }

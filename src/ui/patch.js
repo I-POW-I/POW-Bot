@@ -12,6 +12,7 @@
 const discord = require('discord.js');
 const { AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = discord;
 const { renderEmbed, renderBest } = require('./render');
+const { renderPanelBest } = require('./panelCard');
 const style = require('./style');
 const { log } = require('../logger');
 
@@ -43,6 +44,16 @@ function existingLinks(components) {
   return urls;
 }
 const toJSON = (e) => (typeof e?.toJSON === 'function' ? e.toJSON() : e?.data ? { ...e.data } : e);
+
+/** "-# <@1> <#2>": the users, roles and channels an entry mentions, once each (up to 8), shown small above a log card. */
+function mentionLine(embeds) {
+  const seen = new Set();
+  for (const e of embeds) {
+    const text = [e.description, ...(e.fields || []).map(f => f.value)].join('\n');
+    for (const m of text.matchAll(/<(@!?\d+|@&\d+|#\d+)>/g)) seen.add(`<${m[1].replace('@!', '@')}>`);
+  }
+  return seen.size ? `-# ${[...seen].slice(0, 8).join(' ')}` : '';
+}
 
 function resolverFor(source) {
   const client = source?.client || null;
@@ -83,6 +94,8 @@ async function convert(payload, source, isEdit) {
 
   const embeds = payload.embeds.slice(0, 10).map(toJSON).filter(Boolean);
   if (!embeds.length) return payload;
+  // the live voice panel carries its layout data (hidden from the classic embed); it is drawn by its own renderer
+  const panels = payload.embeds.slice(0, 10).map(e => e?.data?.panel || null);
 
   const files = Array.isArray(payload.files) ? [...payload.files] : [];
   const buffers = new Map();
@@ -90,11 +103,11 @@ async function convert(payload, source, isEdit) {
 
   const resolve = resolverFor(source);
   // the same embed drawn again a moment later (a menu opened twice) is reused; anything with a clock or a picture is drawn fresh
-  const raw = JSON.stringify(embeds), cacheable = buffers.size === 0 && !/<t:|attachment:\/\//.test(raw);
+  const raw = JSON.stringify(embeds), cacheable = buffers.size === 0 && !panels.some(Boolean) && !/<t:|attachment:\/\//.test(raw);
   const hit = cacheable ? CACHE.get(raw) : null;
   let rendered = hit && Date.now() - hit.at < CACHE_MS ? hit.rendered : null;
   if (!rendered) {
-    try { rendered = await Promise.all(embeds.map(e => renderBest(e, { resolve, attachments: buffers }))); }
+    try { rendered = await Promise.all(embeds.map((e, i) => panels[i] ? renderPanelBest(panels[i], { resolve }) : renderBest(e, { resolve, attachments: buffers }))); }
     catch (err) { log('WARN', 'Card render failed, sending the plain embed', { err }); return payload; }
     if (cacheable) { CACHE.set(raw, { at: Date.now(), rendered }); if (CACHE.size > 30) CACHE.delete(CACHE.keys().next().value); }
   }
@@ -119,6 +132,11 @@ async function convert(payload, source, isEdit) {
   }
 
   const out = { ...payload, embeds: [], files: [...keep, ...cards] };
+  // a card is a picture, so the people and channels in a log entry cannot be clicked: they are repeated as real mentions above it
+  if (style.areaOf(source) === 'logs' && !payload.content) {
+    const text = mentionLine(embeds);
+    if (text) { out.content = text; if (!payload.allowedMentions) out.allowedMentions = { parse: [] }; }
+  }
   if (components.length || payload.components) out.components = components;
   if (isEdit && payload.attachments === undefined) out.attachments = [];
   return out;
@@ -170,4 +188,4 @@ function install() {
   setImmediate(() => renderEmbed({ title: 'Ready', description: 'Loading 🙂 ✅ ⚠️' }).catch(() => {}));
 }
 
-module.exports = { install, convert };
+module.exports = { install, convert, mentionLine };

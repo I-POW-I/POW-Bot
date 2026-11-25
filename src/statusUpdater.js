@@ -25,7 +25,6 @@ function isConnected(guildId) {
   return conn && HEALTHY.includes(conn.state.status);
 }
 
-const getProcessUptime = () => duration(process.uptime() * 1000);
 
 /** Format ms with seconds — for live session durations. */
 const formatLive = (ms) => duration(ms, { seconds: true });
@@ -52,48 +51,73 @@ function buildPanelEmbed(guildId, guild = null) {
   const entry     = store.getEntry(guildId);
   const connected = isConnected(guildId);
   const isGhost   = entry && !getVoiceConnection(guildId);
-  const memory    = require('./system').formatMemory();     // same reading as the Discloud dashboard
+  const mem       = require('./system').getMemoryInfo();
+  const memText   = mem.limitMb ? `${Math.round(mem.usedMb)} MB of ${Math.round(mem.limitMb)} MB` : `${Math.round(mem.usedMb)} MB`;
+  const stats     = require('./panelStats');
 
-  let colour, label, title, status, inCall = '—', inVoice = '—', reconnects = '0';
-  if (connected && entry) {
-    colour = 0x57F287; label = 'Bot is in'; title = entry.channelName; status = 'Online';
+  const GREEN = 0x57F287, AMBER = 0xFEE75C, RED = 0xED4245;
+  let accent, online, channel = null, status, rows = [], more = 0, listTitle = null, inCall = '—';
+  const today = guild ? stats.todayStats(guild) : { ms: 0, peak: 0, calls: 0 };
+
+  if ((connected || isGhost) && entry) {
+    channel = `🔊 ${entry.channelName}`;
     inCall = duration(Date.now() - new Date(entry.joinedAt).getTime());
-    const ch = guild?.channels.cache.get(entry.channelId);
-    const count = ch ? ch.members.filter(m => !m.user.bot).size : 0;
-    inVoice = `${count} ${count === 1 ? 'person' : 'people'}`;
-    reconnects = String(entry.reconnectCount || 0);
+  }
+  if (connected && entry) {
+    accent = GREEN; online = { text: 'BOT ONLINE', colour: GREEN };
+    const people = guild ? stats.inCall(guild, entry.channelId) : [];
+    status = { colour: GREEN, text: people.length
+      ? `${people.length} in this call · running ${inCall}`
+      : `Nobody else here yet · running ${inCall}` };
+    rows = people.slice(0, 4).map(p => ({ avatar: p.member.displayAvatarURL({ extension: 'png', size: 64 }), name: p.member.displayName, text: duration(p.ms) }));
+    more = Math.max(0, people.length - rows.length);
   } else if (isGhost) {
-    colour = 0xFEE75C; label = 'Bot is in'; title = entry.channelName; status = 'Idle';
+    accent = AMBER; online = { text: 'BOT IDLE', colour: AMBER };
+    status = { colour: AMBER, text: 'Reconnecting to the call' };
   } else {
-    colour = 0xED4245; label = 'Bot is'; title = 'Not in a voice channel'; status = 'Offline';
+    accent = RED; online = { text: 'NOT IN A CALL', colour: RED };
+    status = { colour: 0x949BA4, text: 'The bot is not in a voice channel' };
+  }
+  if (!rows.length && guild) {   // nobody to show: the week's top people instead
+    const top = topThisWeek(guild);
+    if (top.length) { listTitle = 'TOP THIS WEEK'; rows = top.map(t => ({ avatar: t.member.displayAvatarURL({ extension: 'png', size: 64 }), name: t.member.displayName, text: t.text })); more = 0; }
   }
 
-  const embed = new EmbedBuilder()
-    .setColor(colour)
-    .setAuthor({ name: label })
-    .setTitle(title)
-    .addFields(
-      { name: 'Time in call', value: inCall, inline: true },
-      { name: 'In the call', value: inVoice, inline: true },
-      { name: 'Status', value: status, inline: true },
-      { name: 'Memory', value: memory, inline: true },
-      { name: 'Bot uptime', value: getProcessUptime(), inline: true },
-      { name: 'Reconnects', value: reconnects, inline: true },
-    )
-    .setTimestamp();   // the classic embed shows its own time; a card gets an "Updated … ago" line instead
+  const brief = (ms) => duration(ms).replace(/ minutes?/, ' min');   // "11 hours 20 min": keeps the figures on one line
+  const figures = [
+    { name: 'Server voice today', value: brief(today.ms) },
+    { name: 'Most at once today', value: `${today.peak} ${today.peak === 1 ? 'person' : 'people'}` },
+    { name: 'Calls today', value: String(today.calls) },
+    { name: 'Bot in call for', value: inCall === '—' ? inCall : brief(Date.now() - new Date(entry.joinedAt).getTime()) },
+    { name: 'Bot memory', value: memText },
+    { name: 'Bot uptime', value: brief(process.uptime() * 1000) },
+  ];
+  const title = guild?.name || 'Voice panel';
 
-  const top = guild ? topThisWeek(guild) : null;
-  if (top) embed.addFields({ name: 'Top this week', value: top, inline: false });
+  // the classic embed (also the fallback when a card cannot be drawn)
+  const embed = new EmbedBuilder()
+    .setColor(accent)
+    .setAuthor({ name: `${connected ? '🟢' : isGhost ? '🟡' : '🔴'} ${online.text[0] + online.text.slice(1).toLowerCase()}` })
+    .setTitle(title)
+    .setDescription([channel ? `Bot is in **${channel}**` : status.text, connected && entry ? status.text : null,
+      rows.length ? `\n${listTitle ? '**Top this week**\n' : ''}${rows.map(r => `**${r.name}** · ${r.text}`).join('\n')}${more ? `\n+ ${more} more` : ''}` : null].filter(Boolean).join('\n'))
+    .addFields(figures.map(f => ({ name: f.name, value: f.value, inline: true })))
+    .setFooter({ text: 'Updates every minute' })
+    .setTimestamp();
+
+  // what the card draws: hidden from the embed itself, so the classic look never sends it to Discord
+  Object.defineProperty(embed.data, 'panel', { enumerable: false, value: {
+    accent, online, title, subtitle: guild?.description || null, channel, channelLabel: connected || isGhost ? 'Bot is in' : null,
+    status, listTitle, rows, more, stats: figures, footer: 'Updates every minute',
+  } });
   return embed;
 }
 
-/** The three people with the most voice time in the last 7 days, or null when nobody has any. */
+/** The three people with the most voice time in the last 7 days. */
 function topThisWeek(guild) {
-  const rows = require('./leaderboard').totals(guild, 'week', 8)
-    .map(r => ({ ...r, member: guild.members.cache.get(r.user_id) })).filter(r => r.member && !r.member.user.bot).slice(0, 3);
-  if (!rows.length) return null;
-  const medals = ['🥇', '🥈', '🥉'];
-  return rows.map((r, i) => `${medals[i]} **${r.member.displayName}** · ${duration(Number(r.ms))}`).join('\n');
+  return require('./leaderboard').totals(guild, 'week', 8)
+    .map(r => ({ member: guild.members.cache.get(r.user_id), ms: Number(r.ms) })).filter(r => r.member && !r.member.user.bot).slice(0, 3)
+    .map(r => ({ member: r.member, text: duration(r.ms) }));
 }
 
 // ── Member card ───────────────────────────────────────────────────────────────
@@ -122,13 +146,13 @@ function buildMemberEmbed(member, guild, kicker = 'Member') {
       { name: 'Average session', value: formatMs(stats.avg_ms), inline: true },
       { name: 'Last in voice', value: live ? 'In voice now' : stats.last_seen ? `<t:${Math.floor(stats.last_seen / 1000)}:R>` : '—', inline: true },
     );
-    if (stats.top_channel) fields.push({ name: 'Top voice channel', value: stats.top_channel, inline: true });
+    if (stats.top_channel) fields.push({ name: 'Top channel', value: stats.top_channel, inline: true });
   } else {
     embed.setDescription('No voice time recorded yet.');
   }
   fields.push(
-    { name: 'Joined the server', value: member.joinedAt ? dayText(member.joinedTimestamp) : '—', inline: true },
-    { name: 'Account created', value: dayText(user.createdTimestamp), inline: true },
+    { name: 'Joined server', value: member.joinedAt ? dayText(member.joinedTimestamp) : '—', inline: true },
+    { name: 'Account made', value: dayText(user.createdTimestamp), inline: true },
   );
   const vc = member.voice?.channel;
   if (vc) {
@@ -150,15 +174,14 @@ function buildPanelButtons(guildId = null) {
     new ActionRowBuilder().addComponents(
       b('bot_join', 'Join', ButtonStyle.Success),
       b('bot_move', 'Move', ButtonStyle.Primary, !inCall),
-      b('bot_leave', 'Leave', ButtonStyle.Secondary, !inCall)),
-    new ActionRowBuilder().addComponents(
-      b('bot_myinfo', 'My card', ButtonStyle.Primary),
-      b('bot_busy', 'Busy times'),
-      b('bot_recap', 'Weekly recap'),
+      b('bot_leave', 'Leave', ButtonStyle.Danger, !inCall),
       b('bot_leaderboard', 'Leaderboard'),
-      b('bot_swrapped', 'Server Wrapped')),
+      b('bot_myinfo', 'My card')),
     new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder().setCustomId('bot_more').setPlaceholder('More…').addOptions(
+        { label: 'Busy times', value: 'busy', description: 'How busy voice is now and usually' },
+        { label: 'Weekly recap', value: 'recap', description: 'The last 7 days in voice' },
+        { label: 'Server Wrapped', value: 'swrapped', description: "The server's year in voice and chat" },
         { label: 'My Server Time Wrapped', value: 'mywrapped', description: 'Your year in this server' },
         { label: 'User lookup', value: 'lookup', description: "See another member's card" })),
   ];

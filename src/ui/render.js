@@ -269,6 +269,12 @@ function spaced(ctx, text, x, y, font, colour, spacing, maxW = Infinity) {
   ctx.font = font; ctx.fillStyle = colour; ctx.textBaseline = 'middle';
   const chars = [...text], widths = chars.map(ch => ctx.measureText(ch).width + spacing);
   let total = widths.reduce((a, b) => a + b, 0), n = chars.length;
+  if (total > maxW && maxW < Infinity) {      // a label too long for its column is set a little smaller first, and cut only as a last resort
+    const k = Math.max(0.78, maxW / total), px = parseFloat(/(\d+(?:\.\d+)?)px/.exec(font)[1]);
+    font = font.replace(/\d+(?:\.\d+)?px/, `${(px * k).toFixed(2)}px`); ctx.font = font;
+    spacing *= k; for (let i = 0; i < chars.length; i++) widths[i] = ctx.measureText(chars[i]).width + spacing;
+    total = widths.reduce((a, b) => a + b, 0);
+  }
   if (total > maxW) { const dots = ctx.measureText('…').width + spacing; while (n > 1 && widths.slice(0, n).reduce((a, b) => a + b, 0) + dots > maxW) n--; chars.length = n; chars.push('…'); widths.length = n; widths.push(dots); }
   let cx = x;
   chars.forEach((ch, i) => { ctx.fillText(ch, cx, y); cx += widths[i]; });
@@ -291,4 +297,4 @@ async function renderBest(embed, opts = {}) {
   return { ...(await renderEmbed(embed, { ...opts, wide: best.wide })), scale: best.scale };
 }
 
-module.exports = { renderEmbed, renderBest, ensureFonts, T };
+module.exports = { renderEmbed, renderBest, ensureFonts, T, draw: { drawLines, preload, fetchImage, roundRect, rgba, spaced, rule } };

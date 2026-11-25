@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.8.1
+
+- **Voice panel redesign.** The title is your server's name, with a green **Bot online** label above it and **Bot is in** and the channel on the right. Under it: who is in the call, with their picture and how long each has been there, then six figures along the bottom: server voice today, most at once today, calls today, bot in call for, bot memory and bot uptime. When the bot is not in a call it shows the week's top three instead
+- **Fewer buttons.** Only **Join**, **Move**, **Leave**, **Leaderboard** and **My card** are buttons. Busy times, Weekly recap, Server Wrapped, My Server Time Wrapped and User lookup are in the **More** menu
+- **Deleted pictures** now show as their own message holding only the picture, after the log entry, instead of inside it. The channel is shown once, not twice
+- **Owner commands are never logged.** `/owner` and its buttons no longer appear in any server's command log
+- **Clickable names in logs.** A card is a picture, so the people, roles and channels in a log entry are also shown as real mentions in a small line above it (without pinging anyone)
+- **Who deleted a message** is now found even when Discord merges several deletes by the same moderator into one entry. (When people delete their own messages Discord does not say who did it, so no "Deleted by" is shown)
+- **Cards:** labels that were too long for their column ("Top voice chan…") are now set slightly smaller or shortened so nothing is cut off
+
 ## 5.8.0
 
 - **Logs are readable.** Audit entries no longer show raw IDs or permission numbers: channels and roles are mentions, levels and durations are words, and permission changes list what was allowed or denied
