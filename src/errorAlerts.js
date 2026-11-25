@@ -215,20 +215,20 @@ async function sendWebhook(url, body, files) {
  * @param {EmbedBuilder} embed
  * @param {{ ping?: boolean, dm?: boolean, buttons?: boolean, files?: {name:string,data:string|Buffer}[] }} opts
  */
-async function deliver(embed, { ping, dm, buttons, files } = {}) {
+async function deliver(embed, { ping, dm, buttons, files, to } = {}) {
   const c = config();
   const mention = ping && c.pingUserId ? `<@${c.pingUserId}>` : undefined;
   const allowed = { parse: [], users: mention ? [c.pingUserId] : [] };
   const errors  = [];
 
   // 1) Webhook (no buttons — a plain webhook can't route button clicks to the bot)
-  if (c.webhookUrl) {
+  if (c.webhookUrl && to !== 'dm') {
     try { await sendWebhook(c.webhookUrl, { username: 'POW Bot Alerts', content: mention, embeds: [embed.toJSON()], allowed_mentions: allowed }, files); }
     catch (err) { errors.push(err); }
   }
 
   // 2) Private channel posted by the bot (can carry buttons)
-  if (c.channelId) {
+  if (c.channelId && to !== 'dm') {
     try {
       const cl = client || require('./client');
       await cl.rest.post(Routes.channelMessages(c.channelId), {
@@ -240,8 +240,10 @@ async function deliver(embed, { ping, dm, buttons, files } = {}) {
   }
 
   // 3) DMs to every owner (can carry buttons). dm:'fallback' = only when there is no webhook/channel.
-  const wantDm = dm === 'fallback' ? !(c.webhookUrl || c.channelId) : dm;
-  if (wantDm && c.dm) {
+  // `to` ('webhook' | 'dm' | 'both') overrides the usual rules for one message: 'dm' and 'both' always DM the owners
+  const forced = to === 'dm' || to === 'both';
+  const wantDm = forced ? true : dm === 'fallback' ? !(c.webhookUrl || c.channelId) : dm;
+  if (wantDm && (c.dm || forced)) {
     const cl = client || require('./client');
     for (const id of ownerIds()) {
       try {
@@ -312,10 +314,10 @@ function capture(level, message, context = {}) {
  * @param {{ level?: string, title: string, description?: string, fields?: any[], codeBlocks?: any[],
  *           files?: {name:string,data:string}[], dm?: boolean, buttons?: boolean, ping?: boolean }} o
  */
-function notify({ level = 'INFO', title, description, fields, codeBlocks, files, dm = false, buttons = false, ping = false }) {
+function notify({ level = 'INFO', title, description, fields, codeBlocks, files, dm = false, buttons = false, ping = false, to }) {
   try {
-    if (!isEnabled()) return Promise.resolve();
-    return enqueue(buildEmbed({ level, title, description, fields, codeBlocks }), { dm, buttons, files, ping });
+    if (!isEnabled() && !(to === 'dm' || to === 'both')) return Promise.resolve();
+    return enqueue(buildEmbed({ level, title, description, fields, codeBlocks }), { dm, buttons, files, ping, to });
   } catch (err) {
     console.error('[errorAlerts] notify failed:', err?.message || err);
     return Promise.resolve();

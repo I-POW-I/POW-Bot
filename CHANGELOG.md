@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.7.0
+
+- **One look everywhere.** Every message the bot sends, in every command, every `/setup` page, the owner hub, logs, alerts and posts, is now drawn as a dark card in the same style as the Wrapped card, with no plain grey boxes left. Links inside a card appear as buttons underneath, and the picture carries hidden alt text for screen readers. The owner can switch this off with **Card panels** in `/owner` > Maintenance and features (the old plain embeds come back instantly)
+- **Message logs can ignore roles, people and bots** as well as channels, from the new **Ignore lists** page. Anything from an ignored person or role is left out of the deleted and edited logs and its text is not even kept
+- **Voice log switches**: choose which of joins, leaves, moves, server mutes and deafens, streams, and "bot dragged out" are logged
+- **Route server changes by kind**: send roles to one channel, invites to another, and so on, from **Route by kind** on the Server changes page. Anything without its own channel still goes to the main Server log
+- **Console digest destination**: `/owner` > Alerts > Digest and memory now lets you send the digest to your webhook or alerts channel, to your DMs, or both. Digest summary counts are easier to read
+- Console lines show each detail with a dimmer name and a lighter value, and very long values are clipped. The `|||` info style is unchanged
+
+## 5.6.0
+
+- **Logs overhaul** (`/setup` > Logs): every log now has its own page with a channel, a **test entry** button and, where it makes sense, switches for each kind of event
+- **New Server changes log**: channels (including permission changes), roles, member roles, nicknames, emoji and stickers, invites, threads, webhooks and bots, server settings, Discord's AutoMod rules and blocked messages, and scheduled events, all with **who did it**. Servers that never choose a Server log keep getting these in their Moderation log, so nothing changes until staff pick a channel
+- Message logs can **ignore channels**, and deleted messages, edited messages and bulk deletes can each be switched off
+- **Owner controls**: new global switches in `/owner` > Maintenance and features for Raid protection, AutoMod and the Security Check Point, so any of them can be turned off in every server at once
+
 ## 5.5.5
 
 - **Steam game updates are back to the clean layout** from the formatted Steam feed (headings, bullets, picture), which is the version that looked right

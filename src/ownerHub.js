@@ -41,7 +41,11 @@ const ephemeral = [MessageFlags.Ephemeral];
 const ts = (ms, s = 'R') => `<t:${Math.floor(ms / 1000)}:${s}>`;
 const n  = (v) => Number(v || 0).toLocaleString('en-GB');
 
-const FEATURES = { streamerAlerts: 'Streamer alerts (Twitch / Kick / YouTube)', gameAlerts: 'Game alerts (free games and patch notes)' };
+const FEATURES = {
+  streamerAlerts: 'Streamer alerts (Twitch / Kick / YouTube)', gameAlerts: 'Game alerts (free games and patch notes)',
+  raidProtection: 'Raid protection (join floods, raid mode, account age gate)', autoMod: 'AutoMod (message filters)', checkpoint: 'Security Check Point (trap channel)',
+  cardPanels: 'Card panels (messages drawn as cards instead of plain embeds)',
+};
 
 const SECTIONS = [
   { key: 'overview',  emoji: '📊', label: 'Overview',                 desc: 'System, usage, services and safety settings' },
@@ -55,7 +59,7 @@ const SECTIONS = [
 ];
 
 /** Component actions only the owner (not ADMIN_IDS) may use. */
-const OWNER_ONLY = /^owner:(ann_|announce|al_(ch|lvl|dig|mem|dm|rm)|srv_act|blk_|mt_|ft|st_|op_cmds|op_backup|yes|no)/;
+const OWNER_ONLY = /^owner:(ann_|announce|al_(ch|lvl|dig|dto|mem|dm|rm|more|view)|srv_act|blk_|mt_|ft|st_|op_cmds|op_backup|yes|no)/;
 
 // ── Pending confirmations ─────────────────────────────────────────────────────
 
@@ -194,6 +198,8 @@ const LEVEL_PRESETS = [
   { value: 'ERROR,AUDIT,WARN,GHOST', label: 'Everything',                        levels: ['ERROR', 'AUDIT', 'WARN', 'GHOST'] },
 ];
 const DIGEST_OPTIONS = [['0', 'Console digest: off'], ['30', 'Console digest: every 30 minutes'], ['60', 'Console digest: every hour (recommended)'], ['120', 'Console digest: every 2 hours'], ['360', 'Console digest: every 6 hours']];
+const DIGEST_TO_OPTIONS = [['auto', 'Digest goes to: webhook or channel, else my DMs (default)'], ['webhook', 'Digest goes to: webhook or alerts channel only'], ['dm', 'Digest goes to: my DMs only'], ['both', 'Digest goes to: webhook or channel, and my DMs']];
+const DIGEST_TO_LABEL = { webhook: 'webhook or alerts channel only', dm: 'your DMs only', both: 'webhook or channel, and your DMs' };
 const MEMORY_OPTIONS = [['0', 'Memory auto-restart: off'], ['80', 'Memory auto-restart: at 80%'], ['90', 'Memory auto-restart: at 90% (recommended)'], ['95', 'Memory auto-restart: at 95%']];
 
 function viewAlerts(userId, note) {
@@ -205,7 +211,7 @@ function viewAlerts(userId, note) {
     `**Webhook**: ${d.webhook ? `connected${d.from?.webhook === 'Discloud variable' ? ' (set by a Discloud variable, which overrides this screen)' : ''}` : 'not set. Pick a private channel below and I\'ll create it.'}`,
     `**DMs to you**: ${d.dm ? 'on (with Restart, Logs and Mute buttons)' : 'off'}`,
     `**What is sent**: ${preset ? preset.label : d.levels.join(', ')}`,
-    `**Console digest**: ${st.digestMinutes ? `every ${st.digestMinutes} minutes` : 'off'}`,
+    `**Console digest**: ${st.digestMinutes ? `every ${st.digestMinutes} minutes, to ${DIGEST_TO_LABEL[st.digestTo] || 'the webhook or channel, else your DMs'}` : 'off'}`,
     `**Memory auto-restart**: ${st.memoryPercent ? `at ${st.memoryPercent}% of the limit` : 'off'}`,
     d.muted ? '**Errors are muted** right now.' : null,
     owner ? '\nPick a channel only you can see. Everything here is private to you.' : '\nOnly the bot owner can change where alerts go.'].filter(Boolean).join('\n'));
@@ -219,18 +225,38 @@ function viewAlerts(userId, note) {
     components: [
       row(new ChannelSelectMenuBuilder().setCustomId('owner:al_ch').setPlaceholder('Create the alerts webhook in this channel…').setChannelTypes(ChannelType.GuildText).setMinValues(1).setMaxValues(1)),
       pick('owner:al_lvl', 'What to send…', LEVEL_PRESETS.map(p => [p.value, p.label]), preset?.value),
-      pick('owner:al_dig', 'Console digest…', DIGEST_OPTIONS, st.digestMinutes),
-      pick('owner:al_mem', 'Memory auto-restart…', MEMORY_OPTIONS, st.memoryPercent),
       row(btn('owner:al_dm', `DMs: ${d.dm ? 'ON' : 'OFF'}`, d.dm ? ButtonStyle.Success : ButtonStyle.Secondary), btn('owner:al_test', 'Send test', ButtonStyle.Primary), muteButton,
-        btn('owner:al_rm', 'Remove webhook', ButtonStyle.Danger, !globalConfig.get().alerts.webhookUrl), back()),
+        btn('owner:al_rm', 'Remove webhook', ButtonStyle.Danger, !globalConfig.get().alerts.webhookUrl), btn('owner:al_more', 'Digest and memory…')),
+      row(back()),
     ],
   };
+}
+
+/** Second alerts page: how often the console digest is sent, where it goes, and the memory watch. */
+function viewAlertsMore(userId, note) {
+  const st = monitor.getSettings(), d = alerts.describeDestinations();
+  const dmOk = ownerIds().length > 0;
+  const embed = new EmbedBuilder().setColor(BLUE).setAuthor({ name: 'Owner · Alerts' }).setTitle('Digest and memory').setDescription([note,
+    'The console digest is a short summary of the bot\'s console with the full log attached. Choose how often it is sent and where it goes.'].filter(Boolean).join('\n\n'))
+    .addFields(
+      { name: 'Digest', value: st.digestMinutes ? `every ${st.digestMinutes} minutes` : 'off', inline: true },
+      { name: 'Sent to', value: DIGEST_TO_LABEL[st.digestTo] || 'webhook or channel, else your DMs', inline: true },
+      { name: 'Memory auto-restart', value: st.memoryPercent ? `at ${st.memoryPercent}%` : 'off', inline: true },
+      { name: 'Webhook / channel', value: d.webhook || d.channel ? 'connected' : 'not set', inline: true },
+      { name: 'DMs to you', value: dmOk ? 'available' : 'set OWNER_IDS first', inline: true });
+  const pick = (id, ph, opts, cur) => row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(ph).addOptions(opts.map(([value, label]) => ({ label, value, default: String(cur) === value }))));
+  return { embeds: [embed], components: [
+    pick('owner:al_dig', 'How often…', DIGEST_OPTIONS, st.digestMinutes),
+    pick('owner:al_dto', 'Where to send it…', DIGEST_TO_OPTIONS, st.digestTo || 'auto'),
+    pick('owner:al_mem', 'Memory auto-restart…', MEMORY_OPTIONS, st.memoryPercent),
+    row(btn('owner:op_digest', 'Send a digest now', ButtonStyle.Primary), btn('owner:al_view', 'Back to alerts')),
+  ] };
 }
 
 async function handleAlerts(interaction) {
   const id = interaction.customId;
   const sv = () => globalConfig.get().alerts;
-  const again = (note) => show(interaction, viewAlerts(interaction.user.id, note));
+  const again = (note, more = false) => show(interaction, more ? viewAlertsMore(interaction.user.id, note) : viewAlerts(interaction.user.id, note));
 
   if (interaction.isChannelSelectMenu() && id === 'owner:al_ch') {
     const channel = interaction.channels.first();
@@ -245,16 +271,23 @@ async function handleAlerts(interaction) {
     }
     return true;
   }
-  if (interaction.isStringSelectMenu() && /^owner:al_(lvl|dig|mem)$/.test(id)) {
+  if (interaction.isStringSelectMenu() && /^owner:al_(lvl|dig|dto|mem)$/.test(id)) {
     const v = interaction.values[0];
+    const more = id !== 'owner:al_lvl';
+    if (id === 'owner:al_dto') {
+      if ((v === 'dm' || v === 'both') && !ownerIds().length) { await again('Set `OWNER_IDS` in your Discloud variables first, so I know who to DM.', true); return true; }
+      globalConfig.update(s => { s.alerts.digestTo = v === 'auto' ? null : v; });
+    }
     if (id === 'owner:al_lvl') globalConfig.update(s => { s.alerts.levels = LEVEL_PRESETS.find(p => p.value === v)?.levels || ['ERROR', 'AUDIT']; });
     if (id === 'owner:al_dig') { globalConfig.update(s => { s.alerts.digestMinutes = Number(v); }); monitor.reschedule(); }
     if (id === 'owner:al_mem') globalConfig.update(s => { s.alerts.memoryPercent = Number(v); });
     audit({ action: `Alert setting changed (${id.slice(9)})`, actor: interaction.user, details: v });
-    await again('Saved.');
+    await again('Saved.', more);
     return true;
   }
   if (!interaction.isButton()) return false;
+  if (id === 'owner:al_more') { await again(null, true); return true; }
+  if (id === 'owner:al_view') { await again(null); return true; }
   if (id === 'owner:al_dm') {
     const now = alerts.describeDestinations().dm;
     if (!now && !ownerIds().length) { await again('Set `OWNER_IDS` in your Discloud variables first, so I know who to DM.'); return true; }
@@ -365,6 +398,7 @@ function viewControl(note) {
     row(btn('owner:mt_toggle', m.enabled ? 'Turn maintenance OFF' : 'Turn maintenance ON', m.enabled ? ButtonStyle.Success : ButtonStyle.Danger),
       btn('owner:ft:streamerAlerts', `Streamer alerts: ${f.streamerAlerts !== false ? 'ON' : 'OFF'}`, f.streamerAlerts !== false ? ButtonStyle.Success : ButtonStyle.Secondary),
       btn('owner:ft:gameAlerts', `Game alerts: ${f.gameAlerts !== false ? 'ON' : 'OFF'}`, f.gameAlerts !== false ? ButtonStyle.Success : ButtonStyle.Secondary)),
+    row(...['raidProtection', 'autoMod', 'checkpoint', 'cardPanels'].map(k => btn(`owner:ft:${k}`, `${{ raidProtection: 'Raid protection', autoMod: 'AutoMod', checkpoint: 'Check Point', cardPanels: 'Card panels' }[k]}: ${f[k] !== false ? 'ON' : 'OFF'}`, f[k] !== false ? ButtonStyle.Success : ButtonStyle.Secondary))),
     row(btn('owner:op_cmds', 'Re-register commands'), btn('owner:op_backup', 'Back up now'), back()),
   ] };
 }

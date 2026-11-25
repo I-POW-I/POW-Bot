@@ -19,7 +19,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const { getGuildConfig, setGuildConfig, setLogChannel, getLogChannel } = require('./guildConfig');
+const { getGuildConfig, setGuildConfig, getLogChannel } = require('./guildConfig');
 const { selectAll, selectOne } = require('./database');
 const { audit }  = require('./diagnostics');
 const { log }    = require('./logger');
@@ -30,25 +30,20 @@ const checkpointKit = require('./setupCheckpoint');
 const moderationKit = require('./setupModeration');
 const welcomeKit = require('./setupWelcome');
 const protectKit = require('./setupProtect');
+const logsKit = require('./setupLogs');
 const botPermissions = require('./botPermissions');
-const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit];                 // pages that live in their own files
+const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit, logsKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
   channelSelect, roleSelect, missingIn, respond,
 } = require('./setupKit');
 
-const LOG_TYPES = [
-  { key: 'voice',    label: 'Voice activity',        desc: 'Joins, leaves and moves in voice channels' },
-  { key: 'messages', label: 'Message logs',          desc: 'Deleted and edited messages (text is kept 7 days so this works)' },
-  { key: 'members',  label: 'Member join/leave + verification', desc: 'Detailed join log and verification results (staff only)' },
-  { key: 'modlog',   label: 'Moderation actions',    desc: 'Kicks, bans, timeouts' },
-  { key: 'commands', label: 'Command & button logs', desc: 'Every command and button used' },
-];
+const { LOG_TYPES } = require('./logs');
 
 const PAGES = [
   { value: 'panel',     label: 'Voice panel',                emoji: '🎛️', desc: 'Where the control panel lives',},
-  { value: 'logs',      label: 'Logs',                       emoji: '📜', desc: 'Voice, messages, members, moderation, commands',},
+  { value: 'logs',      label: 'Logs',                       emoji: '📜', desc: 'Voice, messages, members, server changes, moderation, commands',},
   { value: 'welcome',   label: 'Welcome & leave',            emoji: '👋', desc: 'Welcome and leave posts, extras',},
   { value: 'verify',    label: 'Verification',               emoji: '🔐', desc: 'Verified role, human check, quarantine, auto-kick',},
   { value: 'control',   label: 'Bot control role',           emoji: '🛡️', desc: 'Who may make the bot join / leave',},
@@ -236,22 +231,6 @@ function viewPanel(guild, note) {
   };
 }
 
-const botMessagesButton = (guild) => new ButtonBuilder().setCustomId('setup:logs:bots')
-  .setLabel(`Deleted bot messages: ${onOff(getGuildConfig(guild.id).logBotMessages === true)}`).setStyle(ButtonStyle.Secondary);
-
-function viewLogs(guild, type, note) {
-  const lines = LOG_TYPES.map(t => `**${t.label}** — ${chan(getLogChannel(guild.id, t.key))}\n└ ${t.desc}`).join('\n') + `\n\n**Deleted bot messages** — ${onOff(getGuildConfig(guild.id).logBotMessages === true)}\n└ Also log messages deleted from other bots (shown in the Message log)`;
-  const rows = [new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('setup:logs:type').setPlaceholder('Choose a log to set…')
-      .addOptions(LOG_TYPES.map(t => ({ label: t.label, value: t.key, description: t.desc.slice(0, 90), default: t.key === type }))))];
-  if (type) {
-    rows.push(channelSelect(`setup:logs:set:${type}`, `Channel for: ${LOG_TYPES.find(t => t.key === type).label}`, getLogChannel(guild.id, type)));
-    rows.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`setup:logs:clear:${type}`).setLabel('Clear this log').setStyle(ButtonStyle.Danger), botMessagesButton(guild), backButton()));
-  } else rows.push(new ActionRowBuilder().addComponents(botMessagesButton(guild), backButton()));
-  return { embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Logs').setDescription([note, lines].filter(Boolean).join('\n\n'))], components: rows };
-}
-
 function viewVerify(guild, note) {
   const s = verification.settings(guild.id);
   const membersLog = getLogChannel(guild.id, 'members');
@@ -308,7 +287,7 @@ function viewAnnounce(guild, note) {
   };
 }
 
-const VIEWS = { home: viewHome, logs: viewLogs, panel: viewPanel, verify: viewVerify, control: viewControl, announce: viewAnnounce, check: viewCheck };
+const VIEWS = { home: viewHome, panel: viewPanel, verify: viewVerify, control: viewControl, announce: viewAnnounce, check: viewCheck };
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
@@ -359,7 +338,6 @@ async function handleInteraction(interaction, client) {
   if (page === 'check') return await show('check'), true;
   if (kitFor(page)) return await kitFor(page).handle(interaction, { guild, by, client, page, action, arg }), true;
   if (['panel', 'verify', 'control', 'announce'].includes(page) && !action) return await show(page), true;
-  if (page === 'logs' && !action) return await respond(interaction, viewLogs(guild)), true;
 
   // ── panel ──
   if (page === 'panel' && action === 'set') {
@@ -369,34 +347,6 @@ async function handleInteraction(interaction, client) {
     try { await postPanel(guild, channel, client, by); } catch (err) { log('ERROR', 'Could not post the control panel', { guild: guild.name, err }); return await show('panel', noteBad('Discord refused the message. Check my permissions in that channel.')), true; }
     done('panel posted', `#${channel.name}`);
     return await show('panel', noteGood(`Panel posted in ${channel}.`)), true;
-  }
-
-  // ── logs ──
-  if (page === 'logs') {
-    if (action === 'type') return await respond(interaction, viewLogs(guild, interaction.values[0])), true;
-    if (action === 'bots') {
-      const on = getGuildConfig(guild.id).logBotMessages !== true;
-      setGuildConfig(guild.id, { logBotMessages: on });
-      if (!on) require('./messageStore').purgeBots(guild.id);
-      done('deleted bot messages', on ? 'on' : 'off');
-      const needs = on && !getLogChannel(guild.id, 'messages') ? ' Set a Message log channel for it to work.' : '';
-      return await respond(interaction, viewLogs(guild, undefined, noteGood(on ? `Messages deleted by other bots will now be logged. This bot's own messages never are.${needs}` : 'Deleted bot messages are no longer logged, and any stored ones were removed.'))), true;
-    }
-    if (action === 'set') {
-      const channel = interaction.channels.first();
-      const missing = missingIn(channel, guild);
-      if (missing.length) return await respond(interaction, viewLogs(guild, arg, noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`))), true;
-      setLogChannel(guild.id, arg, channel.id);
-      done(`log channel set (${arg})`, `→ #${channel.name}`);
-      const privacy = arg === 'messages' ? '\nTo log deleted and edited messages, new messages in this server are kept for **7 days**, then deleted automatically. Removing this log deletes them immediately.' : '';
-      return await respond(interaction, viewLogs(guild, arg, noteGood(`**${LOG_TYPES.find(t => t.key === arg).label}** now goes to ${channel}.${privacy}`))), true;
-    }
-    if (action === 'clear') {
-      setLogChannel(guild.id, arg, null);
-      if (arg === 'messages') require('./messageStore').purgeGuild(guild.id);   // stop keeping message text
-      done(`log channel cleared (${arg})`);
-      return await respond(interaction, viewLogs(guild, arg, noteGood('Cleared.'))), true;
-    }
   }
 
   // ── verify ──

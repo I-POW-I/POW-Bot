@@ -158,7 +158,7 @@ const alertedAt = new Map();
 async function onJoin(member) {
   const { guild, user } = member;
   let s = settings(guild.id);
-  if (user.bot) return false;
+  if (user.bot || !require('./globalConfig').featureEnabled('raidProtection')) return false;   // global switch (/owner)
   if (s.active) await expire(guild), s = settings(guild.id);
 
   // Detection

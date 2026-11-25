@@ -26,7 +26,7 @@ const DEFAULTS = () => ({
   features:    { streamerAlerts: true, gameAlerts: true },
   blacklist:   { users: {}, guilds: {} },
   audit:       [],
-  alerts:      { webhookUrl: null, webhookId: null, dm: null, levels: null, digestMinutes: null, memoryPercent: null },
+  alerts:      { webhookUrl: null, webhookId: null, dm: null, levels: null, digestMinutes: null, digestTo: null, memoryPercent: null },
   presence:    { status: 'dnd', rotateSeconds: 30, list: null },
   announce:    { lastChannels: {} },
   backup:      { lastAt: null, size: null, scope: null, error: null, failedAt: null },

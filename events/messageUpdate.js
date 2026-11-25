@@ -19,6 +19,10 @@ module.exports = {
     const guild     = newMessage.guild;
     const channelId = getLogChannel(guild.id, 'messages');
     if (!channelId) return;
+    const L = require('../src/logs');
+    if (!L.enabled(guild.id, 'msgEdit') || L.isIgnored(guild.id, newMessage.channelId)) { store.updateContent(newMessage, newMessage.content || ''); return; }
+
+    if (L.authorIgnored(guild, newMessage.author?.id, newMessage.member)) { store.remove(newMessage.id); return; }
 
     // "Before" = the cached old message, or else the copy kept in the database
     const stored     = store.get(newMessage.id);

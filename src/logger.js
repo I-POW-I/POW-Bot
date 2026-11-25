@@ -42,8 +42,10 @@ function log(level, message, context = {}) {
   }
   if (triggerText && !shown.some(([k]) => k === 'trigger')) shown.push(['trigger', triggerText]);
 
+  // key in dim grey, value in light grey so the detail reads at a glance; very long values are clipped
+  const clip = (v) => { const s = String(v).replace(/\s+/g, ' '); return s.length > 240 ? `${s.slice(0, 239)}…` : s; };
   const ctx = shown.length
-    ? ' | ' + shown.map(([k, v]) => `\x1b[90m${k}=${v}\x1b[0m`).join(' | ')
+    ? ' | ' + shown.map(([k, v]) => `\x1b[90m${k}=\x1b[0m\x1b[37m${clip(v)}\x1b[0m`).join(' \x1b[90m|\x1b[0m ')
     : '';
   
   // Custom multi-pipe separator exclusively for INFO logs

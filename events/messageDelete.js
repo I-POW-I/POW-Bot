@@ -41,8 +41,11 @@ module.exports = {
 
     const channelId = getLogChannel(guild.id, 'messages');
     if (!channelId) return;
+    const L = require('../src/logs');
+    if (!L.enabled(guild.id, 'msgDelete') || L.isIgnored(guild.id, message.channelId)) { store.remove(message.id); return; }
 
     const authorId = message.author?.id || stored?.author_id;
+    if (!ownMessage && L.authorIgnored(guild, authorId, message.member)) { store.remove(message.id); return; }
     const content  = message.content || (fromBot ? store.describe(message) : '') || stored?.content || null;
     const attachments = message.attachments?.size
       ? [...message.attachments.values()].map(a => ({ name: a.name, url: a.url, type: a.contentType }))

@@ -1,15 +1,7 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { log }           = require('../src/logger');
-const { getLogChannel } = require('../src/guildConfig');
 
-const TRACKED = new Set([
-  AuditLogEvent.ChannelCreate, AuditLogEvent.ChannelDelete, AuditLogEvent.ChannelUpdate,
-  AuditLogEvent.RoleCreate, AuditLogEvent.RoleDelete, AuditLogEvent.RoleUpdate,
-  AuditLogEvent.MemberRoleUpdate,
-  AuditLogEvent.GuildUpdate, AuditLogEvent.InviteCreate,
-  AuditLogEvent.EmojiCreate, AuditLogEvent.EmojiDelete,
-  AuditLogEvent.WebhookCreate, AuditLogEvent.WebhookDelete,
-]);
+const { groupOf, enabled, serverRoute } = require('../src/logs');
 
 const LABELS = {
   [AuditLogEvent.ChannelCreate]:    { title: 'Channel created',          colour: 0x57F287 },
@@ -25,6 +17,31 @@ const LABELS = {
   [AuditLogEvent.EmojiDelete]:      { title: 'Emoji removed',            colour: 0xED4245 },
   [AuditLogEvent.WebhookCreate]:    { title: 'Webhook created',          colour: 0xFEE75C },
   [AuditLogEvent.WebhookDelete]:    { title: 'Webhook deleted',          colour: 0xFF7043 },
+  [AuditLogEvent.WebhookUpdate]:    { title: 'Webhook changed',          colour: 0x5865F2 },
+  [AuditLogEvent.MemberUpdate]:     { title: 'Nickname changed',         colour: 0x5865F2 },
+  [AuditLogEvent.InviteDelete]:     { title: 'Invite deleted',           colour: 0xFF7043 },
+  [AuditLogEvent.EmojiUpdate]:      { title: 'Emoji changed',            colour: 0x5865F2 },
+  [AuditLogEvent.StickerCreate]:    { title: 'Sticker added',            colour: 0x57F287 },
+  [AuditLogEvent.StickerDelete]:    { title: 'Sticker removed',          colour: 0xED4245 },
+  [AuditLogEvent.StickerUpdate]:    { title: 'Sticker changed',          colour: 0x5865F2 },
+  [AuditLogEvent.ThreadCreate]:     { title: 'Thread created',           colour: 0x57F287 },
+  [AuditLogEvent.ThreadDelete]:     { title: 'Thread deleted',           colour: 0xED4245 },
+  [AuditLogEvent.ThreadUpdate]:     { title: 'Thread changed',           colour: 0x5865F2 },
+  [AuditLogEvent.BotAdd]:           { title: 'Bot added to the server',  colour: 0xFEE75C },
+  [AuditLogEvent.IntegrationCreate]: { title: 'Integration added',       colour: 0xFEE75C },
+  [AuditLogEvent.IntegrationDelete]: { title: 'Integration removed',     colour: 0xFF7043 },
+  [AuditLogEvent.ChannelOverwriteCreate]: { title: 'Channel permissions added',   colour: 0xFEE75C },
+  [AuditLogEvent.ChannelOverwriteUpdate]: { title: 'Channel permissions changed', colour: 0xFEE75C },
+  [AuditLogEvent.ChannelOverwriteDelete]: { title: 'Channel permissions removed', colour: 0xFEE75C },
+  [AuditLogEvent.AutoModerationRuleCreate]: { title: 'AutoMod rule created', colour: 0x57F287 },
+  [AuditLogEvent.AutoModerationRuleUpdate]: { title: 'AutoMod rule changed', colour: 0x5865F2 },
+  [AuditLogEvent.AutoModerationRuleDelete]: { title: 'AutoMod rule deleted', colour: 0xED4245 },
+  [AuditLogEvent.AutoModerationBlockMessage]: { title: 'AutoMod blocked a message', colour: 0xFAA61A },
+  [AuditLogEvent.AutoModerationFlagToChannel]: { title: 'AutoMod flagged a message', colour: 0xFAA61A },
+  [AuditLogEvent.AutoModerationUserCommunicationDisabled]: { title: 'AutoMod timed someone out', colour: 0xFAA61A },
+  [AuditLogEvent.GuildScheduledEventCreate]: { title: 'Event created',   colour: 0x57F287 },
+  [AuditLogEvent.GuildScheduledEventUpdate]: { title: 'Event changed',   colour: 0x5865F2 },
+  [AuditLogEvent.GuildScheduledEventDelete]: { title: 'Event cancelled', colour: 0xED4245 },
 };
 
 /**
@@ -56,8 +73,12 @@ module.exports = {
   once: false,
   async execute(entry, guild) {
     await recordManualAction(entry, guild);
-    if (!TRACKED.has(entry.action)) return;
-    const channelId = getLogChannel(guild.id, 'modlog');
+    const group = groupOf(entry.action);
+    if (!group || !enabled(guild.id, group)) return;
+    if (entry.action === AuditLogEvent.MemberUpdate) {   // only nickname changes: timeouts are cases, and other member changes are not logged
+      if (!entry.changes?.some(c => c.key === 'nick')) return;
+    }
+    const channelId = serverRoute(guild.id, group);
     if (!channelId) return;
     try {
       const logChannel = await guild.channels.fetch(channelId);
@@ -107,6 +128,16 @@ module.exports = {
         const ch = entry.changes?.find(c=>c.key==='channel_id')?.new;
         embed.addFields({ name: 'Webhook', value: target?.name || '—', inline: true },
           { name: 'Channel', value: ch ? `<#${ch}>` : '—', inline: true });
+      }
+      else if (entry.action === AuditLogEvent.MemberUpdate) {
+        const nick = entry.changes?.find(c => c.key === 'nick');
+        embed.addFields({ name: 'Member', value: entry.target ? `${entry.target} — ${entry.target.tag || entry.target.id}` : '—', inline: true },
+          { name: 'Nickname', value: `${nick?.old ?? '*none*'} → ${nick?.new ?? '*none*'}`, inline: false });
+      } else {   // everything else: what it was about, and what changed
+        const t = target?.name ? `${target.name}${target.id ? ` (\`${target.id}\`)` : ''}` : target?.id ? `\`${target.id}\`` : null;
+        if (t) embed.addFields({ name: 'About', value: t, inline: true });
+        const ch = entry.changes?.map(c => `**${c.key}**: ${String(c.old ?? '—').slice(0, 100)} → ${String(c.new ?? '—').slice(0, 100)}`);
+        if (ch?.length) embed.addFields({ name: 'Details', value: ch.join('\n').slice(0, 1024), inline: false });
       }
       if (entry.reason) embed.addFields({ name: 'Reason', value: entry.reason, inline: false });
       await logChannel.send({ embeds: [embed] });

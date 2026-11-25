@@ -63,7 +63,7 @@ const CATEGORIES = [
       '**Welcome and leave**: **`/setup` > Welcome & leave**. Choose the channel, then pick how each post looks (image card, rich embed, both or text), a card style, and your own wording with placeholders like `{ordinal}` and `{accountage}`. **Extras** adds a private welcome message, roles for new members and a welcome-back line. **Preview** shows exactly what will be posted.',
       '**`/members overview | recent | pending | lookup`**: who is in the server and what\'s happening. *(Manage Server)*',
       '**`/purge`**: delete up to 100 messages. *(Manage Messages)*',
-      '**Message logs**: set in **`/setup` > Logs**. To log deleted and edited messages, new messages are kept for 7 days, then deleted automatically.',
+      '**Logs**: set in **`/setup` > Logs**. Pick a log, choose its channel, and switch each kind of event on or off. **Server changes** records channels, roles, nicknames, emoji, invites, threads, webhooks, AutoMod and server settings, with who did it. Message logs can ignore channels, roles, people and bots (**Ignore lists**), voice logs can switch each kind of event off, and Server changes can go to a separate channel for each kind (**Route by kind**). To log deleted and edited messages, new messages are kept for 7 days, then deleted automatically.',
       '',
       'Verification only uses what Discord shows about an account. No emails, IPs or locations.',
     ],
@@ -91,7 +91,7 @@ const OWNER_CATEGORY = {
     '**Alerts**: where errors and changes go, mute, console digest, memory restart.',
     '**Bot status**: add, edit, reorder and remove the rotating status line.',
     '**Announcements**, **Maintenance and features**, **Blocked users and servers**, **Recent changes**.',
-    'On the home screen: **Restart bot**, **Console logs** and **Send digest**.',
+    'On the home screen: **Restart bot**, **Console logs** and **Send digest**. In Alerts, **Digest and memory** sets how often the digest is sent and whether it goes to your webhook, your DMs or both.',
   ],
 };
 

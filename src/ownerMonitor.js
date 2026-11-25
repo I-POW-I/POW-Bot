@@ -44,6 +44,8 @@ function getSettings() {
   const has = (k) => process.env[k] !== undefined && String(process.env[k]).trim() !== '';
   return {
     digestMinutes: has('LOG_DIGEST_MINUTES')     ? num(process.env.LOG_DIGEST_MINUTES, 60)     : (sv.digestMinutes ?? 60),
+    // where the digest goes: 'webhook' (webhook or alerts channel), 'dm', 'both', or auto (webhook/channel if set, else DM)
+    digestTo:      ['webhook', 'dm', 'both'].includes(String(process.env.LOG_DIGEST_TO || '').toLowerCase()) ? String(process.env.LOG_DIGEST_TO).toLowerCase() : (['webhook', 'dm', 'both'].includes(sv.digestTo) ? sv.digestTo : null),
     memoryPercent: has('MEMORY_RESTART_PERCENT') ? num(process.env.MEMORY_RESTART_PERCENT, 90) : (sv.memoryPercent ?? 90),
     maxPerDay:     num(process.env.MEMORY_RESTART_MAX_PER_DAY, 3),
   };
@@ -153,7 +155,8 @@ const ISSUE = /\b(ERROR|WARN|GHOST)\b/;
 const showLine = (l) => (ISSUE.test(l.text) && l.time ? `[${l.time}] ` : '') + l.text;
 
 async function runDigest() {
-  if (!discloud.isConfigured() || !alerts.isEnabled()) return false;
+  const to = getSettings().digestTo;
+  if (!discloud.isConfigured() || !(alerts.isEnabled() || to === 'dm' || to === 'both')) return false;
 
   let consoleText, url;
   try { ({ text: consoleText, url } = await fetchConsole()); }
@@ -201,7 +204,7 @@ async function runDigest() {
     level: 'DIGEST',
     title: `Console log — ${hm(from)} to ${hm(now)} UTC`,
     description: [
-      `${errors} error${errors === 1 ? '' : 's'} · ${warns} warning${warns === 1 ? '' : 's'} · ${changes} change${changes === 1 ? '' : 's'} · ${starts} start${starts === 1 ? '' : 's'}`,
+      `**${errors}** error${errors === 1 ? '' : 's'} · **${warns}** warning${warns === 1 ? '' : 's'} · **${changes}** change${changes === 1 ? '' : 's'} · **${starts}** start${starts === 1 ? '' : 's'}`,
       rolled ? '_Console buffer rolled over or the bot restarted since the last digest — some lines may be missing._' : null,
       fresh.length === 0 ? '_No new console output._' : (rest.length === 0 ? '_Only routine heartbeat lines this period._' : null),
     ].filter(Boolean).join('\n'),
@@ -217,6 +220,7 @@ async function runDigest() {
     codeBlocks: tailLines.length ? [{ label: `Latest ${tailLines.length} line(s) — routine heartbeat hidden`, text: tailLines.join('\n'), max: 1100 }] : [],
     files: fresh.length ? [{ name: `console-${stamp}h.txt`, data: fileText }] : [],
     dm: 'fallback',
+    to,
   });
 }
 

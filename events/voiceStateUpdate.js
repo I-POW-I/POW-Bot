@@ -24,13 +24,18 @@ const C = {
   streamStop:     0x747F8D,
 };
 
-function base(member, colour, title) {
-  return new EmbedBuilder()
+function base(member, colour, title, kind) {
+  const embed = new EmbedBuilder()
     .setColor(colour)
     .setAuthor({ name: member.user.username, iconURL: member.user.displayAvatarURL({ dynamic: true }) })
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
     .setTitle(title);
+  if (kind) kinds.set(embed, kind);
+  return embed;
 }
+
+/** Which kind of voice event an embed is, so staff can switch kinds off. */
+const kinds = new WeakMap();
 
 const formatDuration = (ms) => duration(ms, { seconds: true });
 
@@ -66,6 +71,8 @@ async function getDisconnectMod(guild, windowMs = 5000) {
 async function sendLog(guild, embed) {
   const channelId = getLogChannel(guild.id, 'voice');
   if (!channelId) return;
+  const kind = kinds.get(embed);
+  if (kind && !require('../src/logs').enabled(guild.id, kind)) return;
   try {
     const ch = await guild.channels.fetch(channelId);
     if (ch?.isTextBased()) await ch.send({ embeds: [embed] });
@@ -95,7 +102,7 @@ module.exports = {
             // Check your server audit logs to see who dragged the bot
             const draggedBy = await getMoveMod(newState.guild, newChannel.id);
 
-            const embed = base(newState.member, C.forceLeave, '🛑 Bot intercepted unauthorized move')
+            const embed = base(newState.member, C.forceLeave, '🛑 Bot intercepted unauthorized move', 'vcBot')
               .setDescription(`The application caught an unapproved drag action and successfully rubber-banded itself back to its assigned room.`)
               .addFields(
                 { name: 'Intercepted in', value: `<#${newChannel.id}>`, inline: true },
@@ -136,7 +143,7 @@ module.exports = {
       joinTimes.set(key, Date.now());
       startSession(member.user.id, guild.id, newChannel.id, newChannel.name);
 
-      await sendLog(guild, base(member, C.join, '🔊 Member joined voice')
+      await sendLog(guild, base(member, C.join, '🔊 Member joined voice', 'vcJoin')
         .addFields(
           { name: 'Channel',     value: `<#${newChannel.id}>`, inline: true },
           { name: 'Members now', value: `${newChannel.members.size}`,        inline: true },
@@ -159,7 +166,7 @@ module.exports = {
       const disconnectedBy = await getDisconnectMod(guild);
 
       if (disconnectedBy) {
-        await sendLog(guild, base(member, C.forceLeave, '🔌 Member disconnected by moderator')
+        await sendLog(guild, base(member, C.forceLeave, '🔌 Member disconnected by moderator', 'vcLeave')
           .addFields(
             { name: 'Channel',         value: `<#${oldChannel.id}>`, inline: true },
             { name: 'Was in',          value: duration || 'Unknown',  inline: true },
@@ -167,7 +174,7 @@ module.exports = {
             { name: 'Disconnected by', value: disconnectedBy,         inline: false },
           ));
       } else {
-        await sendLog(guild, base(member, C.leave, '🔇 Member left voice')
+        await sendLog(guild, base(member, C.leave, '🔇 Member left voice', 'vcLeave')
           .addFields(
             { name: 'Channel', value: `<#${oldChannel.id}>`, inline: true },
             { name: 'Was in',  value: duration || 'Unknown',  inline: true },
@@ -185,7 +192,7 @@ module.exports = {
       const movedBy = await getMoveMod(guild, newChannel.id);
       const embed   = base(member,
         movedBy ? C.modMove : C.move,
-        movedBy ? 'Member moved by moderator' : 'Member changed channel')
+        movedBy ? 'Member moved by moderator' : 'Member changed channel', 'vcMove')
         .addFields(
           { name: 'From',    value: `<#${oldChannel.id}>`, inline: true },
           { name: 'To',      value: `<#${newChannel.id}>`, inline: true },
@@ -202,7 +209,7 @@ module.exports = {
       const mod = await getMuteDeafMod(guild, member.id);
       await sendLog(guild, base(member,
         newState.serverMute ? C.serverMute : C.serverUnmute,
-        newState.serverMute ? 'Member server muted' : 'Member server unmuted')
+        newState.serverMute ? 'Member server muted' : 'Member server unmuted', 'vcMute')
         .addFields(
           { name: 'Channel',   value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
           { name: 'Action by', value: mod || 'Unknown',                          inline: true },
@@ -216,7 +223,7 @@ module.exports = {
       const mod = await getMuteDeafMod(guild, member.id);
       await sendLog(guild, base(member,
         newState.serverDeaf ? C.serverDeafen : C.serverUndeafen,
-        newState.serverDeaf ? 'Member server deafened' : 'Member server undeafened')
+        newState.serverDeaf ? 'Member server deafened' : 'Member server undeafened', 'vcMute')
         .addFields(
           { name: 'Channel',   value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
           { name: 'Action by', value: mod || 'Unknown',                          inline: true },
@@ -230,7 +237,7 @@ module.exports = {
       if (newState.streaming) {
         streamTimes.set(key, Date.now());
         startStreamSession(member.id, guild.id);
-        await sendLog(guild, base(member, C.streamStart, '📡 Member started streaming')
+        await sendLog(guild, base(member, C.streamStart, '📡 Member started streaming', 'vcStream')
           .addFields(
             { name: 'Channel', value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
             { name: '\u200b',  value: '\u200b',                                  inline: true },
@@ -242,7 +249,7 @@ module.exports = {
           : null;
         streamTimes.delete(key);
         endStreamSession(member.id, guild.id);
-        await sendLog(guild, base(member, C.streamStop, '⏹️ Member stopped streaming')
+        await sendLog(guild, base(member, C.streamStop, '⏹️ Member stopped streaming', 'vcStream')
           .addFields(
             { name: 'Channel',      value: newChannel ? `<#${newChannel.id}>` : '—', inline: true },
             { name: 'Streamed for', value: duration || 'Unknown',                     inline: true },

@@ -12,6 +12,8 @@ module.exports = {
 
     const logChannelId = getLogChannel(guild.id, 'messages');
     if (!logChannelId) return;
+    const L = require('../src/logs');
+    if (!L.enabled(guild.id, 'msgBulk') || L.isIgnored(guild.id, firstMessage.channelId)) { for (const msg of messages.values()) store.remove(msg.id); return; }
     const logChannel = guild.channels.cache.get(logChannelId);
     if (!logChannel) return;
 

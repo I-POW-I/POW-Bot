@@ -175,7 +175,7 @@ async function handleMessage(message, { edited = false } = {}) {
   const guild = message.guild;
   if (!guild || !message.author || message.author.bot || message.webhookId || message.system || !message.content) return;
   const s = settings(guild.id);
-  if (!s.enabled || !Object.values(s.filters).some(f => f.on)) return;
+  if (!s.enabled || !Object.values(s.filters).some(f => f.on) || !require('./globalConfig').featureEnabled('autoMod')) return;   // global switch (/owner)
   const member = message.member || await guild.members.fetch(message.author.id).catch(() => null);
   if (isExempt(member, message.channelId, s)) return;
 

@@ -24,6 +24,9 @@ const toError = (e) => {
   return new Error(text);
 };
 
+// every embed the bot sends is drawn as a card (src/ui)
+require('./src/ui/patch').install();
+
 alerts.init(client);
 loadCommands(client);
 loadEvents(client);
