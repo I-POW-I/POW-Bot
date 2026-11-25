@@ -7,7 +7,7 @@ const BLUE = 0x5865F2, RED = 0xED4245;
 const n = (v) => v.toLocaleString('en-GB');
 
 function viewHome(userId) {
-  const d = retention.userData(userId), empty = !(d.voice || d.streams || d.events || d.messages);
+  const d = retention.userData(userId), empty = !(d.voice || d.streams || d.events || d.messages || d.counts);
   const embed = new EmbedBuilder().setColor(BLUE).setTitle('🔒 Your data').setDescription([
     'This is everything the bot has stored about you across all servers it shares with you.',
     '',
@@ -19,6 +19,8 @@ function viewHome(userId) {
     '*Kept for 90 days.*',
     `**Recent messages:** ${n(d.messages)}`,
     `*Only held for servers that use the deleted and edited message logs. Kept for ${retention.messageDays} days.*`,
+    `**Message and reaction counts:** ${n(d.counts)}`,
+    '*Only numbers, never what you wrote: how many messages and reactions you sent per day, hour and channel. Only kept in servers that turned on Wrapped counting.*',
   ].join('\n'));
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('privacy:ask').setLabel('Delete my data').setStyle(ButtonStyle.Danger).setDisabled(empty));

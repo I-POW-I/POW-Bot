@@ -11,6 +11,7 @@ module.exports = {
   async execute(message) {
     require('../src/checkpoint').handleMessage(message).catch(err => log('WARN', 'Security Check Point error', { err }));
     require('../src/automod').handleMessage(message).catch(err => log('WARN', 'AutoMod error', { err }));
+    try { require('../src/activity').recordMessage(message); } catch { /* counting is best-effort */ }
     try { store.record(message); }
     catch (err) { log('WARN', 'Could not store a message for the delete log', { err }); }
   },

@@ -76,11 +76,25 @@ function authorIgnored(guild, userId, member = null) {
   return !!m?.roles?.cache && roles.some(r => m.roles.cache.has(r));
 }
 
-/** Where server changes go. Servers that never chose a Server log keep getting them in the Moderation log, as before. */
-const serverLogChannel = (guildId) => getLogChannel(guildId, 'server') || getLogChannel(guildId, 'modlog');
+/** Where server changes go: the Server changes log, and nowhere else. */
+const serverLogChannel = (guildId) => getLogChannel(guildId, 'server');
+
+/**
+ * Once per server: server changes used to go to the Moderation log when no Server log was chosen, which was easy to miss.
+ * Where that was happening, the Server log is now set to the same channel, so it shows in /setup > Logs and can be changed there.
+ */
+function clarify() {
+  const { listGuildIds, setGuildConfig, setLogChannel } = require('./guildConfig');
+  for (const id of listGuildIds()) {
+    const c = getGuildConfig(id);
+    if (c.logsClarified) continue;
+    if (c.logChannels?.modlog && !c.logChannels?.server) setLogChannel(id, 'server', c.logChannels.modlog);
+    setGuildConfig(id, { logsClarified: true });
+  }
+}
 
 /** Server changes can be sent to a channel of their own per kind (channels, roles, invites...). Unrouted kinds use the Server log. */
 const routes = (guildId) => getGuildConfig(guildId).logRoutes || {};
 const serverRoute = (guildId, group) => routes(guildId)[group] || serverLogChannel(guildId);
 
-module.exports = { LOG_TYPES, EVENTS, enabled, off, groupOf, ignoredChannels, isIgnored, ignoredRoles, ignoredUsers, authorIgnored, serverLogChannel, routes, serverRoute };
+module.exports = { LOG_TYPES, EVENTS, enabled, off, groupOf, ignoredChannels, isIgnored, ignoredRoles, ignoredUsers, authorIgnored, serverLogChannel, clarify, routes, serverRoute };

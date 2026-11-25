@@ -1,7 +1,7 @@
 
 # POW-Bot privacy policy
 
-Last updated: 24 November 2026
+Last updated: 25 November 2026
 
 This explains what POW-Bot stores, why, for how long, and how to have it removed. It is written to be read, so it is short.
 
@@ -14,6 +14,7 @@ This explains what POW-Bot stores, why, for how long, and how to have it removed
 | **Live sessions**: when you went live in a voice channel | Voice stats | Same as voice sessions |
 | **Join and leave history**: user ID, server and time | Member overview and verification risk checks | 90 days |
 | **Recent messages**: text, attachment names, author ID and tag | Only in servers that switched on the deleted and edited message logs. Lets the log show what was removed | 7 days |
+| **Message and reaction counts**: your user ID, the server, the channel, the day and hour, and how many messages and reactions you sent. Never the text, the content or what you reacted to. Bots are not counted | Only in servers whose staff switched on counting in `/setup` > Wrapped. Used for My Server Time Wrapped and Server Wrapped | Until the bot is removed from the server, or staff erase them. A server's yearly reset removes the previous year |
 | **Moderation cases**: the member's user ID and tag, the moderator, the action, the reason and the time | The server's moderation record (`/case`, `/history`) | Until the bot is removed from the server. They are the server's records, so `/privacy` does not remove them. Ask the server's staff |
 | **Watched streamers, games and feeds** | Alerts | Until the server removes them or the bot leaves |
 
@@ -25,7 +26,7 @@ If a server turns on the Security Check Point, anyone who posts in its trap chan
 
 ## What the bot does not store
 
-Email addresses, IP addresses, locations, direct messages, voice audio, or message text from servers that have not turned on message logs. The bot stays silent in voice channels and never records audio.
+Email addresses, IP addresses, locations, direct messages, voice audio, or message text from servers that have not turned on message logs. Message counting never stores what a message says. The bot stays silent in voice channels and never records audio.
 
 ## Backups
 
@@ -41,7 +42,7 @@ Data is not sold, shared for advertising, or used to train models.
 
 ## Your choices
 
-- **See or delete your data**: use `/privacy` in any server with the bot, or in a direct message with it. Deleting removes your voice and live sessions, join and leave history and stored messages in every server. Your voice time on leaderboards starts again from zero.
+- **See or delete your data**: use `/privacy` in any server with the bot, or in a direct message with it. Deleting removes your voice and live sessions, join and leave history, stored messages and message and reaction counts in every server. Your voice time on leaderboards starts again from zero.
 - **Server removal**: when the bot is removed from a server, everything stored for that server is deleted straight away.
 - **Anything else**: ask in the support server or contact [CONTACT: your email or support server link].
 

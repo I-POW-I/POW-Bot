@@ -1,73 +1,8 @@
-const { Events, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice');
+const { Events, MessageFlags } = require('discord.js');
 const { log }                     = require('../src/logger');
-const store                       = require('../src/connectionStore');
-const { attachDisconnectHandler } = require('../src/heartbeat');
-const { updatePanel, buildMemberEmbed, buildChannelSelectRow } = require('../src/statusUpdater');
-const { setLastChannel, clearLastChannel, setStats, getBotControlRoleId } = require('../src/guildConfig');
-const { attachSilencePlayer, stopSilencePlayer } = require('../src/audioPlayer');
 const diagnostics                = require('../src/diagnostics');
 const globalConfig               = require('../src/globalConfig');
 const { isBotAdmin }             = require('../src/permissions');
-
-const HEALTHY = [
-  VoiceConnectionStatus.Ready,
-  VoiceConnectionStatus.Signalling,
-  VoiceConnectionStatus.Connecting,
-];
-
-// ── Shared join logic ─────────────────────────────────────────────────────────
-async function joinChannel(targetChannel, guild, member, client, interaction) {
-  const existingConn = getVoiceConnection(guild.id);
-  if (existingConn) {
-    if (HEALTHY.includes(existingConn.state.status)) {
-      const entry = store.getEntry(guild.id);
-      return interaction.reply({
-        content: `I am already connected to **${entry?.channelName || 'a voice channel'}**. Ask a admin to use the Leave button first.`,
-        flags: [MessageFlags.Ephemeral],
-      });
-    }
-    try { existingConn.destroy(); } catch (_) {}
-    store.clearConnection(guild.id);
-    stopSilencePlayer(guild.id);
-  }
-
-  try {
-    const connection = joinVoiceChannel({
-      channelId:      targetChannel.id,
-      guildId:        guild.id,
-      adapterCreator: guild.voiceAdapterCreator,
-      selfDeaf:       true,
-      selfMute:       false,
-    });
-
-    attachDisconnectHandler(connection, guild.name, targetChannel.name);
-    attachSilencePlayer(connection, guild.id);
-
-    store.setConnection(guild.id, {
-      channelId:   targetChannel.id,
-      channelName: targetChannel.name,
-      guildName:   guild.name,
-    });
-    setLastChannel(guild.id, targetChannel.id);
-
-    const entry = store.getEntry(guild.id);
-    setStats(guild.id, { joinedAt: entry.joinedAt, reconnectCount: 0 });
-
-    require('../src/presence').refresh(client);
-
-    log('VOICE', 'Joined channel', { guild: guild.name, channel: targetChannel.name, by: member.user.tag });
-    await updatePanel(client);
-
-    return interaction.reply({ content: `Joined **${targetChannel.name}**.`, flags: [MessageFlags.Ephemeral] });
-  } catch {
-    return interaction.reply({
-      content: 'Failed to join — check I have the **Connect** permission.',
-      flags: [MessageFlags.Ephemeral],
-    });
-  }
-}
-
 
 // Modules that own their own buttons / menus / modals. Each returns true when it handled the interaction.
 const DELEGATES = [
@@ -150,28 +85,8 @@ async function handle(interaction, client) {
 
 
     
-    // ── Channel select (voice channel picker for Join) ─────────────────────────
-    if (interaction.isChannelSelectMenu() && interaction.customId === 'bot_join_channel') {
-      const targetChannel = interaction.channels.first();
-      if (!targetChannel?.isVoiceBased()) {
-        return interaction.reply({ content: 'That is not a voice channel.', flags: [MessageFlags.Ephemeral] });
-      }
-      return joinChannel(targetChannel, interaction.guild, interaction.member, client, interaction);
-    }
-
-    // ── User select (member lookup) ───────────────────────────────────────────
-    if (interaction.isUserSelectMenu() && interaction.customId === 'bot_lookup_user') {
-      const { guild } = interaction;
-      const user   = interaction.users.first();
-      const member = await guild.members.fetch(user.id).catch(() => null);
-      if (!member) {
-        return interaction.reply({ content: 'Could not find that member.', flags: [MessageFlags.Ephemeral] });
-      }
-      return interaction.reply({
-        embeds: [buildMemberEmbed(member, guild)],
-        flags:  [MessageFlags.Ephemeral],
-      });
-    }
+    // ── Voice panel menus (join and move pickers, More, member lookup) ─────────
+    if (!interaction.isButton() && await require('../src/voicePanel').handle(interaction, client)) return;
 
     // ── Changelog: pick an older update ────────────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId === 'cl:pick') {
@@ -185,8 +100,6 @@ async function handle(interaction, client) {
     }
 
     if (!interaction.isButton()) return;
-
-    const { guild, member } = interaction;
 
     // ── Log button use to console and command log channel ─────────────────────
     { // log every button press
@@ -203,8 +116,9 @@ async function handle(interaction, client) {
             const btnCh = await client.channels.fetch(btnLogId).catch(() => null);
             if (btnCh?.isTextBased()) {
               const BUTTON_LABELS = {
-                bot_join: 'Join', bot_leave: 'Leave',
-                bot_myinfo: 'My info', bot_lookup: 'User lookup',
+                bot_join: 'Join', bot_leave: 'Leave', bot_move: 'Move',
+                bot_myinfo: 'My card', bot_lookup: 'User lookup',
+                bot_busy: 'Busy times', bot_recap: 'Weekly recap', bot_swrapped: 'Server Wrapped', bot_mywrapped: 'My Server Time Wrapped',
                 bot_leaderboard: 'Leaderboard', bot_info: 'Leaderboard',
               };
               const label = BUTTON_LABELS[interaction.customId] || interaction.customId;
@@ -226,72 +140,8 @@ async function handle(interaction, client) {
         } catch { /* non-critical */ }
       }
     }
-    const isAdmin = member.permissions.has(PermissionFlagsBits.ManageGuild);
-
-    // ── Open to everyone ──────────────────────────────────────────────────────
-
-    // 'bot_info' is the old name of this button, kept so panels posted before the update keep working
-    if (interaction.customId === 'bot_leaderboard' || interaction.customId === 'bot_info') {
-      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-      return interaction.editReply(await require('../src/leaderboard').view(guild, 'all', interaction.user.id));
-    }
-
-    if (interaction.customId === 'bot_myinfo') {
-      return interaction.reply({
-        embeds: [buildMemberEmbed(member, guild)],
-        flags:  [MessageFlags.Ephemeral],
-      });
-    }
-
-    if (interaction.customId === 'bot_lookup') {
-      const { buildUserSelectRow } = require('../src/statusUpdater');
-      return interaction.reply({
-        content:    'Select a member to view their profile:',
-        components: [buildUserSelectRow()],
-        flags:      [MessageFlags.Ephemeral],
-      });
-    }
-
-    // ── Role/owner gated ──────────────────────────────────────────────────────
-    const botControlRoleId = getBotControlRoleId(guild.id);
-    const canControl       = botControlRoleId
-      ? member.roles.cache.has(botControlRoleId)
-      : guild.ownerId === member.user.id;
-
-    // ── Join — Manage Server ──────────────────────────────────────────────────
-    if (interaction.customId === 'bot_join') {
-      if (!isAdmin) {
-        return interaction.reply({ content: 'You need **Manage Server** to use this.', flags: [MessageFlags.Ephemeral] });
-      }
-      const targetChannel = member.voice?.channel;
-      if (targetChannel?.isVoiceBased()) return joinChannel(targetChannel, guild, member, client, interaction);
-      return interaction.reply({
-        content:    "You're not in a voice channel. Pick one:",
-        components: [buildChannelSelectRow()],
-        flags:      [MessageFlags.Ephemeral],
-      });
-    }
-
-    // ── Leave — role/owner gated ──────────────────────────────────────────────
-    if (interaction.customId === 'bot_leave') {
-      if (!canControl) {
-        return interaction.reply({
-          content: botControlRoleId ? `You need the <@&${botControlRoleId}> role.` : 'Only the server owner can use this.',
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-      const conn  = getVoiceConnection(guild.id);
-      const entry = store.getEntry(guild.id);
-      if (!conn && !entry) return interaction.reply({ content: "Not connected.", flags: [MessageFlags.Ephemeral] });
-      if (conn) { try { conn.destroy(); } catch (_) {} }
-      stopSilencePlayer(guild.id);
-      store.clearConnection(guild.id);
-      clearLastChannel(guild.id);
-      require('../src/presence').refresh(client);
-      log('VOICE', 'Left via panel', { guild: guild.name, by: member.user.tag });
-      await updatePanel(client);
-      return interaction.reply({ content: `Disconnected from **${entry?.channelName || 'the voice channel'}**.`, flags: [MessageFlags.Ephemeral] });
-    }
+    // ── Voice panel buttons (join, move, leave, cards, busy times, recap, Wrapped) ──
+    if (await require('../src/voicePanel').handle(interaction, client)) return;
 }
 
 // ── Safety net, global gates, and the exported handler ───────────────────────

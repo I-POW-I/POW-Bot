@@ -36,9 +36,8 @@ function viewMain(guild, user, note) {
   const c = getGuildConfig(guild.id);
   const fields = logs.LOG_TYPES.map(t => {
     const own = getLogChannel(guild.id, t.key);
-    const fallback = t.key === 'server' && !own && logs.serverLogChannel(guild.id);
     const off = (logs.EVENTS[t.key] || []).filter(e => !logs.enabled(guild.id, e.key)).length;
-    const where = own ? chan(own) : fallback ? `${chan(fallback)} *(your Moderation log)*` : '*not set*';
+    const where = own ? chan(own) : '*not set*';
     return { name: t.label, value: `${where}${off ? ` · ${off} kind${off === 1 ? '' : 's'} off` : ''}\n-# ${t.desc}`, inline: false };
   });
   const ig = { ch: logs.ignoredChannels(guild.id).filter(id => exists(guild, id)).length, ro: logs.ignoredRoles(guild.id).length, us: logs.ignoredUsers(guild.id).length };
@@ -46,8 +45,17 @@ function viewMain(guild, user, note) {
   fields.push({ name: 'Message logs ignore', value: ig.ch + ig.ro + ig.us ? `${ig.ch} channel${ig.ch === 1 ? '' : 's'} · ${ig.ro} role${ig.ro === 1 ? '' : 's'} · ${ig.us} people or bots` : 'nothing', inline: true });
   fields.push({ name: 'Server change routing', value: routed ? `${routed} kind${routed === 1 ? '' : 's'} have their own channel` : 'everything in one channel', inline: true });
   fields.push({ name: 'Other bots\' deleted messages', value: onOff(c.logBotMessages === true), inline: true });
+  // the other features that write to a log channel, and where each one actually goes
+  const modlog = getLogChannel(guild.id, 'modlog');
+  const where = (own, fallback) => own ? `${chan(own)} *(its own channel)*` : fallback ? `${chan(fallback)} *(Moderation actions log)*` : '*nowhere yet*';
+  const am = require('./automod').settings(guild.id), rd = require('./raid').settings(guild.id), cp = require('./checkpoint').settings(guild.id);
+  fields.push({ name: 'Also writes to a log', value: [
+    `AutoMod: ${am.enabled ? where(am.logChannelId, modlog) : 'off'}`,
+    `Raid protection: ${rd.enabled ? where(rd.alertChannelId, modlog || getLogChannel(guild.id, 'members')) : 'off'}`,
+    `Security Check Point: ${cp.enabled ? where(cp.logChannelId, modlog) : 'off'}`,
+  ].join('\n') + '\n-# These use the Moderation actions log unless you give them their own channel on their own setup page.', inline: false });
   return {
-    embeds: [frame('Logs', [note, 'Choose a log below to set its channel, switch kinds of event on or off, and send a test entry.'].filter(Boolean).join('\n\n'), fields)],
+    embeds: [frame('Logs', [note, 'Every log has one channel, set here and nowhere else. Choose a log below to set its channel, switch kinds of event on or off, and send a test entry.'].filter(Boolean).join('\n\n'), fields)],
     components: [
       row(new StringSelectMenuBuilder().setCustomId('setup:logs:type').setPlaceholder('Choose a log to set up…')
         .addOptions(logs.LOG_TYPES.map(t => ({ label: t.label, value: t.key, description: t.desc.slice(0, 90) })))),
@@ -63,7 +71,7 @@ function viewType(guild, user, type, note) {
 
   const lines = [note, t.desc];
   if (type === 'server') {
-    lines.push(own ? 'Every change is logged with **who made it**.' : logs.serverLogChannel(guild.id) ? `Until you choose a channel here, these changes keep going to ${chan(logs.serverLogChannel(guild.id))}, your Moderation log.` : 'Choose a channel to start logging server changes.');
+    lines.push(own ? 'Every change is logged with **who made it**.' : 'Choose a channel to start logging server changes.');
     if (own && !guild.members.me.permissions.has('ViewAuditLog')) lines.push('⚠️ I need the **View Audit Log** permission to see these changes.');
   }
   const fields = [{ name: 'Channel', value: chan(own), inline: true }];

@@ -42,6 +42,18 @@ function missingIn(channel, guild, perms = POST_PERMS) {
   return perms.filter(x => !p?.has(PermissionFlagsBits[x])).map(pretty);
 }
 
+/**
+ * The server's own announcement channel: a news (announcement) channel, or the Updates channel of a Community server.
+ * Offered as a one-tap choice wherever a setup page asks for a channel.
+ */
+function announcementChannel(guild) {
+  return guild.channels.cache.find(c => c.type === ChannelType.GuildAnnouncement && c.viewable) || guild.publicUpdatesChannel || null;
+}
+const announcementButton = (id, guild) => {
+  const c = announcementChannel(guild);
+  return c ? new ButtonBuilder().setCustomId(id).setLabel(`Use #${c.name}`.slice(0, 80)).setStyle(ButtonStyle.Secondary) : null;
+};
+
 /** Answer a setup interaction by editing the screen in place (or opening it fresh from a command). */
 async function respond(interaction, view) {
   if (interaction.deferred || interaction.replied) return interaction.editReply(view);
@@ -52,5 +64,5 @@ async function respond(interaction, view) {
 module.exports = {
   BLUE, GREEN, AMBER, RED, ephemeral,
   chan, role, onOff, noteBad, noteGood, backButton, channelSelect, roleSelect,
-  POST_PERMS, pretty, missingIn, respond,
+  POST_PERMS, pretty, missingIn, respond, announcementChannel, announcementButton,
 };

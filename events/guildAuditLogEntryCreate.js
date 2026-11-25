@@ -2,6 +2,7 @@ const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { log }           = require('../src/logger');
 
 const { groupOf, enabled, serverRoute } = require('../src/logs');
+const fmt = require('../src/auditFormat');
 
 const LABELS = {
   [AuditLogEvent.ChannelCreate]:    { title: 'Channel created',          colour: 0x57F287 },
@@ -95,25 +96,30 @@ module.exports = {
         const removed = entry.changes?.filter(c => c.key === '$remove').flatMap(c => c.new?.map(r => `<@&${r.id}>`) || []);
         if (added?.length)   embed.addFields({ name: 'Roles added',   value: added.join(' '),   inline: false });
         if (removed?.length) embed.addFields({ name: 'Roles removed', value: removed.join(' '), inline: false });
-        const other = entry.changes?.filter(c => !['$add','$remove'].includes(c.key)).map(c => `**${c.key}**: ${c.old ?? '—'} → ${c.new ?? '—'}`).filter(Boolean);
-        if (other?.length) embed.addFields({ name: 'Changes', value: other.join('\n').slice(0, 1024), inline: false });
+        const other = fmt.lines({ changes: entry.changes?.filter(c => !['$add', '$remove'].includes(c.key)) });
+        if (other.length) embed.addFields({ name: 'Changes', value: other.join('\n').slice(0, 1024), inline: false });
       } else if ([AuditLogEvent.ChannelCreate, AuditLogEvent.ChannelDelete, AuditLogEvent.ChannelUpdate].includes(entry.action)) {
-        const name = target?.name || entry.changes?.find(c=>c.key==='name')?.new || '—';
-        embed.addFields({ name: 'Channel', value: target?.id ? `<#${target.id}> — ${name}` : name, inline: true });
+        const name = target?.name || entry.changes?.find(c => c.key === 'name')?.new || '—';
+        // a deleted channel can't be mentioned, so it is shown by name; otherwise the mention already shows the name
+        embed.addFields({ name: 'Channel', value: target?.id && guild.channels.cache.has(target.id) ? `<#${target.id}>` : name, inline: true });
         if (entry.action === AuditLogEvent.ChannelUpdate) {
-          const ch = entry.changes?.filter(c=>c.key!=='permission_overwrites').map(c=>`**${c.key}**: ${c.old??'—'} → ${c.new??'—'}`);
-          if (ch?.length) embed.addFields({ name: 'Changes', value: ch.join('\n').slice(0,1024), inline: false });
+          const ch = fmt.lines(entry);
+          if (ch.length) embed.addFields({ name: 'Changes', value: ch.join('\n').slice(0, 1024), inline: false });
         }
+      } else if ([AuditLogEvent.ChannelOverwriteCreate, AuditLogEvent.ChannelOverwriteUpdate, AuditLogEvent.ChannelOverwriteDelete].includes(entry.action)) {
+        const ov = fmt.overwrite(entry);
+        embed.addFields({ name: 'Channel', value: target?.id ? `<#${target.id}>` : target?.name || '—', inline: true }, { name: 'For', value: ov.who, inline: true });
+        if (ov.lines.length) embed.addFields({ name: 'Permissions', value: ov.lines.join('\n').slice(0, 1024), inline: false });
       } else if ([AuditLogEvent.RoleCreate, AuditLogEvent.RoleDelete, AuditLogEvent.RoleUpdate].includes(entry.action)) {
         const name = target?.name || entry.changes?.find(c=>c.key==='name')?.new || '—';
-        embed.addFields({ name: 'Role', value: target?.id ? `<@&${target.id}> — ${name}` : name, inline: true });
+        embed.addFields({ name: 'Role', value: target?.id && guild.roles.cache.has(target.id) ? `<@&${target.id}>` : name, inline: true });
         if (entry.action === AuditLogEvent.RoleUpdate) {
-          const ch = entry.changes?.filter(c=>c.key!=='permissions').map(c=>`**${c.key}**: ${c.old??'—'} → ${c.new??'—'}`);
-          if (ch?.length) embed.addFields({ name: 'Changes', value: ch.join('\n').slice(0,1024), inline: false });
+          const ch = fmt.lines(entry);
+          if (ch.length) embed.addFields({ name: 'Changes', value: ch.join('\n').slice(0, 1024), inline: false });
         }
       } else if (entry.action === AuditLogEvent.GuildUpdate) {
-        const ch = entry.changes?.filter(c=>!['icon_hash','splash_hash','banner_hash'].includes(c.key)).map(c=>`**${c.key}**: ${c.old??'—'} → ${c.new??'—'}`);
-        if (ch?.length) embed.addFields({ name: 'Changes', value: ch.join('\n').slice(0,1024), inline: false });
+        const ch = fmt.lines(entry);
+        if (ch.length) embed.addFields({ name: 'Changes', value: ch.join('\n').slice(0, 1024), inline: false });
       } else if (entry.action === AuditLogEvent.InviteCreate) {
         const code = entry.changes?.find(c=>c.key==='code')?.new || '—';
         const ch   = entry.changes?.find(c=>c.key==='channel_id')?.new;
@@ -136,8 +142,8 @@ module.exports = {
       } else {   // everything else: what it was about, and what changed
         const t = target?.name ? `${target.name}${target.id ? ` (\`${target.id}\`)` : ''}` : target?.id ? `\`${target.id}\`` : null;
         if (t) embed.addFields({ name: 'About', value: t, inline: true });
-        const ch = entry.changes?.map(c => `**${c.key}**: ${String(c.old ?? '—').slice(0, 100)} → ${String(c.new ?? '—').slice(0, 100)}`);
-        if (ch?.length) embed.addFields({ name: 'Details', value: ch.join('\n').slice(0, 1024), inline: false });
+        const ch = fmt.lines(entry);
+        if (ch.length) embed.addFields({ name: 'Details', value: ch.join('\n').slice(0, 1024), inline: false });
       }
       if (entry.reason) embed.addFields({ name: 'Reason', value: entry.reason, inline: false });
       await logChannel.send({ embeds: [embed] });

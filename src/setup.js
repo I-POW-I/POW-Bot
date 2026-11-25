@@ -32,8 +32,9 @@ const welcomeKit = require('./setupWelcome');
 const protectKit = require('./setupProtect');
 const logsKit = require('./setupLogs');
 const displayKit = require('./setupDisplay');
+const wrappedKit = require('./setupWrapped');
 const botPermissions = require('./botPermissions');
-const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit, logsKit, displayKit];                 // pages that live in their own files
+const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit, logsKit, displayKit, wrappedKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
@@ -56,6 +57,7 @@ const PAGES = [
   { value: 'checkpoint', label: 'Security Check Point',    emoji: '🚧', desc: 'A trap channel that catches spam bots and hacked accounts',},
   { value: 'raid',      label: 'Raid protection',           emoji: '🛑', desc: 'Join-burst detection, raid mode, account age gate',},
   { value: 'automod',   label: 'AutoMod',                    emoji: '🤖', desc: 'Invites, scam links, spam, mentions, words, strikes',},
+  { value: 'wrapped',   label: 'Wrapped',                    emoji: '🎊', desc: 'Message counting and the December Server Wrapped post',},
   { value: 'display',   label: 'Display',                    emoji: '🎨', desc: 'Cards or classic embeds, for everything or one area',},
   { value: 'announce',  label: 'Announcements',              emoji: '📣', desc: 'Where bot news and changelogs are posted',},
 ];
@@ -93,6 +95,7 @@ function summary(guild) {
     { key: 'checkpoint', core: false, done: cps.enabled && exists(cps.channelId), text: cps.enabled && exists(cps.channelId) ? `On · ${chan(cps.channelId)} · ${cps.caught} caught` : 'Off. Catches spam bots and hacked accounts' },
     { key: 'raid', core: false, done: rds.enabled || rds.gateEnabled, text: rds.active ? '🔴 Raid mode is ON' : rds.enabled ? `On · ${rds.joins} joins in ${rds.seconds}s` : rds.gateEnabled ? 'Age gate on' : 'Off. Protects against join floods' },
     { key: 'automod', core: false, done: ams.enabled && amFilters > 0, text: ams.enabled ? `On · ${amFilters} filter${amFilters === 1 ? '' : 's'}` : 'Off. Invite, scam, spam and word filters' },
+    { key: 'wrapped', core: false, done: require('./activity').settings(guild.id).counting, text: require('./activity').settings(guild.id).counting ? `Counting on${require('./activity').settings(guild.id).autoPost ? ' · December post on' : ''}` : 'Voice only. Switch counting on for messages' },
     { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Not set (falls back to another channel)' },
   ];
 }

@@ -135,6 +135,21 @@ async function init() {
         UNIQUE(guild_id, app_id)
       );
       CREATE INDEX IF NOT EXISTS idx_game_guild ON game_subscriptions (guild_id);
+
+      -- Counts only, never text: how many messages and reactions a member sent per day, hour (UTC) and channel.
+      -- Only filled in servers that switched on counting in /setup > Wrapped.
+      CREATE TABLE IF NOT EXISTS activity (
+        guild_id   TEXT    NOT NULL,
+        user_id    TEXT    NOT NULL,
+        day        TEXT    NOT NULL,
+        hour       INTEGER NOT NULL,
+        channel_id TEXT    NOT NULL,
+        messages   INTEGER NOT NULL DEFAULT 0,
+        reactions  INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (guild_id, user_id, day, hour, channel_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_activity_guild_day ON activity (guild_id, day);
+      CREATE INDEX IF NOT EXISTS idx_activity_user      ON activity (user_id);
     `);
 
     save();
@@ -167,7 +182,7 @@ async function init() {
 // Writes are now batched: the first write schedules one save a moment later, and
 // the file is written to a temp file then renamed so a crash mid-write can never
 // leave a half-written database behind.
-const SAVE_DELAY_MS = 2000;
+const SAVE_DELAY_MS = 5000;
 let saveTimer = null;
 let dirty     = false;
 

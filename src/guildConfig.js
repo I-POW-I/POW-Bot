@@ -18,19 +18,33 @@ const path = require('path');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'guild-config.json');
 
+// The file is read once and kept in memory: this is called for every message and every panel update, and used to
+// read and parse the whole file each time. Every change is still written straight back to the file.
+let cache = null;
+
 function readAll() {
-  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); }
-  catch { return {}; }
+  if (cache) return cache;
+  try { cache = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); }
+  catch { cache = {}; }
+  return cache;
 }
 
 function writeAll(data) {
+  cache = data;
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), 'utf8');
+  const tmp = `${CONFIG_PATH}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
+  fs.renameSync(tmp, CONFIG_PATH);   // a crash part-way can never leave a half-written file
 }
 
+/** A copy, so callers can change what they get without changing the saved settings by accident. */
 function getGuildConfig(guildId) {
-  return readAll()[guildId] || {};
+  const c = readAll()[guildId];
+  return c ? structuredClone(c) : {};
 }
+
+/** Every server that has settings saved. */
+const listGuildIds = () => Object.keys(readAll());
 
 function setGuildConfig(guildId, updates) {
   const all = readAll();
@@ -99,7 +113,7 @@ function getBotControlRoleId(guildId) {
 }
 
 module.exports = {
-  getGuildConfig,  setGuildConfig,  deleteGuildConfig,
+  getGuildConfig,  setGuildConfig,  deleteGuildConfig,  listGuildIds,
   getLogChannel,   setLogChannel,
   setLastChannel,  clearLastChannel,
   setStats,        getStats,

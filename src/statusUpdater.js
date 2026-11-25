@@ -1,13 +1,12 @@
 const {
   EmbedBuilder,
-  ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ChannelType, ChannelSelectMenuBuilder, UserSelectMenuBuilder,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
 } = require('discord.js');
 const { getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice');
 const { log }                              = require('./logger');
 const store                                = require('./connectionStore');
 const { getGuildConfig, setGuildConfig } = require('./guildConfig');
-const { getUserStats, formatMs, getStreamStats }  = require('./database');
+const { getUserStats, formatMs }  = require('./database');
 const { joinTimes }           = require('./memberTracker');
 const { duration } = require('./duration');
 
@@ -45,64 +44,43 @@ function startStatusUpdater(client) {
 // ── Panel embed ───────────────────────────────────────────────────────────────
 
 /**
+ * The live panel. The title is the channel the bot is in, under a small "Bot is in" label.
  * @param {string} guildId
- * @param {import('discord.js').Guild|null} guild — pass to show live member count
+ * @param {import('discord.js').Guild|null} guild — pass to show the live member count
  */
 function buildPanelEmbed(guildId, guild = null) {
   const entry     = store.getEntry(guildId);
   const connected = isConnected(guildId);
   const isGhost   = entry && !getVoiceConnection(guildId);
+  const memory    = require('./system').formatMemory();     // same reading as the Discloud dashboard
 
-  // Same RAM reading as the Discloud dashboard (see src/system.js); falls back to the process's own RSS
-  const memMB     = require('./system').formatMemory();
-  let colour, statusLine, channelLine, vcUptime, processUp, membersInVc;
-
-
+  let colour, label, title, status, inCall = '—', inVoice = '—', reconnects = '0';
   if (connected && entry) {
-    colour      = 0x57F287;
-    statusLine  = '🟢 Online';
-    channelLine = entry.channelName;
-    vcUptime    = store.formatUptime(entry.joinedAt);
-    processUp   = getProcessUptime();
-
-  // Live member count in the VC (excluding bots)
-    if (guild) {
-      const ch = guild.channels.cache.get(entry.channelId);
-      const count = ch ? ch.members.filter(m => !m.user.bot).size : 0;
-      membersInVc = `${count} ${count === 1 ? 'member' : 'members'}`;
-    } else {
-      membersInVc = '0 members';
-    }
-
+    colour = 0x57F287; label = 'Bot is in'; title = entry.channelName; status = 'Online';
+    inCall = duration(Date.now() - new Date(entry.joinedAt).getTime());
+    const ch = guild?.channels.cache.get(entry.channelId);
+    const count = ch ? ch.members.filter(m => !m.user.bot).size : 0;
+    inVoice = `${count} ${count === 1 ? 'person' : 'people'}`;
+    reconnects = String(entry.reconnectCount || 0);
   } else if (isGhost) {
-    colour      = 0xFEE75C;
-    statusLine  = '🟡 Idle';
-    channelLine = entry.channelName;
-    vcUptime    = '—';
-    processUp   = getProcessUptime();
-    membersInVc = '0 members';
+    colour = 0xFEE75C; label = 'Bot is in'; title = entry.channelName; status = 'Idle';
   } else {
-    colour      = 0xED4245;
-    statusLine  = '🔴 Offline';
-    channelLine = '—';
-    vcUptime    = '—';
-    processUp   = getProcessUptime();
-    membersInVc = '0 members';
+    colour = 0xED4245; label = 'Bot is'; title = 'Not in a voice channel'; status = 'Offline';
   }
 
   const embed = new EmbedBuilder()
-    .setTitle('Voice panel')
     .setColor(colour)
+    .setAuthor({ name: label })
+    .setTitle(title)
     .addFields(
-      { name: 'Status', value: statusLine, inline: true },
-      { name: 'Channel', value: channelLine, inline: true },
-      { name: 'In voice', value: membersInVc, inline: true },
-      { name: 'Connected for', value: vcUptime, inline: true },
-      { name: 'Bot uptime', value: processUp, inline: true },
-      { name: 'Memory', value: memMB, inline: true },
+      { name: 'Time in call', value: inCall, inline: true },
+      { name: 'In the call', value: inVoice, inline: true },
+      { name: 'Status', value: status, inline: true },
+      { name: 'Memory', value: memory, inline: true },
+      { name: 'Bot uptime', value: getProcessUptime(), inline: true },
+      { name: 'Reconnects', value: reconnects, inline: true },
     )
-    .setFooter({ text: 'Last updated' })
-    .setTimestamp();
+    .setTimestamp();   // the classic embed shows its own time; a card gets an "Updated … ago" line instead
 
   const top = guild ? topThisWeek(guild) : null;
   if (top) embed.addFields({ name: 'Top this week', value: top, inline: false });
@@ -118,172 +96,72 @@ function topThisWeek(guild) {
   return rows.map((r, i) => `${medals[i]} **${r.member.displayName}** · ${duration(Number(r.ms))}`).join('\n');
 }
 
-// ── Member profile embed ──────────────────────────────────────────────────────
+// ── Member card ───────────────────────────────────────────────────────────────
 
-function buildMemberEmbed(member, guild) {
+const dayText = (ms) => `<t:${Math.floor(ms / 1000)}:D>`;
+
+/** A member's card: voice numbers, how long they have been around, and where they are now. `kicker` is the small label above the name. */
+function buildMemberEmbed(member, guild, kicker = 'Member') {
   const user  = member.user;
   const stats = getUserStats(user.id, guild.id);
-  const streamStats = getStreamStats(user.id, guild.id);
-
-  let timeInServer = null;
-  if (member.joinedAt) {
-    const diff = Date.now() - member.joinedTimestamp;
-    timeInServer = duration(diff);
-  }
-
-  const ageMs     = Date.now() - user.createdAt.getTime();
-  const ageYears  = Math.floor(ageMs / (365.25 * 24 * 3600 * 1000));
-  const ageMonths = Math.floor((ageMs % (365.25 * 24 * 3600 * 1000)) / (30.44 * 24 * 3600 * 1000));
-  const ageStr    = ageYears > 0 ? `${ageYears}y ${ageMonths}m` : `${ageMonths}m`;
-
-  const nickname   = member.nickname && member.nickname !== user.username ? member.nickname : 'None';
-  const boostSince = member.premiumSince;
-  const boostStr   = boostSince ? `<t:${Math.floor(boostSince.getTime() / 1000)}:R>` : 'No';
-
-  const vc = member.voice;
-  const vcKey = `${guild.id}_${user.id}`;
-  
-  let vcLine;
-  if (vc?.channel) {
-    const sessionMs = joinTimes.has(vcKey) ? Date.now() - joinTimes.get(vcKey) : null;
-    const indicators = [
-      vc.selfMute   ? 'Muted' : null,
-      vc.selfDeaf   ? 'Deafened' : null,
-      vc.serverMute ? 'Server Muted' : null,
-      vc.serverDeaf ? 'Server Deafened' : null
-    ].filter(Boolean);
-
-    vcLine = `<#${vc.channel.id}> ${sessionMs ? `— \`${formatLive(sessionMs)}\`` : ''}`;
-    if (indicators.length > 0) vcLine += `\n${indicators.join('  •  ')}`;
-  } else {
-    vcLine = 'Not in a VC';
-  }
-
-  const allRoles = member.roles.cache
-    .filter(r => r.id !== guild.id)
-    .sort((a, b) => b.position - a.position);
-  const roles = allRoles.first(4).map(r => `<@&${r.id}>`);
-  const extraRoleCount = Math.max(0, allRoles.size - 4);
 
   const embed = new EmbedBuilder()
     .setColor(member.displayColor || 0x5865F2)
-    .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true }) })
-    .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
-    .setTitle('User profile')
-    // Section headers below use a plain bold bullet, not decorative emoji,
-    // per request — just enough to visually separate each group of fields.
-    .addFields({ name: '\u200b', value: '**▸ Account Overview**', inline: false })
-    // Row 1: Registry Markers
-    .addFields(
-      { name: 'Joined server', value: `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>\n(<t:${Math.floor(member.joinedAt.getTime() / 1000)}:R>)`, inline: true },
-      { name: 'Account created', value: `<t:${Math.floor(user.createdAt.getTime() / 1000)}:D>\n(<t:${Math.floor(user.createdAt.getTime() / 1000)}:R>)`, inline: true },
-      { name: 'Account age', value: `\`${ageStr}\``, inline: true }
-    )
-    .addFields({ name: '\u200b', value: '**▸ Member Details**', inline: false })
-    // Row 2: Presence Metadata
-    .addFields(
-      { name: 'Nickname', value: `\`${nickname}\``, inline: true },
-      { name: 'Time in Server', value: `\`${timeInServer || '—'}\``, inline: true },
-      { name: 'Boosting', value: boostStr, inline: true }
-    )
-    .addFields({ name: '\u200b', value: '**▸ Live Status**', inline: false })
-    // Row 3: Live Channels
-    .addFields(
-      { name: 'Active VC', value: vcLine, inline: false }
-    );
+    .setAuthor({ name: kicker })
+    .setTitle(member.displayName)
+    .setThumbnail(user.displayAvatarURL({ extension: 'png', size: 256 }));
 
-  // Historical Metrics
+  const fields = [];
   if (stats.session_count > 0) {
-    let lastSeenStr = stats.last_seen ? `<t:${Math.floor(stats.last_seen / 1000)}:R>` : '—';
-    if (vc?.channel) lastSeenStr = 'Active Now';
-
-    embed.addFields({ name: '\u200b', value: '**▸ Voice Activity**', inline: false });
-    embed.addFields(
-      { name: 'Total VC Time', value: `\`${formatMs(stats.total_ms)}\``, inline: true },
-      { name: 'Total sessions', value: `\`${stats.session_count}\``, inline: true },
-      { name: 'Avg time', value: `\`${formatMs(stats.avg_ms)}\``, inline: true },
-
-      { name: 'Top VC', value: stats.top_channel ? `**${stats.top_channel}**\n(\`${formatMs(stats.top_channel_ms)}\`)` : '—', inline: true },
-      { name: 'VC Streak', value: `\`${stats.streak} day(s)\``, inline: true },
-      { name: 'Longest session', value: `\`${formatMs(stats.longest_session_ms)}\``, inline: true },
-
-      { name: 'Last tracked', value: lastSeenStr, inline: true },
-      { name: 'Longest stream', value: `\`${formatMs(streamStats.longest_stream_ms)}\``, inline: true }
+    const live = member.voice?.channel;
+    fields.push(
+      { name: 'Time in voice', value: formatMs(stats.total_ms), inline: true },
+      { name: 'Sessions', value: String(stats.session_count), inline: true },
+      { name: 'Streak', value: `${stats.streak} ${stats.streak === 1 ? 'day' : 'days'}`, inline: true },
+      { name: 'Longest session', value: formatMs(stats.longest_session_ms), inline: true },
+      { name: 'Average session', value: formatMs(stats.avg_ms), inline: true },
+      { name: 'Last in voice', value: live ? 'In voice now' : stats.last_seen ? `<t:${Math.floor(stats.last_seen / 1000)}:R>` : '—', inline: true },
     );
+    if (stats.top_channel) fields.push({ name: 'Top voice channel', value: stats.top_channel, inline: true });
+  } else {
+    embed.setDescription('No voice time recorded yet.');
   }
-
-  // Roles — capped to 4, with a "+N more" indicator instead of dumping everyone
-  if (roles.length > 0) {
-    embed.addFields({ name: '\u200b', value: '**▸ Roles**', inline: false });
-    embed.addFields({
-      name: `Assigned Roles (${allRoles.size})`,
-      value: extraRoleCount > 0 ? `${roles.join(' ')} \`+${extraRoleCount} more\`` : roles.join(' '),
-      inline: false,
-    });
+  fields.push(
+    { name: 'Joined the server', value: member.joinedAt ? dayText(member.joinedTimestamp) : '—', inline: true },
+    { name: 'Account created', value: dayText(user.createdTimestamp), inline: true },
+  );
+  const vc = member.voice?.channel;
+  if (vc) {
+    const since = joinTimes.get(`${guild.id}_${user.id}`);
+    const flags = [member.voice.selfMute && 'muted', member.voice.selfDeaf && 'deafened', member.voice.streaming && 'live'].filter(Boolean);
+    fields.push({ name: 'In voice now', value: `<#${vc.id}>${since ? ` · ${formatLive(Date.now() - since)}` : ''}${flags.length ? ` · ${flags.join(', ')}` : ''}`, inline: false });
   }
-
-  return embed.setTimestamp();
+  const roles = member.roles.cache.filter(r => r.id !== guild.id).sort((a, b) => b.position - a.position);
+  if (roles.size) fields.push({ name: `Roles (${roles.size})`, value: `${roles.first(4).map(r => `<@&${r.id}>`).join(' ')}${roles.size > 4 ? ` +${roles.size - 4} more` : ''}`, inline: false });
+  return embed.addFields(fields);
 }
 
 // ── Panel buttons ─────────────────────────────────────────────────────────────
 
 function buildPanelButtons(guildId = null) {
-  const inCall = guildId ? isConnected(guildId) : true;   // Leave is greyed out when there is nothing to leave
-  // Row 1: Connection Basics
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('bot_join')
-      .setLabel('Join')
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId('bot_leave')
-      .setLabel('Leave')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!inCall)
-  );
-
-  // Row 2: Identity & Discovery
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('bot_myinfo')
-      .setLabel('My info')
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('bot_lookup')
-      .setLabel('User lookup')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  // Row 3: Server stats
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('bot_leaderboard')
-      .setLabel('Leaderboard')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  return [row1, row2, row3];
-}
-
-// ── Select menus ──────────────────────────────────────────────────────────────
-
-function buildChannelSelectRow() {
-  return new ActionRowBuilder().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId('bot_join_channel')
-      .setPlaceholder('Pick a voice channel to join...')
-      .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
-  );
-}
-
-function buildUserSelectRow() {
-  return new ActionRowBuilder().addComponents(
-    new UserSelectMenuBuilder()
-      .setCustomId('bot_lookup_user')
-      .setPlaceholder('Select a member to look up...')
-  );
+  const inCall = guildId ? isConnected(guildId) : true;   // Move and Leave are greyed out when there is nothing to move or leave
+  const b = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
+  return [
+    new ActionRowBuilder().addComponents(
+      b('bot_join', 'Join', ButtonStyle.Success),
+      b('bot_move', 'Move', ButtonStyle.Primary, !inCall),
+      b('bot_leave', 'Leave', ButtonStyle.Secondary, !inCall)),
+    new ActionRowBuilder().addComponents(
+      b('bot_myinfo', 'My card', ButtonStyle.Primary),
+      b('bot_busy', 'Busy times'),
+      b('bot_recap', 'Weekly recap'),
+      b('bot_leaderboard', 'Leaderboard'),
+      b('bot_swrapped', 'Server Wrapped')),
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('bot_more').setPlaceholder('More…').addOptions(
+        { label: 'My Server Time Wrapped', value: 'mywrapped', description: 'Your year in this server' },
+        { label: 'User lookup', value: 'lookup', description: "See another member's card" })),
+  ];
 }
 
 // ── Update panel ──────────────────────────────────────────────────────────────
@@ -328,6 +206,4 @@ module.exports = {
   buildPanelEmbed,
   buildPanelButtons,
   buildMemberEmbed,
-  buildChannelSelectRow,
-  buildUserSelectRow,
 };

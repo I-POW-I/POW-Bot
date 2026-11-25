@@ -29,7 +29,7 @@ const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect(x, y,
 
 // ── images ─────────────────────────────────────────────────────────────────────
 const cache = new Map();
-const remember = (key, val) => { cache.set(key, val); if (cache.size > 300) cache.delete(cache.keys().next().value); return val; };
+const remember = (key, val) => { cache.set(key, val); if (cache.size > 120) cache.delete(cache.keys().next().value); return val; };
 
 async function fetchImage(url) {
   if (cache.has(url)) return cache.get(url);
@@ -135,7 +135,7 @@ function twoColumns(probe, text, base, fullW, gap) {
 async function renderEmbed(embed, opts = {}) {
   ensureFonts();
   const resolve = opts.resolve || (() => null);
-  const W = opts.width || (embed.image ? 540 : opts.wide ? 730 : 500);
+  const W = opts.width || (opts.wide ? 730 : embed.image ? 540 : 500);
   const pad = T.pad, inner = W - pad * 2;
   const probe = createCanvas(10, 10).getContext('2d');
 
@@ -161,7 +161,7 @@ async function renderEmbed(embed, opts = {}) {
   let run = [];
   const flush = () => { if (run.length) { fieldRows.push(run); run = []; } };
   for (const f of (embed.fields || [])) {
-    if (f.inline) { run.push(f); if (run.length === 3) flush(); } else { flush(); fieldRows.push([f]); }
+    if (f.inline) { run.push(f); if (run.length === (opts.wide ? 4 : 3)) flush(); } else { flush(); fieldRows.push([f]); }
   }
   flush();
   const gap = 20;
@@ -283,7 +283,7 @@ const shown = (w, h) => Math.min(1, 550 / w, 400 / h);
 async function renderBest(embed, opts = {}) {
   const narrow = await renderEmbed(embed, { ...opts, dry: true });
   let best = { wide: false, scale: shown(narrow.width, narrow.height) };
-  if (!embed.image && !opts.width && best.scale < 0.95) {
+  if (!opts.width && best.scale < 0.95) {
     const wide = await renderEmbed(embed, { ...opts, wide: true, dry: true });
     const scale = shown(wide.width, wide.height);
     if (scale > best.scale + 0.03) best = { wide: true, scale };

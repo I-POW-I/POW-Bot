@@ -7,6 +7,8 @@
  *                                                           server opts in to a yearly reset (/setup > Voice
  *                                                           leaderboard): on 1 January everything from before
  *                                                           the new year is deleted
+ *   Message and reaction counts (only if the server turned     kept until the bot leaves the server, or the server
+ *   on Wrapped counting; numbers only, never text)               erases them in /setup > Wrapped
  *   Moderation cases (/case, /history)                      kept until the bot leaves the server; they are the
  *                                                           server's own record, so /privacy does not remove them
  *   Everything about a server                               deleted when the bot is removed from it
@@ -24,7 +26,7 @@ const { log } = require('./logger');
 const DAY = 86_400_000;
 const KEEP = { memberEvents: 90 * DAY };
 const EVERY = 6 * 3_600_000;
-const GUILD_TABLES = ['vc_sessions', 'stream_sessions', 'member_events', 'message_store', 'streamer_subscriptions', 'game_subscriptions', 'mod_cases'];
+const GUILD_TABLES = ['vc_sessions', 'stream_sessions', 'member_events', 'message_store', 'activity', 'streamer_subscriptions', 'game_subscriptions', 'mod_cases'];
 
 // ── Removal ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,7 @@ function forgetUser(userId) {
   run('DELETE FROM stream_sessions WHERE user_id = ?', [id]);
   run('DELETE FROM member_events WHERE user_id = ?', [id]);
   run('DELETE FROM message_store WHERE author_id = ?', [id]);
+  run('DELETE FROM activity WHERE user_id = ?', [id]);
 }
 
 /** What is stored about one person, for the /privacy screen. */
@@ -54,6 +57,7 @@ function userData(userId) {
     streams:  n('SELECT COUNT(*) AS n FROM stream_sessions WHERE user_id = ?'),
     events:   n('SELECT COUNT(*) AS n FROM member_events WHERE user_id = ?'),
     messages: n('SELECT COUNT(*) AS n FROM message_store WHERE author_id = ?'),
+    counts:   n('SELECT COUNT(*) AS n FROM activity WHERE user_id = ?'),
   };
 }
 
@@ -73,6 +77,7 @@ function yearlyReset(now = Date.now(), ids = null) {
     if (!getGuildConfig(id).leaderboard?.yearlyReset) continue;
     run('DELETE FROM vc_sessions WHERE guild_id = ? AND duration_ms IS NOT NULL AND joined_at < ?', [id, yearStart]);
     run('DELETE FROM stream_sessions WHERE guild_id = ? AND duration_ms IS NOT NULL AND joined_at < ?', [id, yearStart]);
+    run('DELETE FROM activity WHERE guild_id = ? AND day < ?', [id, new Date(yearStart).toISOString().slice(0, 10)]);
     reset++;
   }
   return reset;

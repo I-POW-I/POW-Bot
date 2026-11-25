@@ -147,6 +147,7 @@ async function checkSubscriptionLocked(client, sub) {
         content,
         embeds:     [buildLiveEmbed(sub.platform, sub, status)],
         components: [buildWatchButton(status.url)],
+        liveStamp:  true,
       });
 
       run(

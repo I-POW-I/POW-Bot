@@ -1,5 +1,20 @@
 # Changelog
 
+## 5.8.0
+
+- **Logs are readable.** Audit entries no longer show raw IDs or permission numbers: channels and roles are mentions, levels and durations are words, and permission changes list what was allowed or denied
+- **One home for every log.** The Moderation page no longer has its own channel picker; it links to Logs. Server changes only go to the Server log (servers that relied on the old fallback are carried over once), and the Logs page shows where AutoMod, Raid protection and Security Check Point write
+- **Lighter and faster.** Server settings are cached in memory and saved safely, Discord.js keeps fewer messages and no presences in memory, database saves are batched every 5 seconds and the card caches are smaller
+- **New voice panel.** The title is now the channel the bot is in, under a small "Bot is in" label, with time in the call, people in the call, status, memory, bot uptime and reconnects. **Join** lets you choose the channel (a button for yours, or a menu of every voice channel with how many people are in it). **Move** (blurple) picks a channel and asks to confirm. **Leave** asks to confirm
+- **My card:** a cleaner member card with voice time, sessions, streak, favourite voice channel and when you joined
+- **Busy times:** people in voice now, how many usually are at this time ("5 to 7 people"), the peak today and the peak of the week, with a chart
+- **Weekly recap:** the last 7 days in voice: time, people, longest call, busiest day, top three and your own week
+- **My Server Time Wrapped:** your year in the server: messages, reactions, voice time, favourite text and voice channel, longest streak, busiest day, most active hour, days active, first message, who you spent the most time with, a persona and a month-by-month chart. Open it any time from the panel's More menu. **Server Wrapped** is the whole server's version
+- **`/setup` > Wrapped:** switch message and reaction counting on or off (numbers only, never text, from the moment it is switched on), choose the channel and the December day for the automatic Server Wrapped post (or use the server's own announcement channel in one tap), post it now, or erase the counts
+- Counts are removed with `/privacy`, and when the bot leaves a server. The privacy policy now lists them
+- Live stream posts now carry the same "Updated … ago" line as the panel
+- Wide cards can now hold more: up to four columns of facts, and charts sit on their own card so they stay readable
+
 ## 5.7.2
 
 - **Cards read bigger.** Discord shrinks any picture taller than about 400 pixels, which is why long cards were small. Tall messages (leaderboard, streamers, setup home, long notes) are now drawn wide with the text in two columns, so they stay readable and no longer fall back to a classic embed

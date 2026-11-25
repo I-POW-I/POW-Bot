@@ -7,7 +7,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 ## What it does
 
 - Joins a voice channel and stays connected, with automatic rejoin after a restart or a dropped connection
-- Live voice control panel with Join, Leave, personal stats, user lookup and a leaderboard
+- Live voice control panel with Join, Move and Leave (with pickers and confirmations), My card, busy times, a weekly recap, the leaderboard and Wrapped (a personal and a server year in review, with optional message counting and a December auto-post)
 - Voice leaderboard (all time, 30 days, 7 days) with optional role rewards and an optional weekly or monthly post
 - Logs for voice activity, deleted and edited messages, members and server changes (channels, roles, emoji, invites, threads, AutoMod and more, with who did it). Each log can be switched on and off by kind of event, message logs can ignore channels, roles, people and bots, and server changes can be routed to a channel per kind. Every message the bot sends uses one consistent card look
 - Welcome and leave posts: image card, rich embed or both, five card styles, welcome-back for returning members, welcome message and roles for new members
