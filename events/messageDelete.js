@@ -26,17 +26,24 @@ async function copyImage(a) {
 // Discord merges several deletes by the same moderator in the same channel into one audit entry and counts them up,
 // so an entry is recognised as new either by its age or by its count having gone up since it was last seen
 const seenCounts = new Map();
-async function getDeleter(guild, targetUserId, channelId, windowMs = 5000) {
+async function findDeleter(guild, targetUserId, channelId, windowMs) {
+  const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.MessageDelete, limit: 8 });
+  let found = null;
+  for (const e of logs.entries.values()) {
+    const count = Number(e.extra?.count || 1), before = seenCounts.get(e.id);
+    seenCounts.set(e.id, count);
+    if (found || e.target?.id !== targetUserId || e.extra?.channel?.id !== channelId) continue;
+    if (Date.now() - e.createdTimestamp < windowMs || (before != null && count > before)) found = e;
+  }
+  if (seenCounts.size > 200) for (const k of [...seenCounts.keys()].slice(0, 100)) seenCounts.delete(k);
+  return found;
+}
+async function getDeleter(guild, targetUserId, channelId, windowMs = 8000) {
   try {
-    const logs  = await guild.fetchAuditLogs({ type: AuditLogEvent.MessageDelete, limit: 5 });
-    let found = null;
-    for (const e of logs.entries.values()) {
-      const count = Number(e.extra?.count || 1), before = seenCounts.get(e.id);
-      seenCounts.set(e.id, count);
-      if (found || e.target?.id !== targetUserId || e.extra?.channel?.id !== channelId) continue;
-      if (Date.now() - e.createdTimestamp < windowMs || (before != null && count > before)) found = e;
-    }
-    if (seenCounts.size > 200) for (const k of [...seenCounts.keys()].slice(0, 100)) seenCounts.delete(k);
+    // Discord writes the audit entry a moment AFTER it announces the delete, so a check made straight away often finds nothing:
+    // look now, and once more shortly after
+    let found = await findDeleter(guild, targetUserId, channelId, windowMs);
+    if (!found) { await new Promise(r => setTimeout(r, 1800)); found = await findDeleter(guild, targetUserId, channelId, windowMs + 2000); }
     if (!found || found.executor?.id === targetUserId) return null;
     return `${found.executor} — ${found.executor.tag}`;
   } catch { return null; }

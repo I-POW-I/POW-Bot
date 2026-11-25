@@ -4,6 +4,7 @@ const client = new Client({
   // Keep the caches small: the bot keeps its own copy of messages it needs (the database), so Discord.js does not have to
   // hold hundreds of messages per channel in memory. Members, channels and roles stay cached as before.
   makeCache: Options.cacheWithLimits({ ...Options.DefaultMakeCacheSettings, MessageManager: 30, PresenceManager: 0 }),
+  sweepers: { ...Options.DefaultSweeperSettings, messages: { interval: 300, lifetime: 900 } },   // forget cached messages after 15 minutes
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,

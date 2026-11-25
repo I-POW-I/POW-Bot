@@ -21,7 +21,7 @@ function ensureFonts() {
 
 const T = {
   bg: '#15161b', border: '#26282d', rule: '#2b2d31', text: '#dbdee1', white: '#ffffff', muted: '#949ba4', label: '#8b93ff',
-  pad: 26, scale: 3,
+  pad: 26, scale: 2,
 };
 
 const rgba = (n, a) => { const v = Number(n) & 0xFFFFFF; return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${a})`; };
@@ -29,7 +29,7 @@ const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect(x, y,
 
 // ── images ─────────────────────────────────────────────────────────────────────
 const cache = new Map();
-const remember = (key, val) => { cache.set(key, val); if (cache.size > 120) cache.delete(cache.keys().next().value); return val; };
+const remember = (key, val) => { cache.set(key, val); if (cache.size > 40) cache.delete(cache.keys().next().value); return val; };
 
 async function fetchImage(url) {
   if (cache.has(url)) return cache.get(url);

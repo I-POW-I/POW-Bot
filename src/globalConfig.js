@@ -75,7 +75,9 @@ function update(mutator) { const s = load(); mutator(s); save(); return s; }
 // ── Convenience helpers ───────────────────────────────────────────────────────
 
 const isMaintenance  = () => load().maintenance.enabled === true;
-const featureEnabled = (name) => load().features[name] !== false;
+const featureEnabled = (name, guildId = null) => load().features[name] !== false && !(guildId && isLocked(guildId, name));
+/** Features the owner has switched off for one server only. */
+const isLocked = (guildId, name) => (load().serverLocks?.[String(guildId)] || []).includes(name);
 const isUserBanned   = (id) => !!load().blacklist.users[String(id)];
 const isGuildBanned  = (id) => !!load().blacklist.guilds[String(id)];
 
@@ -89,4 +91,4 @@ function pushAudit(entry) {
 /** Test helper: forget cached state so the file is re-read. */
 function _reset() { state = null; }
 
-module.exports = { get, update, isMaintenance, featureEnabled, isUserBanned, isGuildBanned, pushAudit, _reset, FILE };
+module.exports = { get, update, isMaintenance, featureEnabled, isLocked, isUserBanned, isGuildBanned, pushAudit, _reset, FILE };

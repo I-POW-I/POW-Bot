@@ -12,6 +12,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 - Logs for voice activity, deleted and edited messages, members and server changes (channels, roles, emoji, invites, threads, AutoMod and more, with who did it). Each log can be switched on and off by kind of event, message logs can ignore channels, roles, people and bots, and server changes can be routed to a channel per kind. Every message the bot sends uses one consistent card look
 - Welcome and leave posts: image card, rich embed or both, five card styles, welcome-back for returning members, welcome message and roles for new members
 - Human verification with staff approval, quarantine and auto-removal
+- Role menus (members pick their own roles), join-to-create voice rooms and polls
 - Moderation: warn, timeout, kick, softban, ban and unban as numbered cases with a history and a mod log, plus lock and slowmode
 - Security Check Point: a trap channel that catches spam bots and hacked accounts and softbans, kicks, bans or times them out (staff choose)
 - Raid protection: join-flood detection, raid mode with invite pause, account age gate, `/raidmode`
@@ -37,6 +38,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 | `/warn` `/timeout` `/untimeout` `/kick` `/softban` `/ban` `/unban` | Moderation actions. Each one is a numbered case, recorded in the mod log, and the member is sent the reason | Matching Discord permission |
 | `/case`, `/history` | Look up a case, or a member's whole record | Timeout Members |
 | `/lock` `/unlock` `/slowmode` | Control a channel | Manage Channels |
+| `/poll` | Post a poll (Discord's own, with live votes) | Manage Messages |
 | `/purge` | Delete up to 100 messages | Manage Messages |
 | `/raidmode` | Turn raid mode on or off, or see its state | Manage Server |
 | `/owner` | The owner control hub | `OWNER_IDS` / `ADMIN_IDS` only |

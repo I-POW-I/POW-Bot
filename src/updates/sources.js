@@ -100,7 +100,7 @@ async function steamFeedLatest(appId, name) {
   const same = (n) => String(n.title).trim() === String(it.title).trim() && (!it.date || Math.abs(n.date * 1000 - it.date) < 2 * 86_400_000);
   const match = (await steam.getGameNews(appId, 10).catch(() => [])).find(same);
   return {
-    id: match ? String(match.gid) : own, title: it.title, url: it.url, body: html, bodyKind: 'html',
+    id: match ? String(match.gid) : own, altIds: [own, ...(match ? [String(match.gid)] : [])], title: it.title, url: it.url, body: html, bodyKind: 'html',
     image: it.image || steam.getHeaderImage(appId), icon: await steamIcon(appId),
     date: it.date, version: null, game: name, source: 'Steam',
     buttons: [{ label: 'Open store page', url: `https://store.steampowered.com/app/${appId}` }],

@@ -42,11 +42,11 @@ function settings(guildId) {
   const s = getGuildConfig(guildId).leaderboard || {};
   const p = s.post || {};
   return {
-    yearlyReset: !!s.yearlyReset, rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: Array.isArray(s.tiers) ? s.tiers : [],
+    yearlyReset: !!s.yearlyReset, ignoreAlone: !!s.ignoreAlone, rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: Array.isArray(s.tiers) ? s.tiers : [],
     post: { frequency: FREQUENCIES[p.frequency] ? p.frequency : 'off', channelId: p.channelId || null, lastKey: p.lastKey || null },
   };
 }
-const save = (guildId, s) => setGuildConfig(guildId, { leaderboard: { yearlyReset: !!s.yearlyReset, rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: s.tiers, post: s.post } });
+const save = (guildId, s) => setGuildConfig(guildId, { leaderboard: { yearlyReset: !!s.yearlyReset, ignoreAlone: !!s.ignoreAlone, rewards: !!s.rewards, autoRoles: s.autoRoles !== false, tiers: s.tiers, post: s.post } });
 
 const defaultName = (hours) => `Voice ${hours}h`;
 const sortTiers = (tiers) => [...tiers].sort((a, b) => a.hours - b.hours);
@@ -84,12 +84,42 @@ function parseLadder(guildId, text) {
 
 const afkOf = (guild) => guild.afkChannelId || '';
 
-/** Voice time per member, highest first. Sessions still running count up to now. */
+/**
+ * Time each member spent in a call completely alone, in the sessions that started since `since`: the stretches where nobody
+ * else was in the channel. Worked out from the session start and end times, channel by channel.
+ */
+function aloneByUser(guild, since, now = Date.now()) {
+  const rows = selectAll(
+    'SELECT user_id, channel_id, joined_at, COALESCE(left_at, ?) AS end_at FROM vc_sessions WHERE guild_id = ? AND channel_id != ? AND joined_at >= ?',
+    [now, guild.id, afkOf(guild), since]);
+  const byChannel = new Map();
+  for (const r of rows) { if (!byChannel.has(r.channel_id)) byChannel.set(r.channel_id, []); byChannel.get(r.channel_id).push(r); }
+  const alone = new Map();
+  for (const sessions of byChannel.values()) {
+    const ev = [];
+    for (const r of sessions) ev.push([r.joined_at, 1, r.user_id], [r.end_at, -1, r.user_id]);
+    ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const inside = new Map();   // user → how many of their sessions are open (normally 1)
+    let last = ev[0]?.[0] ?? 0;
+    for (const [t, d, u] of ev) {
+      if (inside.size === 1 && t > last) { const [only] = inside.keys(); alone.set(only, (alone.get(only) || 0) + (t - last)); }
+      last = t;
+      const n = (inside.get(u) || 0) + d; if (n > 0) inside.set(u, n); else inside.delete(u);
+    }
+  }
+  return alone;
+}
+
+/** Voice time per member, highest first. Sessions still running count up to now. With "ignore time alone" on, time spent alone in a call is not counted. */
 function totals(guild, period = 'all', limit = SCAN) {
   const now = Date.now(), since = PERIODS[period]?.ms ? now - PERIODS[period].ms : 0;
-  return selectAll(
-    'SELECT user_id, SUM(COALESCE(duration_ms, ? - joined_at)) AS ms FROM vc_sessions WHERE guild_id = ? AND channel_id != ? AND joined_at >= ? GROUP BY user_id ORDER BY ms DESC LIMIT ?',
-    [now, guild.id, afkOf(guild), since, limit]);
+  const ignoreAlone = settings(guild.id).ignoreAlone;
+  const rows = selectAll(
+    `SELECT user_id, SUM(COALESCE(duration_ms, ? - joined_at)) AS ms FROM vc_sessions WHERE guild_id = ? AND channel_id != ? AND joined_at >= ? GROUP BY user_id ORDER BY ms DESC${ignoreAlone ? '' : ' LIMIT ?'}`,
+    ignoreAlone ? [now, guild.id, afkOf(guild), since] : [now, guild.id, afkOf(guild), since, limit]);
+  if (!ignoreAlone) return rows;
+  const alone = aloneByUser(guild, since, now);
+  return rows.map(r => ({ ...r, ms: Math.max(0, Number(r.ms) - (alone.get(r.user_id) || 0)) })).filter(r => r.ms > 0).sort((a, b) => b.ms - a.ms).slice(0, limit);
 }
 
 function totalFor(guild, userId, period = 'all') {
@@ -97,7 +127,8 @@ function totalFor(guild, userId, period = 'all') {
   const row = selectOne(
     'SELECT SUM(COALESCE(duration_ms, ? - joined_at)) AS ms FROM vc_sessions WHERE guild_id = ? AND user_id = ? AND channel_id != ? AND joined_at >= ?',
     [now, guild.id, userId, afkOf(guild), since]);
-  return Number(row?.ms || 0);
+  const ms = Number(row?.ms || 0);
+  return settings(guild.id).ignoreAlone ? Math.max(0, ms - (aloneByUser(guild, since, now).get(userId) || 0)) : ms;
 }
 
 

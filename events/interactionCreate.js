@@ -86,6 +86,9 @@ async function handle(interaction, client) {
 
 
     
+    // ── Role menus: members picking their own roles ────────────────────────────
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('rolemenu:') && await require('../src/roleMenus').handle(interaction)) return;
+
     // ── Voice panel menus (join and move pickers, More, member lookup) ─────────
     if (!interaction.isButton() && await require('../src/voicePanel').handle(interaction, client)) return;
 
@@ -196,8 +199,8 @@ module.exports = {
     if (!(await passesGlobalGates(interaction))) return;
 
     const label = describeInteraction(interaction);
-    if (interaction.isChatInputCommand()) { diagnostics.bump('commands'); diagnostics.addBreadcrumb('command', `${label} (${interaction.user.tag} · ${interaction.guild?.name || 'DM'})`); }
-    else if (interaction.isButton())      { diagnostics.bump('buttons');  diagnostics.addBreadcrumb('button',  `${label} (${interaction.user.tag} · ${interaction.guild?.name || 'DM'})`); }
+    if (interaction.isChatInputCommand()) { diagnostics.bump('commands'); require('../src/usageStats').record('commands', interaction.commandName); diagnostics.addBreadcrumb('command', `${label} (${interaction.user.tag} · ${interaction.guild?.name || 'DM'})`); }
+    else if (interaction.isButton())      { diagnostics.bump('buttons'); require('../src/usageStats').record('buttons');  diagnostics.addBreadcrumb('button',  `${label} (${interaction.user.tag} · ${interaction.guild?.name || 'DM'})`); }
 
     // Everything below runs "inside" this label, so any log line or crash says what triggered it.
     await diagnostics.runWithContext(diagnostics.interactionContext(interaction, label), async () => {

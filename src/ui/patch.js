@@ -109,7 +109,7 @@ async function convert(payload, source, isEdit) {
   if (!rendered) {
     try { rendered = await Promise.all(embeds.map((e, i) => panels[i] ? renderPanelBest(panels[i], { resolve }) : renderBest(e, { resolve, attachments: buffers }))); }
     catch (err) { log('WARN', 'Card render failed, sending the plain embed', { err }); return payload; }
-    if (cacheable) { CACHE.set(raw, { at: Date.now(), rendered }); if (CACHE.size > 30) CACHE.delete(CACHE.keys().next().value); }
+    if (cacheable) { CACHE.set(raw, { at: Date.now(), rendered }); if (CACHE.size > 12) CACHE.delete(CACHE.keys().next().value); }
   }
 
   // smart mode: a card Discord would shrink too much to read is sent as a classic embed instead

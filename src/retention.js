@@ -117,4 +117,4 @@ function start(client) {
   setTimeout(() => { try { ageOut(); } catch (err) { log('WARN', 'Retention sweep failed', { err }); } }, 60_000).unref?.();
 }
 
-module.exports = { KEEP, purgeGuild, forgetUser, userData, yearlyReset, ageOut, purgeAbsent, start, messageDays: messageStore.RETENTION_MS / DAY };
+module.exports = { KEEP, GUILD_TABLES, purgeGuild, forgetUser, userData, yearlyReset, ageOut, purgeAbsent, start, messageDays: messageStore.RETENTION_MS / DAY };

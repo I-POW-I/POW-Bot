@@ -134,7 +134,7 @@ function ageText(days) {
 // ── Staff / owner logging ─────────────────────────────────────────────────────
 
 async function postStaffLog(guild, payload) {
-  const channelId = getLogChannel(guild.id, 'members');
+  const channelId = getLogChannel(guild.id, 'verify');
   if (!channelId) return null;
   try {
     const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId);

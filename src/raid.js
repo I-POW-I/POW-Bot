@@ -79,7 +79,7 @@ async function actOn(member, action, reason, s) {
 // ── Alerts ────────────────────────────────────────────────────────────────────
 
 async function alertChannel(guild, s) {
-  const id = s.alertChannelId || getLogChannel(guild.id, 'modlog') || getLogChannel(guild.id, 'members');
+  const id = s.alertChannelId || getLogChannel(guild.id, 'modlog');
   return id ? guild.channels.cache.get(id) || await guild.channels.fetch(id).catch(() => null) : null;
 }
 
@@ -158,7 +158,7 @@ const alertedAt = new Map();
 async function onJoin(member) {
   const { guild, user } = member;
   let s = settings(guild.id);
-  if (user.bot || !require('./globalConfig').featureEnabled('raidProtection')) return false;   // global switch (/owner)
+  if (user.bot || !require('./globalConfig').featureEnabled('raidProtection', guild.id)) return false;   // global switch (/owner)
   if (s.active) await expire(guild), s = settings(guild.id);
 
   // Detection

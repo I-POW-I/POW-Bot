@@ -13,7 +13,8 @@ const { getGuildConfig, getLogChannel } = require('./guildConfig');
 const LOG_TYPES = [
   { key: 'voice',    label: 'Voice activity',        desc: 'Joins, leaves and moves in voice channels' },
   { key: 'messages', label: 'Message logs',          desc: 'Deleted and edited messages (text is kept 7 days so this works)' },
-  { key: 'members',  label: 'Member join/leave + verification', desc: 'Detailed join log and verification results (staff only)' },
+  { key: 'members',  label: 'Member join/leave',     desc: 'Detailed join and leave log (staff only)' },
+  { key: 'verify',   label: 'Verification',          desc: 'Who passed or failed verification, and why (staff only)' },
   { key: 'server',   label: 'Server changes',        desc: 'Channels, roles, emoji, invites, threads, AutoMod, who did it' },
   { key: 'modlog',   label: 'Moderation actions',    desc: 'Cases: kicks, bans, timeouts, warnings' },
   { key: 'commands', label: 'Command & button logs', desc: 'Every command and button used' },
@@ -87,9 +88,15 @@ function clarify() {
   const { listGuildIds, setGuildConfig, setLogChannel } = require('./guildConfig');
   for (const id of listGuildIds()) {
     const c = getGuildConfig(id);
-    if (c.logsClarified) continue;
-    if (c.logChannels?.modlog && !c.logChannels?.server) setLogChannel(id, 'server', c.logChannels.modlog);
-    setGuildConfig(id, { logsClarified: true });
+    if (!c.logsClarified) {
+      if (c.logChannels?.modlog && !c.logChannels?.server) setLogChannel(id, 'server', c.logChannels.modlog);
+      setGuildConfig(id, { logsClarified: true });
+    }
+    // verification results used to share the member join/leave log: they now have their own, set to the same channel until staff change it
+    if (!c.verifyLogSplit) {
+      if (c.logChannels?.members && !c.logChannels?.verify) setLogChannel(id, 'verify', c.logChannels.members);
+      setGuildConfig(id, { verifyLogSplit: true });
+    }
   }
 }
 

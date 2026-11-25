@@ -54,6 +54,7 @@ const CATEGORIES = [
       '**`/case`**: look up a case by number, or change its reason.',
       '**`/history`**: every case for one member.',
       '**`/lock`**, **`/unlock`**, **`/slowmode`**: control a channel.',
+      '**`/poll`**: post a poll members vote on with one click (needs Manage Messages).',
       '**`/purge`**: delete up to 100 messages.',
       '',
       'Bans, kicks and timeouts done by hand in Discord are recorded as cases too. **`/setup` > Security Check Point** adds a trap channel that catches spam bots and hacked accounts.',

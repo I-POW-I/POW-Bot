@@ -36,6 +36,7 @@ function viewLeaderboard(guild, user, note) {
     'The leaderboard is always available from the voice panel and `/leaderboard`. Time in the AFK channel is not counted.',
     '',
     `**Scheduled post:** ${s.post.frequency === 'off' ? 'off' : `${lb.FREQUENCIES[s.post.frequency].label.toLowerCase()} in ${chan(s.post.channelId)}`}`,
+    `**Ignore time alone:** ${s.ignoreAlone ? 'on, time spent in a call with nobody else does not count' : 'off, every minute in a call counts'}`,
     `**Yearly reset:** ${s.yearlyReset ? 'on, stats start fresh every 1 January' : 'off, stats are kept until the bot leaves the server'}`,
     `**Rewards:** ${onOff(s.rewards)}`,
     `**Roles:** ${s.autoRoles ? 'the bot creates them' : 'you choose them'}`,
@@ -58,7 +59,8 @@ function viewLeaderboard(guild, user, note) {
       button('setup:leaderboard:apply', 'Apply to members now', ButtonStyle.Primary, !s.rewards),
       button('setup:leaderboard:post', 'Scheduled post')),
     new ActionRowBuilder().addComponents(
-      button('setup:leaderboard:yearly', `Yearly reset: ${onOff(s.yearlyReset)}`, s.yearlyReset ? ButtonStyle.Success : ButtonStyle.Secondary)),
+      button('setup:leaderboard:yearly', `Yearly reset: ${onOff(s.yearlyReset)}`, s.yearlyReset ? ButtonStyle.Success : ButtonStyle.Secondary),
+      button('setup:leaderboard:alone', `Ignore time alone: ${onOff(s.ignoreAlone)}`, s.ignoreAlone ? ButtonStyle.Success : ButtonStyle.Secondary)),
   ];
   if (!s.autoRoles && s.tiers.length) {
     components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('setup:leaderboard:tierpick').setPlaceholder('Choose the role for a tier')
@@ -134,6 +136,12 @@ async function handle(interaction, { guild, by, action, arg }) {
       return show(res.error ? noteBad(res.error) : noteGood(res.created.length ? `Created: ${res.created.join(', ')}.` : 'The bot now creates the roles.'));
     }
     return show(noteGood(s.autoRoles ? 'The bot will create the roles when you turn rewards on.' : 'Choose a role for each tier below.'));
+  }
+  if (action === 'alone') {
+    await interaction.deferUpdate();
+    s.ignoreAlone = !s.ignoreAlone; lb.save(guild.id, s);
+    audit({ action: 'Setup: leaderboard ignore time alone', actor: by, guild, details: s.ignoreAlone ? 'on' : 'off' });
+    return show(noteGood(s.ignoreAlone ? 'Time spent alone in a call no longer counts on the leaderboard.' : 'All time in a call counts again.'));
   }
   if (action === 'yearly') {
     if (s.yearlyReset) {

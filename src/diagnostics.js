@@ -48,7 +48,13 @@ let lastError = null;
 
 const bump = (name) => { if (name in counters) counters[name]++; };
 const getCounters = () => ({ ...counters });
-const noteError = (text) => { counters.errors++; lastError = { at: Date.now(), text: String(text ?? '').slice(0, 120) }; };
+const recentErrors = [];
+const noteError = (text) => {
+  counters.errors++; lastError = { at: Date.now(), text: String(text ?? '').slice(0, 120) };
+  recentErrors.push({ at: lastError.at, text: String(text ?? '').slice(0, 300) }); if (recentErrors.length > 25) recentErrors.shift();
+  try { require('./usageStats').record('errors'); } catch { /* counting must never cause an error */ }
+};
+const getRecentErrors = () => recentErrors.slice().reverse();
 const getLastError = () => lastError;
 
 // ── Trigger context (what is the bot handling right now?) ─────────────────────
@@ -201,5 +207,5 @@ module.exports = {
   addBreadcrumb, recentBreadcrumbs, formatBreadcrumbs,
   runWithContext, currentContext, interactionContext, describeContext,
   describeError, projectFrames, consoleLines, audit,
-  bump, getCounters, noteError, getLastError,
+  bump, getCounters, noteError, getLastError, getRecentErrors,
 };

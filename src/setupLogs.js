@@ -51,7 +51,7 @@ function viewMain(guild, user, note) {
   const am = require('./automod').settings(guild.id), rd = require('./raid').settings(guild.id), cp = require('./checkpoint').settings(guild.id);
   fields.push({ name: 'Also writes to a log', value: [
     `AutoMod: ${am.enabled ? where(am.logChannelId, modlog) : 'off'}`,
-    `Raid protection: ${rd.enabled ? where(rd.alertChannelId, modlog || getLogChannel(guild.id, 'members')) : 'off'}`,
+    `Raid protection: ${rd.enabled ? where(rd.alertChannelId, modlog) : 'off'}`,
     `Security Check Point: ${cp.enabled ? where(cp.logChannelId, modlog) : 'off'}`,
   ].join('\n') + '\n-# These use the Moderation actions log unless you give them their own channel on their own setup page.', inline: false });
   return {

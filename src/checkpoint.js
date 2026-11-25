@@ -195,7 +195,7 @@ async function handleMessage(message) {
   const guild = message.guild;
   if (!guild || message.author.bot || message.webhookId || message.system) return;
   const s = settings(guild.id);
-  if (!s.enabled || message.channelId !== s.channelId || !require('./globalConfig').featureEnabled('checkpoint')) return;   // global switch (/owner)
+  if (!s.enabled || message.channelId !== s.channelId || !require('./globalConfig').featureEnabled('checkpoint', message.guild?.id)) return;   // global switch (/owner)
 
   const key = `${guild.id}:${message.author.id}`;
   if (inFlight.has(key)) { await message.delete().catch(() => {}); return; }

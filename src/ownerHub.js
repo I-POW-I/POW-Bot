@@ -59,7 +59,7 @@ const SECTIONS = [
 ];
 
 /** Component actions only the owner (not ADMIN_IDS) may use. */
-const OWNER_ONLY = /^owner:(ann_|announce|al_(ch|lvl|dig|dto|mem|dm|rm|more|view)|srv_act|blk_|mt_|ft|st_|op_cmds|op_backup|yes|no)/;
+const OWNER_ONLY = /^owner:(x_|ann_|announce|al_(ch|lvl|dig|dto|mem|dm|rm|more|view)|srv_act|blk_|mt_|ft|st_|op_cmds|op_backup|yes|no)/;
 
 // ── Pending confirmations ─────────────────────────────────────────────────────
 
@@ -116,7 +116,7 @@ function viewHome(client, userId, note) {
 
   const menu = new StringSelectMenuBuilder().setCustomId('owner:go').setPlaceholder('Open a section…')
     .addOptions(SECTIONS.filter(s => owner || !s.ownerOnly).map(s => ({ label: s.label, value: s.key, description: s.desc, emoji: s.emoji })));
-  return { embeds: [embed], components: [row(menu), row(btn('owner:op_restart', 'Restart bot', ButtonStyle.Danger), btn('owner:op_logs', 'Console logs'), btn('owner:op_digest', 'Send digest'), btn('owner:home', 'Refresh'))] };
+  return { embeds: [embed], components: [row(menu), row(btn('owner:op_restart', 'Restart bot', ButtonStyle.Danger), btn('owner:op_logs', 'Console logs'), btn('owner:op_digest', 'Send digest'), btn('owner:x_stats', 'Usage'), btn('owner:home', 'Refresh'))] };
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────────
@@ -172,6 +172,7 @@ async function serverEmbed(guild) {
 async function viewServer(guild, page, userId) {
   const buttons = [];
   if (isOwner(userId)) buttons.push(btn(`owner:srv_act:leave:${guild.id}`, 'Leave server', ButtonStyle.Secondary), btn(`owner:srv_act:ban:${guild.id}`, 'Block and leave', ButtonStyle.Danger));
+  if (isOwner(userId)) buttons.push(btn(`owner:x_srv:${guild.id}`, 'Server tools', ButtonStyle.Primary));
   buttons.push(btn(`owner:srv_pg:${page}`, 'Back to servers'));
   return { embeds: [await serverEmbed(guild)], components: [row(...buttons)] };
 }
@@ -522,6 +523,7 @@ async function handleComponent(interaction, client) {
   const parts = id.split(':'), action = parts[1];
 
   if (action.startsWith('ann_')) return ownerAnnounce.handle(interaction, client);
+  if (action.startsWith('x_')) return require('./ownerExtra').handle(interaction, client);
 
   // ── Modals ──
   if (interaction.isModalSubmit()) {

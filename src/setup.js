@@ -33,8 +33,10 @@ const protectKit = require('./setupProtect');
 const logsKit = require('./setupLogs');
 const displayKit = require('./setupDisplay');
 const wrappedKit = require('./setupWrapped');
+const rolesKit = require('./setupRoles');
+const tempVoiceKit = require('./setupTempVoice');
 const botPermissions = require('./botPermissions');
-const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit, logsKit, displayKit, wrappedKit];                 // pages that live in their own files
+const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit, logsKit, displayKit, wrappedKit, rolesKit, tempVoiceKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
@@ -57,6 +59,8 @@ const PAGES = [
   { value: 'checkpoint', label: 'Security Check Point',    emoji: '🚧', desc: 'A trap channel that catches spam bots and hacked accounts',},
   { value: 'raid',      label: 'Raid protection',           emoji: '🛑', desc: 'Join-burst detection, raid mode, account age gate',},
   { value: 'automod',   label: 'AutoMod',                    emoji: '🤖', desc: 'Invites, scam links, spam, mentions, words, strikes',},
+  { value: 'roles',     label: 'Role menus',                 emoji: '🏷️', desc: 'Let members pick their own roles from a menu',},
+  { value: 'tempvoice', label: 'Join to create',             emoji: '➕', desc: 'Members get their own voice room when they join a hub',},
   { value: 'wrapped',   label: 'Wrapped',                    emoji: '🎊', desc: 'Message counting and the December Server Wrapped post',},
   { value: 'display',   label: 'Display',                    emoji: '🎨', desc: 'Cards or classic embeds, for everything or one area',},
   { value: 'announce',  label: 'Announcements',              emoji: '📣', desc: 'Where bot news and changelogs are posted',},
@@ -95,6 +99,8 @@ function summary(guild) {
     { key: 'checkpoint', core: false, done: cps.enabled && exists(cps.channelId), text: cps.enabled && exists(cps.channelId) ? `On · ${chan(cps.channelId)} · ${cps.caught} caught` : 'Off. Catches spam bots and hacked accounts' },
     { key: 'raid', core: false, done: rds.enabled || rds.gateEnabled, text: rds.active ? '🔴 Raid mode is ON' : rds.enabled ? `On · ${rds.joins} joins in ${rds.seconds}s` : rds.gateEnabled ? 'Age gate on' : 'Off. Protects against join floods' },
     { key: 'automod', core: false, done: ams.enabled && amFilters > 0, text: ams.enabled ? `On · ${amFilters} filter${amFilters === 1 ? '' : 's'}` : 'Off. Invite, scam, spam and word filters' },
+    { key: 'roles', core: false, done: require('./roleMenus').menus(guild.id).length > 0, text: require('./roleMenus').menus(guild.id).length ? `${require('./roleMenus').menus(guild.id).length} role menu${require('./roleMenus').menus(guild.id).length === 1 ? '' : 's'}` : 'No role menus yet' },
+    { key: 'tempvoice', core: false, done: !!require('./tempVoice').settings(guild.id).hubId, text: require('./tempVoice').settings(guild.id).hubId ? 'Join to create is on' : 'Off' },
     { key: 'wrapped', core: false, done: require('./activity').settings(guild.id).counting, text: require('./activity').settings(guild.id).counting ? `Counting on${require('./activity').settings(guild.id).autoPost ? ' · December post on' : ''}` : 'Voice only. Switch counting on for messages' },
     { key: 'announce', core: false, done: !!c.announceChannelId,                   text: c.announceChannelId ? chan(c.announceChannelId) : 'Not set (falls back to another channel)' },
   ];
@@ -244,7 +250,7 @@ function viewPanel(guild, note) {
 
 function viewVerify(guild, note) {
   const s = verification.settings(guild.id);
-  const membersLog = getLogChannel(guild.id, 'members');
+  const membersLog = getLogChannel(guild.id, 'verify');
   const desc = [note,
     `**Verified role** — ${role(s.roleId)}`,
     `**Unverified role** — ${role(s.unverifiedRoleId)} *(given on join, removed when verified)*`,
@@ -252,7 +258,7 @@ function viewVerify(guild, note) {
     `**Rules** — min account age: ${s.minAgeDays ? `${s.minAgeDays} day(s)` : 'off'} · auto-remove unverified: ${s.kickMinutes ? `after ${s.kickMinutes} min` : 'off'} · raid alert: ${s.raidThreshold} joins/min`,
     `**DM prompt on join** — ${onOff(s.dmOnJoin)}`,
     `**Verification message** — ${s.channelId ? chan(s.channelId) : '*not posted*'}`,
-    `**Staff log** — ${chan(membersLog)} *(set under Logs → Member join/leave)*`,
+    `**Staff log** — ${chan(membersLog)} *(set under Logs → Verification)*`,
     '',
     '_Only what Discord shows about an account is used (age, badges, avatar). No emails, IPs or locations are collected._',
   ].filter(v => v !== null && v !== undefined).join('\n');

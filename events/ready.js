@@ -100,6 +100,7 @@ module.exports = {
     require('../src/ownerMonitor').onReady(client);   // startup notice, back-online report, digest + memory watch
     require('../src/leaderboard').start(client);            // voice reward roles for people who stay in voice for hours
     try { require('../src/logs').clarify(); } catch (err) { log('WARN', 'Could not tidy the log settings', { err }); }
+    require('../src/tempVoice').sweep(client).catch(() => {});
     require('../src/wrapped').start(client);                // posts Server Wrapped in December where a server asked for it
     require('../src/messageStore').start();                 // deletes stored messages after 7 days
     require('../src/backup').start(client);                 // weekly backup of the whole application to the owner's DMs

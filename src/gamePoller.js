@@ -96,10 +96,13 @@ const warnOnce = (key, message, ctx) => {
   log('WARN', message, ctx);
 };
 
+/** Servers the owner has switched game alerts off for are left out. */
+const unlocked = (subs) => subs.filter(s => !require('./globalConfig').isLocked(s.guild_id, 'gameAlerts'));
+
 /** Check every game-update subscription (one fetch per game, shared by all servers watching it). */
 async function pollUpdates(client) {
   if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
-  const subs = selectAll(`SELECT * FROM game_subscriptions WHERE app_id NOT IN ${require('./freeGames').SQL_IDS}`, []);
+  const subs = unlocked(selectAll(`SELECT * FROM game_subscriptions WHERE app_id NOT IN ${require('./freeGames').SQL_IDS}`, []));
   const fetched = new Map();   // app_id → update | null | Error
 
   for (const sub of subs) {
@@ -113,23 +116,33 @@ async function pollUpdates(client) {
     const update = fetched.get(sub.app_id);
     if (!update || update instanceof Error) continue;
 
-    const id = String(update.id);
-    if (sub.last_post_id === id) continue;
-    if (update.date && Date.now() - update.date > 7 * 86_400_000) { run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [id, sub.id]); continue; }   // never announce an old post as new: if numbering ever changes, just remember it
-    if (!sub.last_post_id) { run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [id, sub.id]); continue; }   // no baseline yet: remember, don't spam
+    // A post can be known by more than one number (Steam's feed and its news API number the same post differently, and which
+    // one answers can change from one check to the next), so every number and the title are remembered. Seeing any of them again is the same post.
+    const seen = (sub.last_post_id || '').split(',').filter(Boolean);
+    const keys = postKeys(update);
+    const remember = () => [...keys, ...seen.filter(k => !keys.includes(k))].slice(0, 12).join(',');
+    if (keys.some(k => seen.includes(k))) continue;
+    if (update.date && Date.now() - update.date > 7 * 86_400_000) { run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [remember(), sub.id]); continue; }   // never announce an old post as new: if numbering ever changes, just remember it
+    if (!seen.length) { run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [remember(), sub.id]); continue; }   // no baseline yet: remember, don't spam
 
     try {
       if (await postUpdate(client, sub, update)) {
-        run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [id, sub.id]);
+        run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [remember(), sub.id]);
         log('INFO', `Posted update: ${update.title}`, { game: sub.game_name, guild: sub.guild_id });
       }
     } catch (err) { log('WARN', 'Failed to post a game update', { game: sub.game_name, err }); }
   }
 }
 
+/** Every way a post can be recognised: its number(s) and its title (letters and digits only, no commas). */
+function postKeys(update) {
+  const title = String(update.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 48);
+  return [...new Set([String(update.id), ...(update.altIds || []).map(String), title && `t:${title}`].filter(Boolean))];
+}
+
 async function checkEpicGames(client) {
   if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
-  const subs = selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', ['epic']);
+  const subs = unlocked(selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', ['epic']));
   if (!subs.length) return;
 
   const { current, upcoming } = await getFreeGames();
@@ -177,7 +190,7 @@ async function checkEpicGames(client) {
 /** Post new free-to-keep games for one store ('steam_free' or 'gog_free') to every server that follows it. */
 async function checkGiveaways(client, appId) {
   if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
-  const subs = selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', [appId]);
+  const subs = unlocked(selectAll('SELECT * FROM game_subscriptions WHERE app_id = ?', [appId]));
   if (!subs.length) return;
   const { label, platform } = STORES[appId];
 
@@ -241,4 +254,4 @@ function startGamePoller(client) {
   }, 40000);
 }
 
-module.exports = { startGamePoller, pollUpdates, checkGiveaways, postUpdate };
+module.exports = { startGamePoller, pollUpdates, checkGiveaways, postUpdate, postKeys };

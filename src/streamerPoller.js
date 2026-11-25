@@ -217,7 +217,7 @@ const lastReconciled = new Map();   // subscription id → last time we checked 
 
 async function pollPlatform(client, platform) {
   if (!require('./globalConfig').featureEnabled('streamerAlerts')) return;   // global switch (/owner features)
-  const subs = selectAll('SELECT * FROM streamer_subscriptions WHERE platform = ?', [platform]);
+  const subs = selectAll('SELECT * FROM streamer_subscriptions WHERE platform = ?', [platform]).filter(x => !require('./globalConfig').isLocked(x.guild_id, 'streamerAlerts'));
 
   for (const sub of subs) {
     // EventSub is delivering for this streamer → only do the occasional safety-net check
@@ -242,7 +242,7 @@ async function handleEventSubSignal(client, login, kind, opts = {}) {
   const delays = opts.delays || (kind === 'online' ? [0, 4_000, 12_000, 30_000] : [0, 8_000]);
   const find   = () => selectAll(
     "SELECT * FROM streamer_subscriptions WHERE platform = 'twitch' AND LOWER(username) = ?", [login.toLowerCase()]
-  );
+  ).filter(x => !require('./globalConfig').isLocked(x.guild_id, 'streamerAlerts'));
 
   for (const delay of delays) {
     if (delay) await new Promise(r => setTimeout(r, delay));

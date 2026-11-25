@@ -1,5 +1,17 @@
 # Changelog
 
+## 5.9.0
+
+- **Role menus.** `/setup` > Role menus: write a title, choose up to 15 roles, a channel and whether members pick one or any, and the bot posts a message with a drop-down. Picking gives the roles and removes the ones no longer chosen. Menus can be posted again or removed from the same page
+- **Join to create.** `/setup` > Join to create: pick a hub voice channel (or let the bot make one). Whoever joins it gets a voice room named after them, with control of it, and is moved in. The room is deleted when it empties, including after a restart. Room name and user limit are chosen in setup
+- **`/poll`.** Discord's own polls: a question, two to six choices, how long it stays open and whether people can pick more than one. Votes are counted live by Discord
+- **Leaderboard: ignore time alone.** A new switch in `/setup` > Voice leaderboard. When on, time spent in a call with nobody else does not count
+- **Verification has its own log.** It used to share the member join/leave log. Servers that had one keep getting verification results in the same channel until they choose another under Logs > Verification. Raid alerts no longer fall back to the join/leave log (they use their own channel or the Moderation log)
+- **Duplicate game updates fixed.** Steam's feed and its news API number the same post differently, and which one answered could change between checks, so one post could be announced twice. Every number and the title are now remembered
+- **Deleted by:** Discord writes its audit entry a moment after announcing a delete, so the lookup now checks again after about two seconds
+- **Owner tools:** a **Server tools** page for each server (what it has set up, stored data, log channels), a look override, features you can lock off for one server only (streamer alerts, game alerts, AutoMod, raid protection, Check Point), **Export data** and **Erase data** for one server, a **Usage** page (the last 30 days, top commands) and a **Recent errors** list
+- **Memory:** cards are drawn at a smaller internal size, the image and card caches are smaller, and Discord.js forgets cached messages after 15 minutes. Most of the bot's memory is the libraries it loads (about 150 MB before it does anything), so expect a lower baseline rather than a dramatic drop
+
 ## 5.8.1
 
 - **Voice panel redesign.** The title is your server's name, with a green **Bot online** label above it and **Bot is in** and the channel on the right. Under it: who is in the call, with their picture and how long each has been there, then six figures along the bottom: server voice today, most at once today, calls today, bot in call for, bot memory and bot uptime. When the bot is not in a call it shows the week's top three instead

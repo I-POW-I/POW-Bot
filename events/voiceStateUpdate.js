@@ -86,6 +86,7 @@ module.exports = {
   once: false,
 
   async execute(oldState, newState) {
+    require('../src/tempVoice').onVoice(oldState, newState).catch(() => {});   // join-to-create rooms: runs on its own and never delays the logs
     // ── Anti-Drag Verification Block ──────────────────────────────────────────
     if (newState.id === newState.client.user.id) {
       const oldChannel = oldState.channel;
