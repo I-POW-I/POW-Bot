@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.7.1
+
+- **Fixed:** the control panels in every server failed to update ("Could not update panel") because the new card layer took the wrong argument when the bot edits an existing message
+- **Fixed:** commands and buttons could time out ("didn't respond in time") while the first card was being drawn. Fonts and emoji are now loaded at start-up, and if a card is slow the bot now acknowledges first and fills it in a moment later
+- **New `/setup` > Display page:** each server chooses how the bot's messages look, for everything or per area (Setup screens, Logs, Commands and buttons, Posts and alerts). **Smart** (default) draws a card, but sends a classic embed when the message is too long to read as a picture. **Always cards** and **Classic embeds** are there too. The bot owner can still switch cards off for everyone, or force a look in one server
+- **Bigger, clearer cards:** a narrower card with larger text, so it is readable without opening the picture
+- Game update posts no longer show the same address twice ("Read full notes" and "Open")
+- Channel and role names with emoji, fancy lettering or decorative symbols now show properly in cards
+
 ## 5.7.0
 
 - **One look everywhere.** Every message the bot sends, in every command, every `/setup` page, the owner hub, logs, alerts and posts, is now drawn as a dark card in the same style as the Wrapped card, with no plain grey boxes left. Links inside a card appear as buttons underneath, and the picture carries hidden alt text for screen readers. The owner can switch this off with **Card panels** in `/owner` > Maintenance and features (the old plain embeds come back instantly)

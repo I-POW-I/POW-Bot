@@ -45,7 +45,14 @@ function emojiName(str) {
  * Inline markdown into runs. `resolve(kind, id)` turns mentions into { text, colour? }.
  * Run: { t:'text', s, bold, italic, strike, underline, code, link, colour, pill } | { t:'emoji', name } | { t:'custom', id, animated }
  */
-function inline(text, resolve = () => null, base = {}) {
+/**
+ * Text the bundled font can draw. Fancy "letters" from the maths block (𝐇𝐞𝐥𝐥𝐨) and full-width forms are turned into
+ * ordinary letters; box-drawing and block characters used to decorate channel names are dropped (they would show as boxes).
+ */
+const DECORATIVE = /[\u2500-\u259F\u25A0-\u25FF\u2800-\u28FF\uE000-\uF8FF\uFFF0-\uFFFF]/gu;
+const clean = (s) => String(s ?? '').replace(/\u200B|\u200C|\u2060|\uFEFF/g, '').normalize('NFKC').replace(DECORATIVE, '');
+
+function inline(text, resolve = () => null, base = {}, markdown = true) {
   const runs = [];
   const push = (s, style = {}) => { if (s) runs.push({ t: 'text', s, ...base, ...style }); };
   const patterns = [
@@ -59,22 +66,22 @@ function inline(text, resolve = () => null, base = {}) {
     { re: /^\*(?!\s)([^*\n]+?)\*(?!\*)/, fn: m => runs.push(...inline(m[1], resolve, { ...base, italic: true })) },
     { re: /^_(?!\s)([^_\n]+?)_(?![\w])/, fn: m => runs.push(...inline(m[1], resolve, { ...base, italic: true })) },
     { re: /^\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/, fn: m => runs.push(...inline(m[1], resolve, { ...base, link: m[2], underline: true })) },
-    { re: /^<@!?(\d+)>/, fn: m => { const r = resolve('user', m[1]); push(r?.text || '@unknown-user', { pill: true, colour: r?.colour }); } },
-    { re: /^<@&(\d+)>/, fn: m => { const r = resolve('role', m[1]); push(r?.text || '@deleted-role', { pill: true, colour: r?.colour }); } },
-    { re: /^<#(\d+)>/, fn: m => { const r = resolve('channel', m[1]); push(r?.text || '#deleted-channel', { pill: true }); } },
+    { re: /^<@!?(\d+)>/, fn: m => { const r = resolve('user', m[1]); runs.push(...inline(r?.text || '@unknown-user', () => null, { ...base, pill: true, colour: r?.colour })); } },
+    { re: /^<@&(\d+)>/, fn: m => { const r = resolve('role', m[1]); runs.push(...inline(r?.text || '@deleted-role', () => null, { ...base, pill: true, colour: r?.colour })); } },
+    { re: /^<#(\d+)>/, fn: m => { const r = resolve('channel', m[1]); runs.push(...inline(r?.text || '#deleted-channel', () => null, { ...base, pill: true })); } },
     { re: /^<t:(-?\d+)(?::([tTdDfFR]))?>/, fn: m => push(timestampText(m[1], m[2] || 'f'), base) },
     { re: /^<(a?):\w+:(\d+)>/, fn: m => runs.push({ t: 'custom', id: m[2], animated: m[1] === 'a' }) },
     { re: /^@(everyone|here)\b/, fn: m => push(m[0], { pill: true }) },
     { re: /^https?:\/\/[^\s<>]+/, fn: m => push(m[0], { link: m[0], underline: true }) },
   ];
-  let rest = String(text ?? '');
+  let rest = clean(text);
   let plain = '';
   const flush = () => { if (plain) { push(plain); plain = ''; } };
   outer: while (rest.length) {
     if (rest[0] === '\\' && rest.length > 1) { plain += rest[1]; rest = rest.slice(2); continue; }
     const em = rest.match(EMOJI_RE);
     if (em && !/^[0-9#*]$/.test(em[0])) { flush(); runs.push({ t: 'emoji', name: emojiName(em[0]), ...base }); rest = rest.slice(em[0].length); continue; }
-    for (const p of patterns) {
+    for (const p of markdown ? patterns : []) {
       const m = rest.match(p.re);
       if (m) { flush(); p.fn(m); rest = rest.slice(m[0].length); continue outer; }
     }
@@ -134,7 +141,7 @@ function layout(ctx, text, opts) {
     }
     let l = row.line.replace(/^(\s*)└ ?/, '$1› ').replace(/^(\s*)[├│] ?/, '$1› ');
     if (!l.trim()) { lines.push({ items: [], h: Math.round(lineH * 0.45), blank: true }); continue; }
-    if (!markdown) { for (const w2 of wrapRuns(ctx, [{ t: 'text', s: l, colour }], maxW, size, weight)) lines.push({ items: w2, h: lineH, indent: 0, size, weight }); continue; }
+    if (!markdown) { for (const w2 of wrapRuns(ctx, inline(l, resolve, { colour }, false), maxW, size, weight)) lines.push({ items: w2, h: lineH, indent: 0, size, weight }); continue; }
 
     let sz = size, indent = 0, bullet = null, quote = false, runBase = { colour }, lh = lineH, w = weight;
     let m;
@@ -164,7 +171,7 @@ function wrapRuns(ctx, runs, maxW, size, weight, hard = false) {
       if (x + w > maxW && x > 0) newline();
       cur().push({ run, x, w }); x += w + 1; continue;
     }
-    const pad = run.pill ? 6 : 0;
+    const pad = run.pill ? 4 : 0;
     ctx.font = fontFor(run, size, weight);
     const tokens = hard ? [run.s] : run.s.split(/(\s+)/).filter(s => s !== '');
     for (const tok of tokens) {

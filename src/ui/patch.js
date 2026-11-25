@@ -12,15 +12,32 @@
 const discord = require('discord.js');
 const { AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = discord;
 const { renderEmbed } = require('./render');
+const style = require('./style');
 const { log } = require('../logger');
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const TOO_SLOW = Symbol('too slow');
+// Discord wants an answer to a command or button within 3 seconds; if drawing takes longer than this, the interaction is deferred first
+const DEFER_AFTER_MS = 1500;
+
 const SEND_METHODS = [
-  // [method, payload argument index, is an edit]
-  ['reply', 0, false], ['followUp', 0, false], ['editReply', 0, true], ['update', 0, true],
-  ['send', 0, false], ['edit', 0, true], ['editMessage', 1, true],
+  // [method, is an edit]
+  ['reply', false], ['followUp', false], ['editReply', true], ['update', true],
+  ['send', false], ['edit', true], ['editMessage', true],
 ];
 
-const enabled = () => { try { return require('../globalConfig').featureEnabled('cardPanels'); } catch { return true; } };
+/** The argument that is a message payload: a plain object with an embeds list. (A Message also has `embeds`, so instances are skipped.) */
+const payloadIndex = (args) => args.findIndex(a => a && typeof a === 'object' && !Array.isArray(a) && Object.getPrototypeOf(a) === Object.prototype && Array.isArray(a.embeds));
+
+/** Link buttons already on the payload, so the same address is not offered twice. */
+function existingLinks(components) {
+  const urls = new Set();
+  for (const r of components || []) {
+    const row = typeof r?.toJSON === 'function' ? r.toJSON() : r;
+    for (const c of row?.components || []) if (c?.url) urls.add(c.url);
+  }
+  return urls;
+}
 const toJSON = (e) => (typeof e?.toJSON === 'function' ? e.toJSON() : e?.data ? { ...e.data } : e);
 
 function resolverFor(source) {
@@ -48,7 +65,10 @@ function resolverFor(source) {
 /** The payload with embeds replaced by card images, or the payload unchanged. */
 async function convert(payload, source, isEdit) {
   if (!payload || typeof payload !== 'object' || typeof payload === 'string') return payload;
-  if (!Array.isArray(payload.embeds) || !payload.embeds.length || payload.plainEmbeds === true || !enabled()) return payload;
+  if (!Array.isArray(payload.embeds) || !payload.embeds.length || payload.plainEmbeds === true) return payload;
+  const guildId = (source?.guild || source?.channel?.guild)?.id || source?.guildId || null;
+  const look = style.styleFor(guildId, style.areaOf(source));
+  if (look === 'embed') return payload;
 
   const embeds = payload.embeds.slice(0, 10).map(toJSON).filter(Boolean);
   if (!embeds.length) return payload;
@@ -62,6 +82,9 @@ async function convert(payload, source, isEdit) {
   try { rendered = await Promise.all(embeds.map(e => renderEmbed(e, { resolve, attachments: buffers }))); }
   catch (err) { log('WARN', 'Card render failed, sending the plain embed', { err }); return payload; }
 
+  // smart mode: a card too tall to read as a picture is sent as a classic embed instead
+  if (look === 'auto' && rendered.some(r => r.height > style.MAX_SMART_HEIGHT)) return payload;
+
   // an attachment an embed only existed to show is now part of the card
   const used = new Set();
   for (const e of embeds) for (const u of [e.image?.url, e.thumbnail?.url]) { const m = String(u || '').match(/^attachment:\/\/(.+)$/); if (m) used.add(decodeURIComponent(m[1])); }
@@ -70,7 +93,7 @@ async function convert(payload, source, isEdit) {
   const stamp = Date.now().toString(36);
   const cards = rendered.map((r, i) => new AttachmentBuilder(r.png, { name: `card-${stamp}-${i}.png`, description: r.alt || 'Card' }));
 
-  const seen = new Set(), links = [];
+  const seen = existingLinks(payload.components), links = [];
   for (const r of rendered) for (const l of r.links) if (!seen.has(l.url) && /^https?:\/\//.test(l.url)) { seen.add(l.url); links.push(l); }
   const components = Array.isArray(payload.components) ? [...payload.components] : [];
   if (links.length && components.length < 5) {
@@ -84,11 +107,28 @@ async function convert(payload, source, isEdit) {
   return out;
 }
 
-function wrap(proto, name, index, isEdit) {
+function wrap(proto, name, isEdit) {
   const original = proto[name];
   if (typeof original !== 'function' || original.__cards) return;
   const wrapped = async function (...args) {
-    try { args[index] = await convert(args[index], this, isEdit); } catch (err) { log('WARN', 'Card conversion skipped', { err }); }
+    const index = payloadIndex(args);
+    if (index < 0) return original.apply(this, args);
+    try {
+      const work = convert(args[index], this, isEdit);
+      // the first answer to a command or button has to arrive within 3 seconds: if drawing is slow, defer and edit instead
+      const first = (name === 'reply' || name === 'update') && typeof this.deferReply === 'function' && !this.deferred && !this.replied;
+      if (first) {
+        const result = await Promise.race([work, sleep(DEFER_AFTER_MS).then(() => TOO_SLOW)]);
+        if (result === TOO_SLOW) {
+          const ephemeral = !!(args[index].ephemeral || (args[index].flags != null && (Number(args[index].flags) & 64)));
+          if (name === 'reply') await this.deferReply(ephemeral ? { flags: 64 } : {}); else await this.deferUpdate();
+          const done = await work;
+          const { flags, ephemeral: _e, ...rest } = done; void flags; void _e;
+          return this.editReply(rest);
+        }
+        args[index] = result;
+      } else args[index] = await work;
+    } catch (err) { log('WARN', 'Card conversion skipped', { err }); }
     return original.apply(this, args);
   };
   wrapped.__cards = true;
@@ -103,10 +143,12 @@ function install() {
   for (const exported of Object.values(discord)) {
     const proto = typeof exported === 'function' ? exported.prototype : null;
     if (!proto) continue;
-    for (const [name, index, isEdit] of SEND_METHODS) {
-      if (Object.prototype.hasOwnProperty.call(proto, name)) wrap(proto, name, index, isEdit);
+    for (const [name, isEdit] of SEND_METHODS) {
+      if (Object.prototype.hasOwnProperty.call(proto, name)) wrap(proto, name, isEdit);
     }
   }
+  // load fonts and emoji now, so the first real card is not slow
+  setImmediate(() => renderEmbed({ title: 'Ready', description: 'Loading 🙂 ✅ ⚠️' }).catch(() => {}));
 }
 
 module.exports = { install, convert };

@@ -31,8 +31,9 @@ const moderationKit = require('./setupModeration');
 const welcomeKit = require('./setupWelcome');
 const protectKit = require('./setupProtect');
 const logsKit = require('./setupLogs');
+const displayKit = require('./setupDisplay');
 const botPermissions = require('./botPermissions');
-const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit, logsKit];                 // pages that live in their own files
+const KITS = [alertsKit, leaderboardKit, checkpointKit, moderationKit, welcomeKit, protectKit, logsKit, displayKit];                 // pages that live in their own files
 const kitFor = (page) => KITS.find(k => k.owns(page));
 const {
   BLUE, GREEN, AMBER, RED, ephemeral, chan, role, onOff, noteBad, noteGood, backButton,
@@ -55,6 +56,7 @@ const PAGES = [
   { value: 'checkpoint', label: 'Security Check Point',    emoji: '🚧', desc: 'A trap channel that catches spam bots and hacked accounts',},
   { value: 'raid',      label: 'Raid protection',           emoji: '🛑', desc: 'Join-burst detection, raid mode, account age gate',},
   { value: 'automod',   label: 'AutoMod',                    emoji: '🤖', desc: 'Invites, scam links, spam, mentions, words, strikes',},
+  { value: 'display',   label: 'Display',                    emoji: '🎨', desc: 'Cards or classic embeds, for everything or one area',},
   { value: 'announce',  label: 'Announcements',              emoji: '📣', desc: 'Where bot news and changelogs are posted',},
 ];
 

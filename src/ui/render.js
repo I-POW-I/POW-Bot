@@ -21,7 +21,7 @@ function ensureFonts() {
 
 const T = {
   bg: '#15161b', border: '#26282d', rule: '#2b2d31', text: '#dbdee1', white: '#ffffff', muted: '#949ba4', label: '#8b93ff',
-  pad: 28, scale: 2,
+  pad: 26, scale: 3,
 };
 
 const rgba = (n, a) => { const v = Number(n) & 0xFFFFFF; return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${a})`; };
@@ -79,6 +79,7 @@ function drawLines(ctx, lines, x0, y0, images, defaultColour) {
       if (r.t === 'emoji' || r.t === 'custom') {
         const img = images.get(r.t === 'emoji' ? `e:${r.name}` : `c:${r.id}`);
         const s = Math.round(size * 1.2);
+        if (r.pill) { ctx.fillStyle = r.colour ? rgba(parseInt(String(r.colour).replace('#', ''), 16), .2) : 'rgba(139,147,255,.18)'; roundRect(ctx, x - 1, base - size * .68, s + 3, size * 1.36, 5); ctx.fill(); }
         if (img) ctx.drawImage(img, x, base - s / 2, s, s);
         continue;
       }
@@ -107,7 +108,7 @@ function drawLines(ctx, lines, x0, y0, images, defaultColour) {
 async function renderEmbed(embed, opts = {}) {
   ensureFonts();
   const resolve = opts.resolve || (() => null);
-  const W = opts.width || (embed.image ? 640 : 620);
+  const W = opts.width || (embed.image ? 540 : 500);
   const pad = T.pad, inner = W - pad * 2;
   const probe = createCanvas(10, 10).getContext('2d');
 
@@ -120,10 +121,10 @@ async function renderEmbed(embed, opts = {}) {
     return fetchImage(url);
   };
   const [thumb, image, authorIcon, footerIcon] = await Promise.all([resolveImg(thumbUrl), resolveImg(imgUrl), resolveImg(embed.author?.icon_url), resolveImg(embed.footer?.icon_url)]);
-  const textW = thumb ? inner - 92 : inner;
+  const textW = thumb ? inner - 100 : inner;
 
-  const titleL = embed.title ? rich.layout(probe, embed.title, { size: 24, lineH: 30, maxW: textW, weight: 800, colour: T.white, resolve, markdown: false }) : null;
-  const descL = embed.description ? rich.layout(probe, embed.description, { size: 15, lineH: 22, maxW: textW, resolve }) : null;
+  const titleL = embed.title ? rich.layout(probe, embed.title, { size: 28, lineH: 34, maxW: textW, weight: 800, colour: T.white, resolve, markdown: false }) : null;
+  const descL = embed.description ? rich.layout(probe, embed.description, { size: 17, lineH: 25, maxW: textW, resolve }) : null;
 
   // fields: group inline ones into rows of up to three
   const fieldRows = [];
@@ -133,16 +134,16 @@ async function renderEmbed(embed, opts = {}) {
     if (f.inline) { run.push(f); if (run.length === 3) flush(); } else { flush(); fieldRows.push([f]); }
   }
   flush();
-  const gap = 18;
+  const gap = 20;
   const rows = fieldRows.map(r => {
     const cols = r.length, colW = r.length === 1 ? inner : Math.floor((inner - gap * (cols - 1)) / cols);
     const cells = r.map(f => {
       const val = String(f.value || '');
       const short = !/\n|<[@#:at]/.test(val) && val.length <= 24 && colW < inner;
-      const L = rich.layout(probe, val, short ? { size: 17, lineH: 23, maxW: colW, weight: 700, colour: T.white, resolve } : { size: 14.5, lineH: 21, maxW: colW, resolve });
+      const L = rich.layout(probe, val, short ? { size: 19, lineH: 26, maxW: colW, weight: 700, colour: T.white, resolve } : { size: 16, lineH: 23, maxW: colW, resolve });
       return { f, L, colW, short };
     });
-    return { cells, h: 16 + 3 + Math.max(...cells.map(c => c.L.height)) };
+    return { cells, h: 19 + 4 + Math.max(...cells.map(c => c.L.height)) };
   });
 
   const kicker = embed.author?.name ? embed.author.name.toUpperCase() : null;
@@ -150,11 +151,11 @@ async function renderEmbed(embed, opts = {}) {
 
   // height
   let y = pad;
-  const kickerH = kicker ? 22 : 0;
+  const kickerH = kicker ? 26 : 0;
   y += kickerH;
   const titleY = y; if (titleL) y += titleL.height + 4;
   const descY = y + (titleL && descL ? 2 : 0); if (descL) y = descY + descL.height;
-  const topBlockEnd = Math.max(y, pad + (thumb ? 72 : 0));
+  const topBlockEnd = Math.max(y, pad + (thumb ? 80 : 0));
   y = topBlockEnd;
   const hasTop = !!(titleL || descL || kicker);
   const fieldsStart = y + (rows.length ? (hasTop ? 0 : 0) : 0);
@@ -189,19 +190,19 @@ async function renderEmbed(embed, opts = {}) {
   if (kicker) {
     let kx = pad;
     if (authorIcon) { ctx.save(); ctx.beginPath(); ctx.arc(kx + 8, pad + 8, 8, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(authorIcon, kx, pad, 16, 16); ctx.restore(); kx += 22; }
-    spaced(ctx, kicker.slice(0, 80), kx, pad + 8, '600 10.5px Inter, sans-serif', T.label, 1.4);
+    spaced(ctx, kicker.slice(0, 80), kx, pad + 9, '600 11.5px Inter, sans-serif', T.label, 1.5);
   }
   if (titleL) drawLines(ctx, titleL.lines, pad, titleY, images, T.white);
   if (descL) { descL.lines.forEach(l => { if (l.codeBlock) l.width = textW; }); drawLines(ctx, descL.lines, pad, descY, images, T.text); }
-  if (thumb) { ctx.save(); roundRect(ctx, W - pad - 72, pad, 72, 72, 12); ctx.clip(); const s = Math.max(72 / thumb.width, 72 / thumb.height); ctx.drawImage(thumb, W - pad - 72 + (72 - thumb.width * s) / 2, pad + (72 - thumb.height * s) / 2, thumb.width * s, thumb.height * s); ctx.restore(); }
+  if (thumb) { ctx.save(); roundRect(ctx, W - pad - 80, pad, 80, 80, 14); ctx.clip(); const s = Math.max(80 / thumb.width, 80 / thumb.height); ctx.drawImage(thumb, W - pad - 80 + (80 - thumb.width * s) / 2, pad + (80 - thumb.height * s) / 2, thumb.width * s, thumb.height * s); ctx.restore(); }
 
   if (fieldsTopRule != null) rule(ctx, pad, fieldsTopRule, inner);
   rows.forEach((r, ri) => {
     let x = pad; const ry = rowYs[ri];
     r.cells.forEach((c) => {
-      spaced(ctx, String(c.f.name || '').toUpperCase().slice(0, 80), x, ry + 6, '600 10.5px Inter, sans-serif', T.label, 1.2, c.colW);
+      spaced(ctx, String(c.f.name || '').toUpperCase().slice(0, 80), x, ry + 7, '600 11.5px Inter, sans-serif', T.label, 1.3, c.colW);
       c.L.lines.forEach(l => { if (l.codeBlock) l.width = c.colW; });
-      drawLines(ctx, c.L.lines, x, ry + 19, images, c.short ? T.white : T.text);
+      drawLines(ctx, c.L.lines, x, ry + 23, images, c.short ? T.white : T.text);
       x += c.colW + gap;
     });
   });
@@ -211,8 +212,8 @@ async function renderEmbed(embed, opts = {}) {
     rule(ctx, pad, footerY - 9, inner);
     let fx = pad;
     if (footerIcon) { ctx.save(); ctx.beginPath(); ctx.arc(fx + 7, footerY + 8, 7, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(footerIcon, fx, footerY + 1, 14, 14); ctx.restore(); fx += 20; }
-    ctx.font = '400 12px Inter, sans-serif'; ctx.fillStyle = T.muted; ctx.textBaseline = 'middle';
-    const fl = rich.layout(probe, footerText, { size: 12, lineH: 16, maxW: inner - (fx - pad), resolve, markdown: false });
+    ctx.font = '400 13px Inter, sans-serif'; ctx.fillStyle = T.muted; ctx.textBaseline = 'middle';
+    const fl = rich.layout(probe, footerText, { size: 13, lineH: 17, maxW: inner - (fx - pad), resolve, markdown: false });
     ctx.fillText(fl.lines[0]?.items.map(i => i.run.s || '').join('') || footerText, fx, footerY + 8);
   }
 
@@ -225,6 +226,7 @@ async function renderEmbed(embed, opts = {}) {
 }
 
 function spaced(ctx, text, x, y, font, colour, spacing, maxW = Infinity) {
+  text = rich.plain(text).replace(/\p{Extended_Pictographic}\uFE0F?/gu, '').trim();
   ctx.font = font; ctx.fillStyle = colour; ctx.textBaseline = 'middle';
   const chars = [...text], widths = chars.map(ch => ctx.measureText(ch).width + spacing);
   let total = widths.reduce((a, b) => a + b, 0), n = chars.length;
