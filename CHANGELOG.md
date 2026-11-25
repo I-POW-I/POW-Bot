@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.7.2
+
+- **Cards read bigger.** Discord shrinks any picture taller than about 400 pixels, which is why long cards were small. Tall messages (leaderboard, streamers, setup home, long notes) are now drawn wide with the text in two columns, so they stay readable and no longer fall back to a classic embed
+- **Fixed:** names and channels were drawn as two or three separate boxes, and some channel names showed black blocks (invisible filler characters). Each name is now one box and the blanks are removed
+- **Streamers** list is more compact: the alert channel and ping role are written once when every streamer shares them
+- **Panel refresh:** the control panel now carries a live "Updated … ago" line, and `/setup` > Voice panel has a refresh choice: edit in place every minute, or delete and post again every 5, 15 or 60 minutes so its sent time stays fresh
+- **Deleted pictures** are now kept in the log entry: the picture is copied when the message is deleted, so it shows in the log even after Discord removes it
+- `/botinfo` shows memory use instead of latency
+- Faster and steadier replies: repeated cards are reused, and a command that already waited too long for the bot gets the plain embed instead of timing out
+
 ## 5.7.1
 
 - **Fixed:** the control panels in every server failed to update ("Could not update panel") because the new card layer took the wrong argument when the bot edits an existing message

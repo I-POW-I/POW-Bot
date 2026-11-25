@@ -11,14 +11,18 @@
 
 const discord = require('discord.js');
 const { AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = discord;
-const { renderEmbed } = require('./render');
+const { renderEmbed, renderBest } = require('./render');
 const style = require('./style');
 const { log } = require('../logger');
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const TOO_SLOW = Symbol('too slow');
 // Discord wants an answer to a command or button within 3 seconds; if drawing takes longer than this, the interaction is deferred first
-const DEFER_AFTER_MS = 1500;
+const DEFER_AFTER_MS = 1100;
+// a command that already waited this long for the bot is answered with the plain embed: there is no time left to draw a card
+const TOO_LATE_MS = 1500;
+
+const CACHE = new Map(), CACHE_MS = 10 * 60 * 1000;
 
 const SEND_METHODS = [
   // [method, is an edit]
@@ -65,6 +69,13 @@ function resolverFor(source) {
 /** The payload with embeds replaced by card images, or the payload unchanged. */
 async function convert(payload, source, isEdit) {
   if (!payload || typeof payload !== 'object' || typeof payload === 'string') return payload;
+  // `liveStamp: true` marks a panel that is edited again and again: as a card it gets a live "Updated … ago" line (Discord keeps it counting)
+  if ('liveStamp' in payload) {
+    const { liveStamp, ...rest } = payload;
+    const out = await convert(rest, source, isEdit);
+    if (liveStamp && out !== rest && Array.isArray(out.files) && !out.embeds?.length) return { ...out, content: `-# Updated <t:${Math.floor(Date.now() / 1000)}:R>` };
+    return isEdit && liveStamp ? { ...out, content: '' } : out;
+  }
   if (!Array.isArray(payload.embeds) || !payload.embeds.length || payload.plainEmbeds === true) return payload;
   const guildId = (source?.guild || source?.channel?.guild)?.id || source?.guildId || null;
   const look = style.styleFor(guildId, style.areaOf(source));
@@ -78,12 +89,18 @@ async function convert(payload, source, isEdit) {
   for (const f of files) if (f instanceof AttachmentBuilder && Buffer.isBuffer(f.attachment) && f.name) buffers.set(f.name, f.attachment);
 
   const resolve = resolverFor(source);
-  let rendered;
-  try { rendered = await Promise.all(embeds.map(e => renderEmbed(e, { resolve, attachments: buffers }))); }
-  catch (err) { log('WARN', 'Card render failed, sending the plain embed', { err }); return payload; }
+  // the same embed drawn again a moment later (a menu opened twice) is reused; anything with a clock or a picture is drawn fresh
+  const raw = JSON.stringify(embeds), cacheable = buffers.size === 0 && !/<t:|attachment:\/\//.test(raw);
+  const hit = cacheable ? CACHE.get(raw) : null;
+  let rendered = hit && Date.now() - hit.at < CACHE_MS ? hit.rendered : null;
+  if (!rendered) {
+    try { rendered = await Promise.all(embeds.map(e => renderBest(e, { resolve, attachments: buffers }))); }
+    catch (err) { log('WARN', 'Card render failed, sending the plain embed', { err }); return payload; }
+    if (cacheable) { CACHE.set(raw, { at: Date.now(), rendered }); if (CACHE.size > 60) CACHE.delete(CACHE.keys().next().value); }
+  }
 
-  // smart mode: a card too tall to read as a picture is sent as a classic embed instead
-  if (look === 'auto' && rendered.some(r => r.height > style.MAX_SMART_HEIGHT)) return payload;
+  // smart mode: a card Discord would shrink too much to read is sent as a classic embed instead
+  if (look === 'auto' && rendered.some(r => r.scale < style.MIN_SMART_SCALE)) return payload;
 
   // an attachment an embed only existed to show is now part of the card
   const used = new Set();
@@ -114,11 +131,13 @@ function wrap(proto, name, isEdit) {
     const index = payloadIndex(args);
     if (index < 0) return original.apply(this, args);
     try {
-      const work = convert(args[index], this, isEdit);
       // the first answer to a command or button has to arrive within 3 seconds: if drawing is slow, defer and edit instead
       const first = (name === 'reply' || name === 'update') && typeof this.deferReply === 'function' && !this.deferred && !this.replied;
+      const age = first && this.createdTimestamp ? Date.now() - this.createdTimestamp : 0;
+      if (first && age > TOO_LATE_MS) { const { liveStamp, ...plain } = args[index]; void liveStamp; args[index] = plain; return original.apply(this, args); }
+      const work = convert(args[index], this, isEdit);
       if (first) {
-        const result = await Promise.race([work, sleep(DEFER_AFTER_MS).then(() => TOO_SLOW)]);
+        const result = await Promise.race([work, sleep(Math.max(150, DEFER_AFTER_MS - age)).then(() => TOO_SLOW)]);
         if (result === TOO_SLOW) {
           const ephemeral = !!(args[index].ephemeral || (args[index].flags != null && (Number(args[index].flags) & 64)));
           if (name === 'reply') await this.deferReply(ephemeral ? { flags: 64 } : {}); else await this.deferUpdate();

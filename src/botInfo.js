@@ -2,7 +2,7 @@
  * Bot information embeds — one place that builds everything shown by:
  *   • /botinfo (public, short)   • /owner status and the owner part of /botinfo
  *
- * Public view    : status, latency, uptime, version and whether the bot is in voice there
+ * Public view    : status, memory, uptime, version and whether the bot is in voice there
  * Owner view     : extra embeds for OWNER_IDS / ADMIN_IDS (Discloud container, event loop,
  *                  global usage, services, alert + safety settings)
  *
@@ -54,17 +54,16 @@ function servicesSummary() {
 // ── Public status embed (everyone) ────────────────────────────────────────────
 
 /**
- * The short version anyone can see: is the bot up, how fast, which version, and whether it is in voice here.
+ * The short version anyone can see: is the bot up, how much memory it uses, which version, and whether it is in voice here.
  * Anything about the host, memory, errors or other servers is owner-only (see buildOwnerEmbeds).
  */
-function buildBotInfoEmbed(guildId, client, { responseMs } = {}) {
+function buildBotInfoEmbed(guildId, client) {
   const entry     = store.getEntry(guildId);
   const connected = isConnected(guildId);
-  const ping      = client.ws.ping;
   const channel   = connected && entry ? client.guilds.cache.get(guildId)?.channels.cache.get(entry.channelId) : null;
   const inVoice   = channel ? channel.members.filter(m => !m.user.bot).size : 0;
 
-  const latency = responseMs != null ? `${responseMs} ms` : ping >= 0 ? `${ping} ms` : 'Measuring';
+  const memory  = system.formatMemory();
   const voice = connected && channel
     ? `Connected to ${channel}\n${inVoice} ${inVoice === 1 ? 'member' : 'members'} with me, for ${store.formatUptime(entry.joinedAt)}`
     : 'Not in a voice channel';
@@ -76,11 +75,10 @@ function buildBotInfoEmbed(guildId, client, { responseMs } = {}) {
     .setDescription('Voice 24/7, stream alerts, game updates, free games and server logs.')
     .addFields(
       { name: 'Status',  value: '🟢 Online', inline: true },
-      { name: 'Latency', value: latency, inline: true },
+      { name: 'Memory',  value: memory, inline: true },
       { name: 'Uptime',  value: uptime(process.uptime()), inline: true },
       { name: 'Servers', value: n(client.guilds.cache.size), inline: true },
       { name: 'Version', value: `v${require('../package.json').version}`, inline: true },
-      { name: '\u200B', value: '\u200B', inline: true },
       { name: 'Voice in this server', value: voice, inline: false },
     );
 }

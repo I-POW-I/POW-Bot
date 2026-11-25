@@ -5,7 +5,7 @@
  * {
  *   [guildId]: {
  *     logChannels:    { voice, messages },
- *     panelChannelId, panelMessageId,
+ *     panelChannelId, panelMessageId, panelRepostMinutes (0 = edit in place),
  *     lastChannelId,
  *     stats:          { joinedAt, reconnectCount },
  *     verifyRoleId,   verifyChannelId,  verifyMessageId,

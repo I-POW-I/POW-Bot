@@ -223,13 +223,19 @@ function viewCheck(guild) {
     new ButtonBuilder().setCustomId('setup:check').setLabel('Check again').setStyle(ButtonStyle.Primary), backButton())] };
 }
 
+const REFRESH = [0, 5, 15, 60];
+const refreshLabel = (m) => (m ? `delete and post again every ${m === 60 ? 'hour' : `${m} minutes`}` : 'edit in place every minute');
+
 function viewPanel(guild, note) {
   const c = getGuildConfig(guild.id);
   return {
     embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Voice panel').setDescription([note,
       `Current panel: ${c.panelChannelId ? chan(c.panelChannelId) : '*not posted*'}`,
-      '', 'Pick a channel and I\'ll post the live control panel there (an old panel is replaced). Members use its buttons to make me join/leave and look up voice stats.'].filter(Boolean).join('\n'))],
-    components: [channelSelect('setup:panel:set', 'Post the control panel in…', c.panelChannelId), new ActionRowBuilder().addComponents(backButton())],
+      `Refresh: ${refreshLabel(c.panelRepostMinutes)}`,
+      '', 'Pick a channel and I\'ll post the live control panel there (an old panel is replaced). Members use its buttons to make me join/leave and look up voice stats.',
+      '', 'The panel updates every minute. It can edit itself in place, or delete and post again every few minutes so its sent time stays fresh.'].filter(Boolean).join('\n'))],
+    components: [channelSelect('setup:panel:set', 'Post the control panel in…', c.panelChannelId),
+      new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setup:panel:refresh').setLabel('Change refresh').setStyle(ButtonStyle.Primary), backButton())],
   };
 }
 
@@ -299,7 +305,7 @@ async function postPanel(guild, channel, client, by) {
   if (existing.panelChannelId && existing.panelMessageId) {
     try { const old = await guild.channels.fetch(existing.panelChannelId); await (await old?.messages.fetch(existing.panelMessageId))?.delete(); } catch { /* already gone */ }
   }
-  const message = await channel.send({ embeds: [buildPanelEmbed(guild.id, guild)], components: buildPanelButtons(guild.id) });
+  const message = await channel.send({ embeds: [buildPanelEmbed(guild.id, guild)], components: buildPanelButtons(guild.id), liveStamp: true });
   setGuildConfig(guild.id, { panelChannelId: channel.id, panelMessageId: message.id });
   log('INFO', 'Control panel deployed', { guild: guild.name, channel: channel.name, by: by.tag });
 }
@@ -342,6 +348,13 @@ async function handleInteraction(interaction, client) {
   if (['panel', 'verify', 'control', 'announce'].includes(page) && !action) return await show(page), true;
 
   // ── panel ──
+  if (page === 'panel' && action === 'refresh') {
+    const now = getGuildConfig(guild.id).panelRepostMinutes || 0;
+    const next = REFRESH[(Math.max(0, REFRESH.indexOf(now)) + 1) % REFRESH.length];
+    setGuildConfig(guild.id, { panelRepostMinutes: next });
+    done('panel refresh changed', refreshLabel(next));
+    return await show('panel', noteGood(`Panel will ${refreshLabel(next)}.`)), true;
+  }
   if (page === 'panel' && action === 'set') {
     const channel = interaction.channels.first();
     const missing = missingIn(channel, guild);

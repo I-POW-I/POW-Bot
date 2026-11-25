@@ -6,7 +6,7 @@ const {
 const { getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice');
 const { log }                              = require('./logger');
 const store                                = require('./connectionStore');
-const { getGuildConfig } = require('./guildConfig');
+const { getGuildConfig, setGuildConfig } = require('./guildConfig');
 const { getUserStats, formatMs, getStreamStats }  = require('./database');
 const { joinTimes }           = require('./memberTracker');
 const { duration } = require('./duration');
@@ -304,10 +304,17 @@ async function updatePanel(client) {
 
       // Pass down the real synchronization data directly to the dashboard grid
       const updatedEmbed = buildPanelEmbed(guild.id, guild);
-      await message.edit({ 
-        embeds: [updatedEmbed],
-        components: buildPanelButtons(guild.id)
-      });
+      // `liveStamp`: as a card the panel carries an "Updated … ago" line that Discord keeps counting
+      const payload = { embeds: [updatedEmbed], components: buildPanelButtons(guild.id), liveStamp: true };
+      const repostMs = (Number(config.panelRepostMinutes) || 0) * 60000;
+      if (repostMs && Date.now() - message.createdTimestamp >= repostMs) {
+        // staff chose to delete and post again: the new message's sent time is the freshness stamp
+        const fresh = await channel.send(payload);
+        setGuildConfig(guild.id, { panelMessageId: fresh.id });
+        await message.delete().catch(() => {});
+        return;
+      }
+      await message.edit(payload);
     } catch (err) {
       log('WARN', 'Could not update panel', { guild: guild.name, err });
     }

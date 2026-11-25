@@ -11,13 +11,21 @@ const { selectAll } = require('../src/database');
 
 const NAMES = { kick: 'Kick', twitch: 'Twitch', youtube: 'YouTube' };
 
-/** Two lines per streamer with a gap between them, cut at a whole entry if the list is long. */
-function listValue(list) {
-  const entries = list.map(s => `${s.is_live === 1 ? '🟢' : '⚫'} **${s.display_name || s.username}**${s.is_live === 1 ? ' · live now' : ''}\nAlerts in <#${s.discord_channel_id}>${s.role_id ? ` · pings <@&${s.role_id}>` : ''}`);
+/**
+ * One line per streamer. The channel and role are written once when every streamer shares them, and per streamer only
+ * where they differ. Cut at a whole entry if the list is long.
+ */
+function listValue(list, common) {
+  const where = (s) => `Alerts in <#${s.discord_channel_id}>${s.role_id ? ` · pings <@&${s.role_id}>` : ''}`;
+  const entries = list.map(s => {
+    const head = `${s.is_live === 1 ? '🟢' : '⚫'} **${s.display_name || s.username}**${s.is_live === 1 ? ' · live now' : ''}`;
+    return common ? head : `${head}\n${where(s)}`;
+  });
+  const sep = common ? '\n' : '\n\n';
   let out = '';
   for (const [i, e] of entries.entries()) {
-    const next = out ? `${out}\n\n${e}` : e;
-    if (next.length > 960) return `${out}\n\n…and ${entries.length - i} more`;
+    const next = out ? `${out}${sep}${e}` : e;
+    if (next.length > 960) return `${out}${sep}…and ${entries.length - i} more`;
     out = next;
   }
   return out;
@@ -40,14 +48,17 @@ module.exports = {
       return interaction.reply({ content: staff ? 'No streamers are being watched yet.' : 'No streamers are being watched in this server.', components, flags: [MessageFlags.Ephemeral] });
     }
 
+    const first = subs[0];
+    const common = subs.every(s => s.discord_channel_id === first.discord_channel_id && (s.role_id || null) === (first.role_id || null));
     const embed = new EmbedBuilder().setColor(0x5865F2).setTitle('Watched streamers')
+      .setDescription(common ? `Alerts go to <#${first.discord_channel_id}>${first.role_id ? ` and ping <@&${first.role_id}>` : ''}.` : null)
       .setFooter({ text: `${subs.length} streamer(s) · ${subs.filter(s => s.is_live === 1).length} live now` });
     for (const platform of Object.keys(NAMES)) {
       const list = subs.filter(s => s.platform === platform);
       if (!list.length) continue;
       embed.addFields({
         name: NAMES[platform],
-        value: listValue(list),
+        value: listValue(list, common),
       });
     }
     await interaction.reply({ embeds: [embed] });

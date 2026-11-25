@@ -7,15 +7,13 @@ const { log } = require('../src/logger');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('botinfo')
-    .setDescription('Status, latency and version of the bot.')
+    .setDescription('Status, memory use and version of the bot.')
     .setContexts(InteractionContextType.Guild),
 
   async execute(interaction, client) {
-    // Time between Discord creating the interaction and the bot receiving it
-    const responseMs = Math.max(0, Date.now() - interaction.createdTimestamp);
     try {
       await interaction.deferReply();
-      await interaction.editReply({ embeds: [buildBotInfoEmbed(interaction.guildId, client, { responseMs })], components: linkRows() });
+      await interaction.editReply({ embeds: [buildBotInfoEmbed(interaction.guildId, client)], components: linkRows() });
     } catch (err) {
       log('WARN', '/botinfo failed', { err });
       const content = 'I could not load the bot info. Try again in a moment.';

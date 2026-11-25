@@ -21,7 +21,7 @@ const AREAS = [
   { key: 'posts',    label: 'Posts and alerts',     desc: 'Panels, game updates, streamer and free game alerts' },
 ];
 const STYLES = ['auto', 'card', 'embed'];
-const MAX_SMART_HEIGHT = 640;   // a card taller than this (at 500 wide) is shown as a classic embed in smart mode
+const MIN_SMART_SCALE = 0.62;   // a card Discord would shrink below this (a picture shows at most ~550x400) is sent as a classic embed in smart mode
 
 const globalOn = () => { try { return require('../globalConfig').featureEnabled('cardPanels'); } catch { return true; } };
 const ownerForced = (guildId) => { try { const v = require('../globalConfig').get().uiOverrides?.[guildId]; return STYLES.includes(v) ? v : null; } catch { return null; } };
@@ -53,4 +53,4 @@ function areaOf(source) {
   return 'posts';
 }
 
-module.exports = { AREAS, STYLES, MAX_SMART_HEIGHT, settings, styleFor, areaOf };
+module.exports = { AREAS, STYLES, MIN_SMART_SCALE, settings, styleFor, areaOf };

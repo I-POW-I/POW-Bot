@@ -32,7 +32,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 | `/privacy` | See what the bot has stored about you, and delete it | Everyone |
 | `/serverinfo` | Details about the server | Everyone |
 | `/members` | Overview, recent joins and leaves, unverified members, lookup | Manage Server |
-| `/botinfo` | Status, latency, memory and services | Manage Server, bot owners |
+| `/botinfo` | Status, memory and services | Manage Server, bot owners |
 | `/streamers`, `/game-updates`, `/free-games` | What the server follows. Staff get a Manage button | Everyone |
 | `/warn` `/timeout` `/untimeout` `/kick` `/softban` `/ban` `/unban` | Moderation actions. Each one is a numbered case, recorded in the mod log, and the member is sent the reason | Matching Discord permission |
 | `/case`, `/history` | Look up a case, or a member's whole record | Timeout Members |

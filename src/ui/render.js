@@ -74,29 +74,56 @@ function drawLines(ctx, lines, x0, y0, images, defaultColour) {
     const base = y + line.h / 2;
     if (line.quote) { ctx.fillStyle = '#4e5058'; roundRect(ctx, x0, y + 2, 3, line.h - 4, 1.5); ctx.fill(); }
     if (line.bullet) { ctx.font = `700 ${line.size || 15}px Inter, sans-serif`; ctx.fillStyle = line.bulletColour || T.label; ctx.textBaseline = 'middle'; ctx.fillText(line.bullet, x0 + (line.indent || 0) - (ctx.measureText(line.bullet).width + 6), base); }
+    // one rounded box behind each mention or channel name, however many pieces it has
+    { const size0 = line.size || 15; let g = null;
+      const close = () => { if (!g) return; ctx.fillStyle = g.colour ? rgba(parseInt(String(g.colour).replace('#', ''), 16), .2) : 'rgba(139,147,255,.18)'; roundRect(ctx, g.x, base - size0 * .68, g.end - g.x, size0 * 1.36, 5); ctx.fill(); g = null; };
+      for (const it of line.items) {
+        if (!it.run.pill) { close(); continue; }
+        const left = x0 + (line.indent || 0) + it.x - (it.pl || 0), right = x0 + (line.indent || 0) + it.x + it.w + (it.pr || 0);
+        if (!g) g = { x: left, end: right, colour: it.run.colour }; else g.end = right;
+        if (it.pr) close();
+      }
+      close(); }
     for (const it of line.items) {
       const r = it.run, x = x0 + (line.indent || 0) + it.x, size = line.size || 15;
       if (r.t === 'emoji' || r.t === 'custom') {
         const img = images.get(r.t === 'emoji' ? `e:${r.name}` : `c:${r.id}`);
         const s = Math.round(size * 1.2);
-        if (r.pill) { ctx.fillStyle = r.colour ? rgba(parseInt(String(r.colour).replace('#', ''), 16), .2) : 'rgba(139,147,255,.18)'; roundRect(ctx, x - 1, base - size * .68, s + 3, size * 1.36, 5); ctx.fill(); }
         if (img) ctx.drawImage(img, x, base - s / 2, s, s);
         continue;
       }
       ctx.font = rich.fontFor(r, size, line.weight || 400);
       ctx.textBaseline = 'middle';
       const w = it.w;
-      if (r.pill && it.pillPad) { ctx.fillStyle = r.colour ? rgba(parseInt(String(r.colour).replace('#', ''), 16), .2) : 'rgba(139,147,255,.18)'; roundRect(ctx, x - 1, base - size * .68, w + 2, size * 1.36, 5); ctx.fill(); }
       if (r.code && !line.codeBlock) { ctx.fillStyle = '#23252b'; roundRect(ctx, x - 2, base - size * .72, w + 4, size * 1.44, 4); ctx.fill(); }
       if (r.spoiler) { ctx.fillStyle = '#3a3c43'; roundRect(ctx, x, base - size * .7, w, size * 1.4, 4); ctx.fill(); continue; }
       ctx.fillStyle = r.link ? '#9aa4ff' : r.colour || defaultColour;
-      ctx.fillText(r.s, x + (it.pillPad || 0), base);
+      ctx.fillText(r.s, x, base);
       if (r.underline || r.strike) {
-        ctx.fillRect(x + (it.pillPad || 0), r.strike ? base : base + size * .55, ctx.measureText(r.s).width, 1);
+        ctx.fillRect(x, r.strike ? base : base + size * .55, ctx.measureText(r.s).width, 1);
       }
     }
     y += line.h;
   }
+}
+
+/** Text laid out in two balanced columns inside `fullW`, split between entries where it can be. */
+function twoColumns(probe, text, base, fullW, gap) {
+  const colW = Math.floor((fullW - gap) / 2);
+  const two = rich.layout(probe, text, { ...base, maxW: colW });
+  const total = two.height; let best = null, acc = 0;
+  two.lines.forEach((l, i) => {
+    acc += l.h;
+    if (i === two.lines.length - 1) return;
+    const cost = Math.max(acc, total - acc) + (two.lines[i + 1].blank || l.blank ? 0 : 60);
+    if (!best || cost < best.cost) best = { cost, i };
+  });
+  if (!best) return null;
+  const left = two.lines.slice(0, best.i + 1), right = two.lines.slice(best.i + 1);
+  while (left.length && left[left.length - 1].blank) left.pop();
+  while (right.length && right[0].blank) right.shift();
+  const hh = (a) => a.reduce((n, l) => n + l.h, 0);
+  return { lines: left, right, colW, height: Math.max(hh(left), hh(right)) };
 }
 
 // ── the card ─────────────────────────────────────────────────────────────────
@@ -108,7 +135,7 @@ function drawLines(ctx, lines, x0, y0, images, defaultColour) {
 async function renderEmbed(embed, opts = {}) {
   ensureFonts();
   const resolve = opts.resolve || (() => null);
-  const W = opts.width || (embed.image ? 540 : 500);
+  const W = opts.width || (embed.image ? 540 : opts.wide ? 730 : 500);
   const pad = T.pad, inner = W - pad * 2;
   const probe = createCanvas(10, 10).getContext('2d');
 
@@ -124,7 +151,10 @@ async function renderEmbed(embed, opts = {}) {
   const textW = thumb ? inner - 100 : inner;
 
   const titleL = embed.title ? rich.layout(probe, embed.title, { size: 28, lineH: 34, maxW: textW, weight: 800, colour: T.white, resolve, markdown: false }) : null;
-  const descL = embed.description ? rich.layout(probe, embed.description, { size: 17, lineH: 25, maxW: textW, resolve }) : null;
+  let descL = embed.description ? rich.layout(probe, embed.description, { size: 17, lineH: 25, maxW: textW, resolve }) : null;
+  // wide cards run long text in two columns, so the picture is not tall and narrow
+  const colGap = 36;
+  if (opts.wide && descL && descL.height > 150) descL = twoColumns(probe, embed.description, { size: 17, lineH: 25, resolve }, textW, colGap) || descL;
 
   // fields: group inline ones into rows of up to three
   const fieldRows = [];
@@ -140,7 +170,8 @@ async function renderEmbed(embed, opts = {}) {
     const cells = r.map(f => {
       const val = String(f.value || '');
       const short = !/\n|<[@#:at]/.test(val) && val.length <= 24 && colW < inner;
-      const L = rich.layout(probe, val, short ? { size: 19, lineH: 26, maxW: colW, weight: 700, colour: T.white, resolve } : { size: 16, lineH: 23, maxW: colW, resolve });
+      let L = rich.layout(probe, val, short ? { size: 19, lineH: 26, maxW: colW, weight: 700, colour: T.white, resolve } : { size: 16, lineH: 23, maxW: colW, resolve });
+      if (opts.wide && !short && colW === inner && L.height > 150) L = twoColumns(probe, val, { size: 16, lineH: 23, resolve }, colW, colGap) || L;
       return { f, L, colW, short };
     });
     return { cells, h: 19 + 4 + Math.max(...cells.map(c => c.L.height)) };
@@ -169,6 +200,7 @@ async function renderEmbed(embed, opts = {}) {
   let footerY = null;
   if (footerText) { y += 18; footerY = y; y += 16 + 6; }
   const H = Math.min(2400, y + pad);
+  if (opts.dry) return { height: H, width: W };
 
   const canvas = createCanvas(W * T.scale, H * T.scale);
   const ctx = canvas.getContext('2d');
@@ -184,7 +216,7 @@ async function renderEmbed(embed, opts = {}) {
   roundRect(ctx, 0.5, 0.5, W - 1, H - 1, 14); ctx.strokeStyle = T.border; ctx.lineWidth = 1; ctx.stroke();
 
   const images = new Map();
-  await preload([...(titleL?.lines || []), ...(descL?.lines || []), ...rows.flatMap(r => r.cells.flatMap(c => c.L.lines))], images);
+  await preload([...(titleL?.lines || []), ...(descL?.lines || []), ...(descL?.right || []), ...rows.flatMap(r => r.cells.flatMap(c => [...c.L.lines, ...(c.L.right || [])]))], images);
 
   // kicker
   if (kicker) {
@@ -193,7 +225,12 @@ async function renderEmbed(embed, opts = {}) {
     spaced(ctx, kicker.slice(0, 80), kx, pad + 9, '600 11.5px Inter, sans-serif', T.label, 1.5);
   }
   if (titleL) drawLines(ctx, titleL.lines, pad, titleY, images, T.white);
-  if (descL) { descL.lines.forEach(l => { if (l.codeBlock) l.width = textW; }); drawLines(ctx, descL.lines, pad, descY, images, T.text); }
+  if (descL) {
+    const cw = descL.right ? descL.colW : textW;
+    descL.lines.forEach(l => { if (l.codeBlock) l.width = cw; });
+    drawLines(ctx, descL.lines, pad, descY, images, T.text);
+    if (descL.right) { descL.right.forEach(l => { if (l.codeBlock) l.width = cw; }); drawLines(ctx, descL.right, pad + cw + colGap, descY, images, T.text); }
+  }
   if (thumb) { ctx.save(); roundRect(ctx, W - pad - 80, pad, 80, 80, 14); ctx.clip(); const s = Math.max(80 / thumb.width, 80 / thumb.height); ctx.drawImage(thumb, W - pad - 80 + (80 - thumb.width * s) / 2, pad + (80 - thumb.height * s) / 2, thumb.width * s, thumb.height * s); ctx.restore(); }
 
   if (fieldsTopRule != null) rule(ctx, pad, fieldsTopRule, inner);
@@ -201,8 +238,10 @@ async function renderEmbed(embed, opts = {}) {
     let x = pad; const ry = rowYs[ri];
     r.cells.forEach((c) => {
       spaced(ctx, String(c.f.name || '').toUpperCase().slice(0, 80), x, ry + 7, '600 11.5px Inter, sans-serif', T.label, 1.3, c.colW);
-      c.L.lines.forEach(l => { if (l.codeBlock) l.width = c.colW; });
+      const cw = c.L.right ? c.L.colW : c.colW;
+      c.L.lines.forEach(l => { if (l.codeBlock) l.width = cw; });
       drawLines(ctx, c.L.lines, x, ry + 23, images, c.short ? T.white : T.text);
+      if (c.L.right) { c.L.right.forEach(l => { if (l.codeBlock) l.width = cw; }); drawLines(ctx, c.L.right, x + cw + colGap, ry + 23, images, T.text); }
       x += c.colW + gap;
     });
   });
@@ -236,4 +275,20 @@ function spaced(ctx, text, x, y, font, colour, spacing, maxW = Infinity) {
 }
 function rule(ctx, x, y, w) { ctx.fillStyle = T.rule; ctx.fillRect(x, y, w, 1); }
 
-module.exports = { renderEmbed, ensureFonts, T };
+/**
+ * Discord shows a picture at most about 550 wide and 400 high, shrinking anything bigger. How much a card shrinks is how hard
+ * it is to read, so a tall narrow card is drawn again wide (long text in two columns) when that shrinks it less.
+ */
+const shown = (w, h) => Math.min(1, 550 / w, 400 / h);
+async function renderBest(embed, opts = {}) {
+  const narrow = await renderEmbed(embed, { ...opts, dry: true });
+  let best = { wide: false, scale: shown(narrow.width, narrow.height) };
+  if (!embed.image && !opts.width && best.scale < 0.95) {
+    const wide = await renderEmbed(embed, { ...opts, wide: true, dry: true });
+    const scale = shown(wide.width, wide.height);
+    if (scale > best.scale + 0.03) best = { wide: true, scale };
+  }
+  return { ...(await renderEmbed(embed, { ...opts, wide: best.wide })), scale: best.scale };
+}
+
+module.exports = { renderEmbed, renderBest, ensureFonts, T };

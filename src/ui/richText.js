@@ -6,6 +6,7 @@
  * unicode emoji (drawn from the bundled Twemoji set).
  */
 
+const PILL_PAD = 4;
 const MONO = '"DejaVu Sans Mono", "Liberation Mono", monospace';
 const EMOJI_RE = /^(?:\p{RI}\p{RI}|[0-9#*]️?⃣|\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?(?:‍\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?)*)/u;
 
@@ -50,7 +51,9 @@ function emojiName(str) {
  * ordinary letters; box-drawing and block characters used to decorate channel names are dropped (they would show as boxes).
  */
 const DECORATIVE = /[\u2500-\u259F\u25A0-\u25FF\u2800-\u28FF\uE000-\uF8FF\uFFF0-\uFFFF]/gu;
-const clean = (s) => String(s ?? '').replace(/\u200B|\u200C|\u2060|\uFEFF/g, '').normalize('NFKC').replace(DECORATIVE, '');
+// invisible fillers (Hangul fillers are the usual "blank" channel-name trick), control and unassigned characters, and tag characters
+const INVISIBLE = /[\u115F\u1160\u3164\uFFA0\u034F\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u{E0000}-\u{E007F}\p{Cc}\p{Cn}\p{Co}]/gu;
+const clean = (s) => String(s ?? '').replace(INVISIBLE, '').normalize('NFKC').replace(INVISIBLE, '').replace(DECORATIVE, '');
 
 function inline(text, resolve = () => null, base = {}, markdown = true) {
   const runs = [];
@@ -165,34 +168,44 @@ function wrapRuns(ctx, runs, maxW, size, weight, hard = false) {
   let x = 0;
   const cur = () => out[out.length - 1];
   const newline = () => { out.push([]); x = 0; };
-  for (const run of runs) {
+  runs.forEach((run, i) => {
+    // a mention or channel name is one box, however many runs (text, emoji, text) it is made of; the first and last run carry the padding
+    const pl = run.pill && !runs[i - 1]?.pill ? PILL_PAD : 0, pr = run.pill && !runs[i + 1]?.pill ? PILL_PAD : 0;
+    if (pl) {                                                  // keep a whole box on one line: move it down if it does not fit here
+      let total = pl, j = i;
+      for (; j < runs.length && runs[j].pill; j++) {
+        if (runs[j].t === 'emoji' || runs[j].t === 'custom') total += Math.round(size * 1.25);
+        else { ctx.font = fontFor(runs[j], size, weight); total += ctx.measureText(runs[j].s).width; }
+      }
+      total += PILL_PAD;
+      if (x > 0 && x + total > maxW && total <= maxW) newline();
+    }
     if (run.t === 'emoji' || run.t === 'custom') {
       const w = Math.round(size * 1.25);
-      if (x + w > maxW && x > 0) newline();
-      cur().push({ run, x, w }); x += w + 1; continue;
+      if (x + pl + w + pr > maxW && x > 0) newline();
+      x += pl; cur().push({ run, x, w, pl, pr }); x += w + (run.pill ? 0 : 1) + pr; return;
     }
-    const pad = run.pill ? 4 : 0;
     ctx.font = fontFor(run, size, weight);
-    const tokens = hard ? [run.s] : run.s.split(/(\s+)/).filter(s => s !== '');
+    const tokens = hard || run.pill ? [run.s] : run.s.split(/(\s+)/).filter(s => s !== '');
     for (const tok of tokens) {
       const isSpace = /^\s+$/.test(tok);
-      let w = ctx.measureText(tok).width;
+      const w = ctx.measureText(tok).width;
+      const lead = tok === tokens[0] ? pl : 0, trail = tok === tokens[tokens.length - 1] ? pr : 0;
       if (isSpace && x === 0) continue;                       // no leading spaces on a wrapped line
-      if (x + w > maxW && x > 0 && !isSpace) newline();
+      if (x + lead + w + trail > maxW && x > 0 && !isSpace) newline();
       if (w > maxW) {                                         // a word wider than the line: break it by characters
         let chunk = '';
         for (const ch of [...tok]) {
           const cw = ctx.measureText(chunk + ch).width;
           if (cw > maxW && chunk) { cur().push({ run: { ...run, s: chunk }, x, w: ctx.measureText(chunk).width }); newline(); chunk = ch; } else chunk += ch;
         }
-        tok.length && chunk && (cur().push({ run: { ...run, s: chunk }, x, w: ctx.measureText(chunk).width }), x += ctx.measureText(chunk).width);
+        if (chunk) { const cw = ctx.measureText(chunk).width; cur().push({ run: { ...run, s: chunk }, x, w: cw }); x += cw; }
         continue;
       }
       if (isSpace && x + w > maxW) { newline(); continue; }
-      cur().push({ run: { ...run, s: tok }, x, w: w + (run.pill && !isSpace ? pad * 2 : 0), pillPad: run.pill && !isSpace ? pad : 0 });
-      x += w + (run.pill && !isSpace ? pad * 2 : 0);
+      x += lead; cur().push({ run: { ...run, s: tok }, x, w, pl: lead, pr: trail }); x += w + trail;
     }
-  }
+  });
   while (out.length > 1 && !out[out.length - 1].length) out.pop();
   return out;
 }

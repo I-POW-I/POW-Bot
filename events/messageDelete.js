@@ -1,8 +1,27 @@
-const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
+const { Events, EmbedBuilder, AuditLogEvent, AttachmentBuilder } = require('discord.js');
 const { log }           = require('../src/logger');
 const { getLogChannel } = require('../src/guildConfig');
 const store             = require('../src/messageStore');
 const { duration } = require('../src/duration');
+
+const IMAGE_LIMIT = 8 * 1024 * 1024;
+const isImage = (a) => (a?.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp)(\?|$)/i.test(a?.name || a?.url || '');
+/**
+ * A deleted picture is often gone from Discord a moment later, so the log keeps its own copy: it is downloaded now,
+ * while the link still works, and attached to the log entry. Returns null when it cannot be fetched.
+ */
+async function copyImage(a) {
+  if (!a?.url || !isImage(a) || (a.size && a.size > IMAGE_LIMIT)) return null;
+  try {
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 5000);
+    const res = await fetch(a.url, { signal: ctl.signal }); clearTimeout(timer);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > IMAGE_LIMIT) return null;
+    const name = String(a.name || 'image').replace(/[^\w.-]/g, '_').slice(-60) || 'image';
+    return { buf, name: /\.(png|jpe?g|gif|webp)$/i.test(name) ? name : `${name}.png` };
+  } catch { return null; }
+}
 
 async function getDeleter(guild, targetUserId, channelId, windowMs = 5000) {
   try {
@@ -93,15 +112,20 @@ module.exports = {
       inline: false,
     });
 
+    const files = [];
     if (attachments.length > 0) {
       const list = attachments.map(a => `[${a.name}](${a.url})`).join('\n');
       embed.addFields({ name: `Attachments (${attachments.length})`, value: list.slice(0, 1024), inline: false });
-      const firstImage = attachments.find(a => a.type?.startsWith('image/'));
-      if (firstImage) embed.setImage(firstImage.url);
+      const firstImage = attachments.find(isImage);
+      if (firstImage) {
+        const copy = await copyImage(firstImage);
+        if (copy) { files.push(new AttachmentBuilder(copy.buf, { name: copy.name })); embed.setImage(`attachment://${copy.name}`); }
+        else embed.setImage(firstImage.url);
+      }
     }
 
     try {
-      await logChannel.send({ embeds: [embed] });
+      await logChannel.send({ embeds: [embed], files });
     } catch (err) {
       log('WARN', 'Failed to send message delete log', { err });
     }
