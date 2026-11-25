@@ -115,6 +115,7 @@ async function pollUpdates(client) {
 
     const id = String(update.id);
     if (sub.last_post_id === id) continue;
+    if (update.date && Date.now() - update.date > 7 * 86_400_000) { run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [id, sub.id]); continue; }   // never announce an old post as new: if numbering ever changes, just remember it
     if (!sub.last_post_id) { run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [id, sub.id]); continue; }   // no baseline yet: remember, don't spam
 
     try {

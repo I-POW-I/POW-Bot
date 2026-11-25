@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.5.5
+
+- **Steam game updates are back to the clean layout** from the formatted Steam feed (headings, bullets, picture), which is the version that looked right
+- **No more repeat posts.** The feed and Steam's news API number the same post differently, so switching between them made every game look like it had a new update. Posts now always keep the number your alerts already remember. As a second safety net, a post more than 7 days old is never announced as new
+- **Game colour**: each update post now takes the main colour of the game's artwork instead of orange (orange is still used if no colour can be found)
+- If the feed ever fails, the bot says so in the console and falls back to the full post from Steam's news API, with its images and links tidied up
+
 ## 5.5.4
 
 - **Steam game updates fixed at the root.** The bot was asking Steam for a shortened summary of each post, and Steam sends that as one run of text with no line breaks, headings or bullets. It now asks for the full post, so Counter-Strike 2, Tarkov and every other Steam game show Maps, Misc and each change as proper headings and bullets, like the Minecraft and VALORANT posts

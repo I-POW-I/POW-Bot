@@ -15,7 +15,9 @@
 const steam = require('../platforms/steam');
 const { parseFeed } = require('./feed');
 const page = require('./page');
-const { toBlocks } = require('./format');
+const { toBlocks, decode } = require('./format');
+const { log } = require('../logger');
+const { dominantColour } = require('./colour');
 
 const MC_BASE = 'https://launchercontent.mojang.com';
 const ZD_BASE = 'https://feedback.minecraft.net/api/v2/help_center/en-us';
@@ -82,11 +84,31 @@ async function steamIcon(appId) {
 }
 
 /**
- * Steam's news API with the whole post (maxlength=0). With any other value Steam replaces the post with a short
- * plain-text summary that has no line breaks, lists or headings, which is why patch notes used to look like one block.
- * The full post is BBCode ([p], [list], [*], "[ MAPS ]" headings), which format.js turns into headings and bullets.
+ * Steam's own news feed for the game: the whole post as HTML, formatted the same way as the Minecraft and Riot posts.
+ *
+ * The feed names a post with a different number than Steam's news API does, and servers already remember the API's
+ * number. So the number is taken from the API entry with the same title and date. That keeps every existing alert
+ * recognising the post it last saw, and nothing is announced twice. (If the API cannot be reached the feed's own
+ * number is used, which only matters for a game being added for the first time.)
  */
-async function steamLatest(appId, name) {
+async function steamFeedLatest(appId, name) {
+  const feed = parseFeed(await page.fetchText(`https://store.steampowered.com/feeds/news/app/${appId}/?cc=US&l=english`, { accept: 'application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8' }));
+  const it = feed.items.find(i => steam.isUpdateTitle(i.title));
+  if (!it) return null;
+  const html = /<\w/.test(it.content) ? it.content : decode(it.content);
+  const own = (/(\d{6,})\/?$/.exec(String(it.id)) || /(\d{6,})\/?$/.exec(String(it.url)) || [])[1] || String(it.id);
+  const same = (n) => String(n.title).trim() === String(it.title).trim() && (!it.date || Math.abs(n.date * 1000 - it.date) < 2 * 86_400_000);
+  const match = (await steam.getGameNews(appId, 10).catch(() => [])).find(same);
+  return {
+    id: match ? String(match.gid) : own, title: it.title, url: it.url, body: html, bodyKind: 'html',
+    image: it.image || steam.getHeaderImage(appId), icon: await steamIcon(appId),
+    date: it.date, version: null, game: name, source: 'Steam',
+    buttons: [{ label: 'Open store page', url: `https://store.steampowered.com/app/${appId}` }],
+  };
+}
+
+/** Steam's news API with the whole post (maxlength=0: any other value gives a short, flattened summary). Used if the feed fails. */
+async function steamApiLatest(appId, name) {
   const n = (await steam.getGameNews(appId, 5))[0];
   if (!n) return null;
   return {
@@ -95,6 +117,14 @@ async function steamLatest(appId, name) {
     date: (n.date || 0) * 1000 || null, version: null, game: name, source: 'Steam',
     buttons: [{ label: 'Open store page', url: `https://store.steampowered.com/app/${appId}` }],
   };
+}
+
+async function steamLatest(appId, name) {
+  try {
+    const fromFeed = await steamFeedLatest(appId, name);
+    if (fromFeed) return fromFeed;
+  } catch (err) { log('WARN', `Steam's news feed failed for ${name || appId}, using the news API instead`, { err }); }
+  return steamApiLatest(appId, name);
 }
 
 async function minecraftJava(value, name) {
@@ -168,6 +198,12 @@ async function rssLatest(url, name) {
 
 /** Newest update for a source → update object, or null if there is none yet. Throws a readable Error on failure. */
 async function fetchLatestFor(source, value, name) {
+  const u = await fetchRaw(source, value, name);
+  if (u && u.colour == null) u.colour = await dominantColour(u.icon || u.image);   // the embed takes the game's colour
+  return u;
+}
+
+async function fetchRaw(source, value, name) {
   switch (source) {
     case 'steam':     return steamLatest(value, name);
     case 'rss':       return rssLatest(value, name);

@@ -61,6 +61,8 @@ function bbcodeToHtml(input) {
     .replace(/\[tr\]/gi, '<tr>').replace(/\[\/tr\]/gi, '</tr>')
     .replace(/\[t[hd][^\]]*\]/gi, '<td>').replace(/\[\/t[hd]\]/gi, '</td>')
     .replace(/\[img[^\]]*\]\s*([^\[\s]+?)\s*\[\/img\]/gi, '<img src="$1">')
+    .replace(/\[img\b[^\]]*?src\s*=\s*"([^"]+)"[^\]]*\]/gi, '<img src="$1">')
+    .replace(/\[dynamiclink\b[^\]]*\]\s*(?:\[\/dynamiclink\])?/gi, '')
     .replace(/\[previewyoutube=[^\]]*\]\[\/previewyoutube\]/gi, '')
     .replace(/\[url=[^\]]*\]([\s\S]*?)\[\/url\]/gi, '$1')
     .replace(/\[url\][\s\S]*?\[\/url\]/gi, '');
@@ -203,7 +205,7 @@ function buildUpdateCard(u) {
   const { blocks, images } = toBlocks(u.body, u.bodyKind || 'auto');
   const thumb = u.icon || u.image || images.find(x => /^https?:\/\//.test(x)) || null;
 
-  const embed = new EmbedBuilder().setColor(ORANGE).setAuthor({ name: truncate(u.game || u.source || 'Game update', 250) });
+  const embed = new EmbedBuilder().setColor(Number.isInteger(u.colour) ? u.colour : ORANGE).setAuthor({ name: truncate(u.game || u.source || 'Game update', 250) });
   if (u.title) embed.setTitle(truncate(u.title, 250));
   if (u.url) embed.setURL(u.url);
   embed.setDescription(renderBody(blocks, u.title) || '*Open the full notes to read this update.*');
