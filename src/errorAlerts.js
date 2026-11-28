@@ -23,13 +23,14 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, Routes } = require('discord.js');
 const { duration } = require('./duration');
 
-const DEDUPE_WINDOW_MS = 10 * 60_000;
-const MAX_PER_MINUTE   = 6;
-const PING_COOLDOWN_MS = 15 * 60_000;
+// How long the same alert is held back, how many alerts can go out per minute, and how often you are pinged: set in /owner > Alerts > Timing
+const timing = () => { const a = saved(); return { dedupe: (Number(a.repeatMinutes) || 10) * 60_000, perMinute: Number(a.perMinute) || 6, ping: (Number(a.pingMinutes) || 15) * 60_000 }; };
 const SEND_TIMEOUT_MS  = 12_000;
 const SEND_FAIL_LOG_MS = 30 * 60_000;
 
 const COLOURS = { ERROR: 0xED4245, WARN: 0xFEE75C, GHOST: 0xEB459E, INFO: 0x57F287, MEMORY: 0xFAA61A, AUDIT: 0x5865F2, DIGEST: 0x3498DB };
+
+const LABELS = { ERROR: 'Error', WARN: 'Warning', GHOST: 'Call lost', INFO: 'Notice', MEMORY: 'Memory', AUDIT: 'Change', DIGEST: 'Console digest' };
 
 let client       = null;
 let queue        = Promise.resolve();
@@ -109,7 +110,7 @@ function prune() {
 function allowedByRateLimit() {
   const now = Date.now();
   while (recentSends.length && now - recentSends[0] > 60_000) recentSends.shift();
-  if (recentSends.length >= MAX_PER_MINUTE) return false;
+  if (recentSends.length >= timing().perMinute) return false;
   recentSends.push(now);
   return true;
 }
@@ -130,6 +131,7 @@ function alertButtons() {
 function buildEmbed({ level, title, description, fields = [], codeBlocks = [] }) {
   const embed = new EmbedBuilder()
     .setColor(COLOURS[level] ?? COLOURS.ERROR)
+    .setAuthor({ name: `POW-Bot  ·  ${LABELS[level] || 'Notice'}` })
     .setTitle(trunc(redact(title), 250))
     .setFooter({ text: footerText() });
 
@@ -167,28 +169,30 @@ function buildFromLog(level, message, context) {
 
   const fields = [];
   const lines  = [];
-  if (d?.summary) lines.push(`**What happened:** ${d.title ? `${d.title} — ` : ''}${d.summary}`);
-  else if (context.error) lines.push(`**What happened:** ${context.error}`);
-  if (d?.hint) lines.push(`**Likely fix:** ${d.hint}`);
+  if (d?.summary) lines.push(`${d.title ? `**${d.title}.** ` : ''}${d.summary}`);
+  else if (context.error) lines.push(String(context.error));
+  if (d?.hint) lines.push(`-# Likely fix: ${d.hint}`);
 
   const trigger = diag ? diag.describeContext(diag.currentContext()) : null;
-  if (d?.origin)  fields.push({ name: 'Where in the code', value: d.origin, inline: false });
+  if (context.guild) fields.push({ name: 'Server', value: context.guild });
+  if (context.user)  fields.push({ name: 'User', value: context.user });
+  if (d?.code != null) fields.push({ name: 'Code', value: String(d.code) });
   if (trigger)    fields.push({ name: 'Triggered by', value: trigger, inline: false });
-  if (d?.route)   fields.push({ name: 'Discord request', value: d.route, inline: true });
-  if (d?.code != null) fields.push({ name: 'Error code', value: String(d.code), inline: true });
+  if (d?.origin)  fields.push({ name: 'Where', value: d.origin, inline: false });
+  if (d?.route)   fields.push({ name: 'Request', value: d.route, inline: false });
   if (d?.details) fields.push({ name: 'Details', value: d.details, inline: false });
 
   for (const [k, v] of Object.entries(context)) {
-    if (['stack', 'err', 'error'].includes(k) || v === undefined || v === null) continue;
-    fields.push({ name: k, value: String(v) });
+    if (['stack', 'err', 'error', 'tag', 'guild', 'user'].includes(k) || v === undefined || v === null) continue;
+    fields.push({ name: k.charAt(0).toUpperCase() + k.slice(1), value: String(v) });
   }
 
   const codeBlocks = [];
-  if (d?.frames?.length) codeBlocks.push({ label: 'Stack (bot code only)', text: d.frames.map(f => `${f.fn}  ${f.file}:${f.line}`).join('\n'), max: 600 });
+  if (d?.frames?.length) codeBlocks.push({ label: 'Stack', text: d.frames.slice(0, 4).map(f => `${f.fn}  ${f.file}:${f.line}`).join('\n'), max: 500 });
   else if (context.stack) codeBlocks.push({ label: 'Stack', text: String(context.stack).split('\n').slice(0, 6).join('\n'), max: 700 });
   if (diag) {
-    const trail = diag.formatBreadcrumbs(diag.recentBreadcrumbs({ limit: 9, withinMs: 5 * 60_000 }));
-    if (trail.length > 1) codeBlocks.push({ label: 'Activity leading up to this', text: trail.join('\n'), max: 1100 });
+    const trail = diag.formatBreadcrumbs(diag.recentBreadcrumbs({ limit: 6, withinMs: 5 * 60_000 }));
+    if (trail.length > 1) codeBlocks.push({ label: 'Just before', text: trail.join('\n'), max: 1100 });
   }
 
   return { level, title: message, description: lines.join('\n'), fields, codeBlocks };
@@ -198,7 +202,7 @@ function buildFromLog(level, message, context) {
 
 function toRestFiles(files) { return (files || []).map(f => ({ name: f.name, data: Buffer.from(f.data) })); }
 
-async function sendWebhook(url, body, files) {
+async function sendWebhook(url, body, files, retried = false) {
   let res;
   if (files?.length) {
     const form = new FormData();
@@ -207,6 +211,13 @@ async function sendWebhook(url, body, files) {
     res = await fetch(url, { method: 'POST', body: form, signal: AbortSignal.timeout(SEND_TIMEOUT_MS) });
   } else {
     res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(SEND_TIMEOUT_MS) });
+  }
+  if (res.status === 429 && !retried) {
+    // Rate limited: wait the time Discord asks for (max 15 s), then try once more
+    let wait = Number(res.headers.get('retry-after')) || 0;
+    if (!wait) { try { wait = Number((await res.json()).retry_after) || 0; } catch (_) {} }
+    await new Promise(r => setTimeout(r, Math.min(Math.max(wait, 1), 15) * 1000));
+    return sendWebhook(url, body, files, true);
   }
   if (!res.ok) throw new Error(`webhook returned ${res.status}`);
 }
@@ -288,18 +299,18 @@ function capture(level, message, context = {}) {
     const now    = Date.now();
     const prev   = seen.get(key);
 
-    if (prev && now - prev.at < DEDUPE_WINDOW_MS) { prev.suppressed++; return; }
+    if (prev && now - prev.at < timing().dedupe) { prev.suppressed++; return; }
     if (!allowedByRateLimit()) { droppedCount++; return; }
 
     const spec = buildFromLog(level, message, context);
-    if (prev?.suppressed) spec.fields.push({ name: 'Repeated', value: `${prev.suppressed}× in the last ${Math.round(DEDUPE_WINDOW_MS / 60000)} min`, inline: false });
-    if (droppedCount)     spec.fields.push({ name: 'Dropped', value: `${droppedCount} other alert(s) skipped (rate limit)`, inline: false });
+    if (prev?.suppressed) spec.fields.push({ name: 'Repeated', value: `${prev.suppressed} more times in the last ${Math.round(timing().dedupe / 60000)} minutes`, inline: false });
+    if (droppedCount)     spec.fields.push({ name: 'Dropped', value: `${droppedCount} other alert${droppedCount === 1 ? ' was' : 's were'} skipped to avoid flooding`, inline: false });
     droppedCount = 0;
 
     seen.set(key, { at: now, suppressed: 0 });
     prune();
 
-    const ping = level === 'ERROR' && now - lastPingAt > PING_COOLDOWN_MS;
+    const ping = level === 'ERROR' && now - lastPingAt > timing().ping;
     if (ping) lastPingAt = now;
 
     // Errors also go to your DMs with action buttons
@@ -359,4 +370,4 @@ function describeDestinations() {
 /** Call once after the client exists. */
 function init(discordClient) { client = discordClient; }
 
-module.exports = { init, capture, notify, notifyStartup, notifyShutdown, isEnabled, redact, alertButtons, mute, isMuted, describeDestinations };
+module.exports = { buildEmbed, buildFromLog, init, capture, notify, notifyStartup, notifyShutdown, isEnabled, redact, alertButtons, mute, isMuted, describeDestinations };

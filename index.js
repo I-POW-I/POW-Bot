@@ -58,7 +58,7 @@ process.on('unhandledRejection', (error) => {
 });
 
 process.on('uncaughtException', (error) => {
-  log('ERROR', 'Uncaught exception (the bot kept running)', { err: toError(error) });
+  log('FATAL', 'Uncaught exception (the bot kept running)', { err: toError(error) });
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

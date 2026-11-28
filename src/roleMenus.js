@@ -66,12 +66,12 @@ async function handle(interaction) {
     if (remove.length) await member.roles.remove(remove, 'Role menu');
   } catch (err) {
     log('WARN', 'Role menu could not change roles', { guild: guild.name, err });
-    await interaction.editReply({ content: '⚠️ I could not change your roles. Ask an admin to check that my role is above these roles.' });
+    await interaction.editReply({ content: 'I could not change your roles. Ask an admin to check that my role is above these roles.' });
     return true;
   }
   const names = (l) => l.map(r => `**${r.name}**`).join(', ');
-  const parts = [add.length && `Added ${names(add)}.`, remove.length && `Removed ${names(remove)}.`, skipped.length && `⚠️ I can't change ${names(skipped)}: an admin needs to move my role higher.`].filter(Boolean);
-  await interaction.editReply({ content: parts.length ? `✅ ${parts.join(' ')}` : 'Nothing changed.' });
+  const parts = [add.length && `Added ${names(add)}.`, remove.length && `Removed ${names(remove)}.`, skipped.length && `I cannot change ${names(skipped)}. An admin needs to move my role higher.`].filter(Boolean);
+  await interaction.editReply({ content: parts.length ? parts.join(' ') : 'Nothing changed.' });
   return true;
 }
 

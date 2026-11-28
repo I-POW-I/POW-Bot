@@ -4,7 +4,7 @@
  * What a new member goes through (all optional, configured in /setup → Verification):
  *   1. Joins → gets the "unverified" role (if set), a prompt is posted in the verify channel
  *      and/or sent by DM, and staff see a detailed join log.
- *   2. Clicks "Verify now" →  button mode: verified immediately
+ *   2. Presses "Verify" →  button mode: verified immediately
  *                             human-check mode: types the code shown in a generated image
  *      An optional minimum account age sends very new accounts to staff for approval.
  *   3. Gets the verified role, loses the unverified role, staff see a "verified" log.
@@ -202,10 +202,10 @@ async function changeRole(member, roleId, add, reason) {
 function buildPrompt(guild) {
   const embed = new EmbedBuilder()
     .setColor(ACCENT)
-    .setTitle('🤖 Verification required')
-    .setDescription(`To gain access to **${guild.name}** you need to prove you are a human by completing verification. Click the button below to get started!`);
+    .setTitle('Verify to join')
+    .setDescription(`Press **Verify** to get access to **${guild.name}**. It only takes a few seconds.`);
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`verify:start:${guild.id}`).setLabel('Verify now').setEmoji('✅').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`verify:start:${guild.id}`).setLabel('Verify').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`verify:why:${guild.id}`).setLabel('Why?').setStyle(ButtonStyle.Secondary),
   );
   return { embeds: [embed], components: [row] };
@@ -271,13 +271,13 @@ function captchaMessage(guildId, session, note) {
   const file = new AttachmentBuilder(session.image, { name: 'captcha.png' });
   const embed = new EmbedBuilder()
     .setColor(ACCENT)
-    .setTitle('🔐 Human check')
-    .setDescription([note, 'Type the **5 characters** shown in the picture. It is not case-sensitive.'].filter(Boolean).join('\n\n'))
+    .setTitle('Enter the code')
+    .setDescription([note, 'Type the **5 characters** shown in the image. Capital letters do not matter.'].filter(Boolean).join('\n\n'))
     .setImage('attachment://captcha.png')
     .setFooter({ text: `Attempt ${session.attempts + 1} of ${MAX_ATTEMPTS} · expires in 5 minutes` });
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`verify:enter:${guildId}:${session.nonce}`).setLabel('Enter code').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`verify:start:${guildId}`).setLabel('New picture').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`verify:start:${guildId}`).setLabel('New image').setStyle(ButtonStyle.Secondary),
   );
   return { embeds: [embed], components: [row], files: [file], attachments: [] };
 }
@@ -405,7 +405,7 @@ async function handleStart(interaction, client, guildId) {
 
     const s = settings(guild.id);
     if (!isConfigured(s)) return reply('Verification is not set up yet. Ask a server admin to run `/setup`.');
-    if (member.roles.cache.has(s.roleId)) return reply('✅ You are already verified.');
+    if (member.roles.cache.has(s.roleId)) return reply('You are already verified.');
 
     const key = sKey(guild.id, member.id);
     const lockedUntil = lockouts.get(key);
@@ -421,7 +421,7 @@ async function handleStart(interaction, client, guildId) {
         components: [staffButtons(guild.id, member.id)],
       });
       trackLog(guild.id, member.id, sent);
-      return reply(`Your account is newer than ${s.minAgeDays} day(s), so a moderator needs to approve you. They've been notified — please be patient.`);
+      return reply(`Your account is newer than ${s.minAgeDays} ${s.minAgeDays === 1 ? 'day' : 'days'}, so a moderator has to approve you. They have been told.`);
     }
 
     if (s.mode === 'captcha') {
@@ -430,16 +430,16 @@ async function handleStart(interaction, client, guildId) {
     }
 
     const res = await complete({ guild, member, method: 'button' });
-    return reply(res.ok ? `✅ You're verified — welcome to **${guild.name}**!` : `⚠️ ${res.error}`);
+    return reply(res.ok ? `You are verified. Welcome to **${guild.name}**.` : res.error);
   } finally { busy.delete(lock); }
 }
 
 async function handleEnter(interaction, guildId, nonce) {
   const session = sessions.get(sKey(guildId, interaction.user.id));
   if (!session || session.nonce !== nonce || session.expires < Date.now()) {
-    return interaction.update({ content: 'That picture expired — press **Verify now** again.', embeds: [], components: [], files: [] });
+    return interaction.update({ content: 'That code has expired. Press **Verify** again.', embeds: [], components: [], files: [] });
   }
-  const modal = new ModalBuilder().setCustomId(`verify:modal:${guildId}:${nonce}`).setTitle('Human check')
+  const modal = new ModalBuilder().setCustomId(`verify:modal:${guildId}:${nonce}`).setTitle('Enter the code')
     .addComponents(new ActionRowBuilder().addComponents(
       new TextInputBuilder().setCustomId('code').setLabel('Type the 5 characters from the picture').setStyle(TextInputStyle.Short).setMinLength(5).setMaxLength(5).setRequired(true),
     ));
@@ -458,12 +458,12 @@ async function handleModal(interaction, client, guildId, nonce) {
     if (!guild || !member) return reply('I can\'t find you in that server.');
     const key = sKey(guild.id, member.id);
     const session = sessions.get(key);
-    if (!session || session.nonce !== nonce || session.expires < Date.now()) return reply('That picture expired — press **Verify now** again.');
+    if (!session || session.nonce !== nonce || session.expires < Date.now()) return reply('That code has expired. Press **Verify** again.');
 
     const typed = interaction.fields.getTextInputValue('code').trim().toUpperCase();
     if (typed === session.code) {
       const res = await complete({ guild, member, method: 'human check', attempts: session.attempts + 1, startedAt: session.startedAt });
-      return reply(res.ok ? `✅ Correct — you're verified. Welcome to **${guild.name}**!` : `⚠️ ${res.error}`);
+      return reply(res.ok ? `That is correct. Welcome to **${guild.name}**.` : res.error);
     }
 
     session.attempts++;
@@ -474,10 +474,10 @@ async function handleModal(interaction, client, guildId, nonce) {
       log('INFO', 'Verification failed (too many wrong codes)', { guild: guild.name, user: member.user.tag });
       const sent = await postStaffLog(guild, { embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('❌ Verification failed').setDescription(`${member} entered the wrong code **${MAX_ATTEMPTS}** times and is locked out for 10 minutes.`)], components: [staffButtons(guild.id, member.id)] });
       trackLog(guild.id, member.id, sent);
-      return reply(`That wasn't right, and you're out of attempts. You can try again ${ts(Date.now() + LOCKOUT_MS)}.`);
+      return reply(`That code was wrong and you have no attempts left. Try again ${ts(Date.now() + LOCKOUT_MS)}.`);
     }
     const fresh = newSession(guild.id, member.id, session);
-    return interaction.editReply(captchaMessage(guild.id, fresh, `❌ That wasn't the right code. **${MAX_ATTEMPTS - session.attempts}** attempt(s) left.`));
+    return interaction.editReply(captchaMessage(guild.id, fresh, `That code was wrong. **${MAX_ATTEMPTS - session.attempts}** ${MAX_ATTEMPTS - session.attempts === 1 ? 'attempt' : 'attempts'} left.`));
   } finally { busy.delete(lock); }
 }
 
@@ -485,14 +485,14 @@ function handleWhy(interaction, guildId) {
   const name = interaction.guild?.name || interaction.client.guilds.cache.get(guildId)?.name || 'this server';
   return interaction.reply({
     flags: ephemeral,
-    embeds: [new EmbedBuilder().setColor(ACCENT).setTitle('Why do I need to verify?').setDescription([
-      `**${name}** uses verification to keep out spam bots and raiders, so the community stays safe.`,
+    embeds: [new EmbedBuilder().setColor(ACCENT).setTitle('Why verify?').setDescription([
+      `**${name}** verifies new members to keep out spam accounts and raids.`,
       '',
-      '**What is checked:** only what Discord already shows about your account — how old it is, your public badges and avatar. Nothing is asked of you beyond the button or the code.',
-      '**What is NOT collected:** your email, IP address, location or anything private.',
-      '**What is recorded:** when you joined and whether you verified, visible to this server\'s staff.',
+      '**Checked:** your account age and public profile, as Discord shows them.',
+      '**Not collected:** your email, IP address or location.',
+      '**Recorded:** when you joined and whether you verified. Server staff can see this.',
       '',
-      'Stuck? Ask a moderator to approve you.',
+      'If you are stuck, ask a moderator to approve you.',
     ].join('\n'))],
   });
 }

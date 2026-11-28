@@ -96,7 +96,7 @@ function viewPost(guild, note) {
     components: [
       new ActionRowBuilder().addComponents(freq),
       channelSelect('setup:leaderboard:postchan', 'Choose the channel', post.channelId, [ChannelType.GuildText, ChannelType.GuildAnnouncement]),
-      new ActionRowBuilder().addComponents(backButton('leaderboard')),
+      new ActionRowBuilder().addComponents(...[kit.announcementButton('setup:leaderboard:postann', guild), backButton('leaderboard')].filter(Boolean)),
     ],
   };
 }
@@ -168,8 +168,8 @@ async function handle(interaction, { guild, by, action, arg }) {
     audit({ action: 'Setup: scheduled leaderboard', actor: by, guild, details: choice });
     return respond(interaction, viewPost(guild, noteGood(choice === 'off' ? 'The scheduled post is off.' : `The ${choice} post is on. The first one goes out at the start of the next ${choice === 'weekly' ? 'week' : 'month'}.`)));
   }
-  if (action === 'postchan') {
-    const channel = interaction.channels.first();
+  if (action === 'postchan' || action === 'postann') {
+    const channel = action === 'postann' ? kit.announcementChannel(guild) : interaction.channels.first();
     const missing = channel ? missingIn(channel, guild) : [];
     if (missing.length) return respond(interaction, viewPost(guild, noteBad(`I can't post in ${channel}. I need: ${missing.join(', ')}.`)));
     s.post.channelId = channel?.id || null; lb.save(guild.id, s);

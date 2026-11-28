@@ -19,9 +19,9 @@ const { log } = require('../logger');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const TOO_SLOW = Symbol('too slow');
 // Discord wants an answer to a command or button within 3 seconds; if drawing takes longer than this, the interaction is deferred first
-const DEFER_AFTER_MS = 1100;
+const DEFER_AFTER_MS = 700;
 // a command that already waited this long for the bot is answered with the plain embed: there is no time left to draw a card
-const TOO_LATE_MS = 1500;
+const TOO_LATE_MS = 1100;
 
 const CACHE = new Map(), CACHE_MS = 10 * 60 * 1000;
 
@@ -78,22 +78,29 @@ function resolverFor(source) {
 }
 
 /** The payload with embeds replaced by card images, or the payload unchanged. */
-async function convert(payload, source, isEdit) {
+async function convert(payload, source, isEdit, showpiece = false, clickable = false) {
   if (!payload || typeof payload !== 'object' || typeof payload === 'string') return payload;
   // `liveStamp: true` marks a panel that is edited again and again: as a card it gets a live "Updated … ago" line (Discord keeps it counting)
   if ('liveStamp' in payload) {
     const { liveStamp, ...rest } = payload;
-    const out = await convert(rest, source, isEdit);
-    if (liveStamp && out !== rest && Array.isArray(out.files) && !out.embeds?.length) return { ...out, content: `-# Updated <t:${Math.floor(Date.now() / 1000)}:R>` };
+    const out = await convert(rest, source, isEdit, showpiece, clickable);
+    // the "Updated" line goes under anything already in the message (a role ping, the people and channels in it)
+    if (liveStamp && out !== rest && Array.isArray(out.files) && !out.embeds?.length) return { ...out, content: [out.content, `-# Updated <t:${Math.floor(Date.now() / 1000)}:R>`].filter(Boolean).join('\n') };
     return isEdit && liveStamp ? { ...out, content: '' } : out;
   }
+  // `showpiece: true` marks a message made to be looked at; `showpiece: 'links'` also repeats its people and channels as real mentions above the card
+  if ('showpiece' in payload) { const { showpiece: mark, ...rest } = payload; return convert(rest, source, isEdit, !!mark, mark === 'links'); }
   if (!Array.isArray(payload.embeds) || !payload.embeds.length || payload.plainEmbeds === true) return payload;
   const guildId = (source?.guild || source?.channel?.guild)?.id || source?.guildId || null;
-  const look = style.styleFor(guildId, style.areaOf(source));
+  // the live panel is always a showpiece; so are the cards that are marked `showpiece: true`
+  const look = style.styleFor(guildId, style.areaOf(source), showpiece || payload.embeds.some(e => e?.data?.panel));
   if (look === 'embed') return payload;
 
   const embeds = payload.embeds.slice(0, 10).map(toJSON).filter(Boolean);
   if (!embeds.length) return payload;
+  // the server's accent colour replaces the default blue on its posts and replies (colours that mean something, like red for a problem, are left alone)
+  const accent = guildId && ['posts', 'commands'].includes(style.areaOf(source)) ? style.accentOf(guildId) : null;
+  if (accent != null) for (const e of embeds) if (e.color === 0x5865F2) e.color = accent;
   // the live voice panel carries its layout data (hidden from the classic embed); it is drawn by its own renderer
   const panels = payload.embeds.slice(0, 10).map(e => e?.data?.panel || null);
 
@@ -133,7 +140,7 @@ async function convert(payload, source, isEdit) {
 
   const out = { ...payload, embeds: [], files: [...keep, ...cards] };
   // a card is a picture, so the people and channels in a log entry cannot be clicked: they are repeated as real mentions above it
-  if (style.areaOf(source) === 'logs' && !payload.content) {
+  if ((style.areaOf(source) === 'logs' || clickable) && !payload.content) {
     const text = mentionLine(embeds);
     if (text) { out.content = text; if (!payload.allowedMentions) out.allowedMentions = { parse: [] }; }
   }
@@ -148,11 +155,16 @@ function wrap(proto, name, isEdit) {
   const wrapped = async function (...args) {
     const index = payloadIndex(args);
     if (index < 0) return original.apply(this, args);
+    // already acknowledged (by the slow-answer watchdog or an earlier defer): a reply becomes the edit of that acknowledgement
+    if (name === 'reply' && this.deferred && !this.replied) {
+      try { const { flags, ephemeral: _e, ...rest } = await convert(args[index], this, true); void flags; void _e; return this.editReply(rest); }
+      catch (err) { log('WARN', 'Card conversion skipped', { err }); const { flags, ephemeral: _e, ...rest } = args[index]; void flags; void _e; return this.editReply(rest); }
+    }
     try {
       // the first answer to a command or button has to arrive within 3 seconds: if drawing is slow, defer and edit instead
       const first = (name === 'reply' || name === 'update') && typeof this.deferReply === 'function' && !this.deferred && !this.replied;
       const age = first && this.createdTimestamp ? Date.now() - this.createdTimestamp : 0;
-      if (first && age > TOO_LATE_MS) { const { liveStamp, ...plain } = args[index]; void liveStamp; args[index] = plain; return original.apply(this, args); }
+      if (first && age > TOO_LATE_MS) { const { liveStamp, showpiece, ...plain } = args[index]; void liveStamp; void showpiece; args[index] = plain; return original.apply(this, args); }
       const work = convert(args[index], this, isEdit);
       if (first) {
         const result = await Promise.race([work, sleep(Math.max(150, DEFER_AFTER_MS - age)).then(() => TOO_SLOW)]);
@@ -165,7 +177,11 @@ function wrap(proto, name, isEdit) {
         }
         args[index] = result;
       } else args[index] = await work;
-    } catch (err) { log('WARN', 'Card conversion skipped', { err }); }
+    } catch (err) {
+      // anything unexpected: send the original embeds, without the bot's own markers
+      log('WARN', 'Card conversion skipped', { err });
+      if (args[index] && typeof args[index] === 'object') { const { liveStamp, showpiece, ...plain } = args[index]; void liveStamp; void showpiece; args[index] = plain; }
+    }
     return original.apply(this, args);
   };
   wrapped.__cards = true;

@@ -142,7 +142,7 @@ async function refreshPanel(client) { try { await require('./statusUpdater').upd
 
 async function openWrapped(interaction) {
   await interaction.deferReply({ flags: EPHEMERAL });
-  return interaction.editReply(await wrapped.memberWrapped(interaction.guild, interaction.member));
+  return wrapped.reply(interaction, await wrapped.memberWrapped(interaction.guild, interaction.member));
 }
 
 const lookupPrompt = (interaction) => interaction.reply({
@@ -200,7 +200,7 @@ async function button(interaction, client) {
       return refreshPanel(client);
     }
     case 'bot_myinfo':
-      return interaction.reply({ embeds: [require('./statusUpdater').buildMemberEmbed(member, guild, 'My card')], flags: EPHEMERAL });
+      return interaction.reply({ embeds: [require('./statusUpdater').buildMemberEmbed(member, guild, 'My card')], showpiece: true, flags: EPHEMERAL });
     case 'bot_lookup':
       return lookupPrompt(interaction);
     case 'bot_leaderboard':
@@ -209,13 +209,13 @@ async function button(interaction, client) {
       return interaction.editReply(await require('./leaderboard').view(guild, 'all', interaction.user.id));
     case 'bot_busy':
       await interaction.deferReply({ flags: EPHEMERAL });
-      return interaction.editReply(await wrapped.busyTimes(guild));
+      return wrapped.reply(interaction, await wrapped.busyTimes(guild));
     case 'bot_recap':
       await interaction.deferReply({ flags: EPHEMERAL });
       return interaction.editReply(await wrapped.weeklyRecap(guild, interaction.user.id));
     case 'bot_swrapped':
       await interaction.deferReply({ flags: EPHEMERAL });
-      return interaction.editReply(await wrapped.serverWrapped(guild));
+      return wrapped.reply(interaction, await wrapped.serverWrapped(guild));
     case 'bot_mywrapped':
       return openWrapped(interaction);
     default:
@@ -231,7 +231,7 @@ async function menu(interaction, client) {
     if (pick === 'lookup') return lookupPrompt(interaction);
     if (pick === 'busy' || pick === 'recap' || pick === 'swrapped') {
       await interaction.deferReply({ flags: EPHEMERAL });
-      return interaction.editReply(pick === 'busy' ? await wrapped.busyTimes(guild) : pick === 'recap' ? await wrapped.weeklyRecap(guild, interaction.user.id) : await wrapped.serverWrapped(guild));
+      return wrapped.reply(interaction, pick === 'busy' ? await wrapped.busyTimes(guild) : pick === 'recap' ? await wrapped.weeklyRecap(guild, interaction.user.id) : await wrapped.serverWrapped(guild));
     }
     return say(interaction, 'That option is not available.');
   }
@@ -257,7 +257,7 @@ async function userPick(interaction) {
   const user = interaction.users.first();
   const target = await guild.members.fetch(user.id).catch(() => null);
   if (!target) return say(interaction, 'I could not find that member.');
-  return interaction.reply({ embeds: [require('./statusUpdater').buildMemberEmbed(target, guild, 'Member')], flags: EPHEMERAL });
+  return interaction.reply({ embeds: [require('./statusUpdater').buildMemberEmbed(target, guild, 'Member')], showpiece: true, flags: EPHEMERAL });
 }
 
 const IDS = /^bot_(join|join_here|join_pick|join_channel|move|move_pick|move_ok|move_no|leave|leave_ok|leave_no|myinfo|lookup|lookup_user|leaderboard|info|busy|recap|swrapped|mywrapped|more)(:|$)/;

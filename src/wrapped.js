@@ -20,9 +20,11 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString('en-GB')} ${n === 1 ? one : many}`;
 const people = (n) => plural(n, 'person', 'people');
 const num = (n) => Number(n || 0).toLocaleString('en-GB');
+const dayRange = (a, b) => { const f = (o) => shortDate(new Date(o * DAY).toISOString().slice(0, 10)); return a === b ? f(a) : `${f(a)} to ${f(b)}`; };
 const shortDate = (day) => { const [, m, d] = day.split('-').map(Number); return `${d} ${MONTHS[m - 1].slice(0, 3)}`; };
 const longDate = (ms) => { const d = new Date(ms); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
-const hourText = (h) => `${String(h).padStart(2, '0')}:00 UTC`;
+const tz = require('./timezone');
+const hourText = (h, clock) => tz.hourLabel(h, clock);   // the server's own clock, 12 or 24 hour
 const dayOrdinal = (day) => Math.floor(Date.parse(`${day}T00:00:00Z`) / DAY);
 const afkOf = (guild) => guild.afkChannelId || '';
 const png = (buf, name) => new AttachmentBuilder(buf, { name });
@@ -38,6 +40,11 @@ function voiceRows(guildId, userId, from, to, afk) {
        AND joined_at >= ? AND joined_at < ? AND channel_id != ?`,
     [guildId, ...(userId ? [userId] : []), from, to, afk]);
 }
+function streamRows(guildId, userId, from, to) {
+  return selectAll(
+    `SELECT user_id, duration_ms FROM stream_sessions WHERE guild_id = ? ${userId ? 'AND user_id = ?' : ''} AND duration_ms IS NOT NULL AND joined_at >= ? AND joined_at < ?`,
+    [guildId, ...(userId ? [userId] : []), from, to]);
+}
 function activityRows(guildId, userId, year) {
   return selectAll(
     `SELECT user_id, day, hour, channel_id, messages, reactions FROM activity
@@ -46,7 +53,8 @@ function activityRows(guildId, userId, year) {
 }
 
 /** One person's year, or the whole server's, from voice and activity rows. Pure, so it can be tested. */
-function summarise(voice, act, year) {
+function summarise(voice, act, year, zone = 'UTC') {
+  const hourShift = Math.round(tz.offsetMs(zone) / 3_600_000);
   const out = {
     messages: 0, reactions: 0, voiceMs: 0, sessions: voice.length, favText: null, favVoice: null, streak: 0, daysActive: 0,
     busiestDay: null, topHour: null, first: null, months: Array.from({ length: 12 }, () => ({ messages: 0, voiceMs: 0 })), people: new Set(),
@@ -59,14 +67,16 @@ function summarise(voice, act, year) {
     text.set(r.channel_id, (text.get(r.channel_id) || 0) + r.messages);
     const e = dayEntry(r.day); e.messages += r.messages;
     out.months[Number(r.day.slice(5, 7)) - 1].messages += r.messages;
-    hours[r.hour] += r.messages;
+    hours[(r.hour + hourShift + 24) % 24] += r.messages;
     if (r.messages > 0 && (!out.first || `${r.day} ${String(r.hour).padStart(2, '0')}` < `${out.first.day} ${String(out.first.hour).padStart(2, '0')}`)) out.first = { day: r.day, hour: r.hour, channelId: r.channel_id };
   }
   for (const v of voice) {
-    const ms = Number(v.duration_ms) || 0, d = new Date(v.joined_at);
+    const ms = Number(v.duration_ms) || 0, d = new Date(tz.local(zone, v.joined_at));
     out.voiceMs += ms; out.people.add(v.user_id);
     const key = v.channel_id; const cur = vc.get(key) || { name: v.channel_name, ms: 0 }; cur.ms += ms; cur.name = v.channel_name; vc.set(key, cur);
     dayEntry(d.toISOString().slice(0, 10)).voiceMs += ms;
+    // a call that runs past midnight also counts for the days it carries on into, so a long session cannot break a streak
+    for (let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + 86_400_000; t <= tz.local(zone, v.joined_at) + ms; t += 86_400_000) dayEntry(new Date(t).toISOString().slice(0, 10));
     out.months[d.getUTCMonth()].voiceMs += ms;
     hours[d.getUTCHours()] += ms / 600_000;
   }
@@ -77,7 +87,12 @@ function summarise(voice, act, year) {
   out.daysActive = days.size;
   const ordinals = [...days.keys()].map(dayOrdinal).sort((a, b) => a - b);
   let run = 0, prev = null;
-  for (const o of ordinals) { run = prev !== null && o === prev + 1 ? run + 1 : 1; out.streak = Math.max(out.streak, run); prev = o; }
+  let runStart = null;
+  for (const o of ordinals) {
+    if (prev !== null && o === prev + 1) run++; else { run = 1; runStart = o; }
+    if (run > out.streak) { out.streak = run; out.streakFrom = runStart; out.streakTo = o; }
+    prev = o;
+  }
 
   let bestDay = null;
   for (const [d, e] of days) { const score = e.messages + e.voiceMs / 360_000; if (score > 0 && (!bestDay || score > bestDay.score)) bestDay = { day: d, score, ...e }; }
@@ -128,7 +143,8 @@ function monthValues(s) { return s.months.map(m => m.messages + m.voiceMs / 360_
 async function memberWrapped(guild, member, year = new Date().getUTCFullYear()) {
   const from = Date.UTC(year, 0, 1), to = Date.UTC(year + 1, 0, 1);
   const counting = activity.settings(guild.id).countingSince != null;
-  const s = summarise(voiceRows(guild.id, member.id, from, to, afkOf(guild)), counting ? activityRows(guild.id, member.id, year) : [], year);
+  const zone = tz.zoneOf(guild.id), clock = tz.clockOf(guild.id);
+  const s = summarise(voiceRows(guild.id, member.id, from, to, afkOf(guild)), counting ? activityRows(guild.id, member.id, year) : [], year, zone);
   const embed = new EmbedBuilder().setColor(GOLD).setAuthor({ name: `${guild.name} · ${year}` }).setTitle('My Server Time Wrapped');
   if (!s.daysActive && !s.voiceMs) {
     return { embeds: [embed.setDescription(`Nothing to show yet for ${year}. Spend some time in voice${counting ? ' or chat' : ''} and check back.`)], files: [] };
@@ -138,9 +154,11 @@ async function memberWrapped(guild, member, year = new Date().getUTCFullYear()) 
   fields.push({ name: 'Time in voice', value: duration(s.voiceMs), inline: true });
   if (s.favText) fields.push({ name: 'Top text channel', value: channelText(guild, s.favText.id), inline: true });
   if (s.favVoice) fields.push({ name: 'Top voice channel', value: s.favVoice.name, inline: true });
-  fields.push({ name: 'Longest streak', value: plural(s.streak, 'day'), inline: true });
-  if (s.busiestDay) fields.push({ name: 'Busiest day', value: shortDate(s.busiestDay.day), inline: true });
-  if (s.topHour != null) fields.push({ name: 'Most active hour', value: hourText(s.topHour), inline: true });
+  fields.push({ name: 'Longest streak', value: s.streak > 1 ? `${plural(s.streak, 'day')}\n${dayRange(s.streakFrom, s.streakTo)}` : plural(s.streak, 'day'), inline: true });
+  if (s.busiestDay) fields.push({ name: 'Busiest day', value: `${shortDate(s.busiestDay.day)}${s.busiestDay.voiceMs > 0 ? `\n${duration(s.busiestDay.voiceMs)} in voice` : ''}`, inline: true });
+  const streams = streamRows(guild.id, member.id, from, to), streamMs = streams.reduce((a, r) => a + Number(r.duration_ms), 0);
+  if (streamMs > 0) fields.push({ name: 'Time streaming', value: `${duration(streamMs)}\n${plural(streams.length, 'stream')}`, inline: true });
+  if (s.topHour != null) fields.push({ name: 'Most active hour', value: hourText(s.topHour, clock), inline: true });
   fields.push({ name: 'Days active', value: num(s.daysActive), inline: true });
   if (s.first) fields.push({ name: 'First message', value: `${shortDate(s.first.day)} in ${channelText(guild, s.first.channelId)}`, inline: true });
   const mw = mostTimeWith(guild, member.id, from, to);
@@ -157,7 +175,8 @@ async function serverWrapped(guild, year = new Date().getUTCFullYear()) {
   const from = Date.UTC(year, 0, 1), to = Date.UTC(year + 1, 0, 1);
   const counting = activity.settings(guild.id).countingSince != null;
   const voice = voiceRows(guild.id, null, from, to, afkOf(guild)), act = counting ? activityRows(guild.id, null, year) : [];
-  const s = summarise(voice, act, year);
+  const zone = tz.zoneOf(guild.id), clock = tz.clockOf(guild.id);
+  const s = summarise(voice, act, year, zone);
   const embed = new EmbedBuilder().setColor(GOLD).setAuthor({ name: `${guild.name} · ${year}` }).setTitle('Server Wrapped');
   if (!s.daysActive && !s.voiceMs) return { embeds: [embed.setDescription(`Nothing to show yet for ${year}.`)], files: [] };
 
@@ -175,7 +194,9 @@ async function serverWrapped(guild, year = new Date().getUTCFullYear()) {
   if (s.favVoice) fields.push({ name: 'Top voice channel', value: s.favVoice.name, inline: true });
   if (s.busiestDay) fields.push({ name: 'Busiest day', value: shortDate(s.busiestDay.day), inline: true });
   if (busiestMonth?.v > 0) fields.push({ name: 'Busiest month', value: MONTHS[busiestMonth.i], inline: true });
-  if (s.topHour != null) fields.push({ name: 'Busiest hour', value: hourText(s.topHour), inline: true });
+  if (s.topHour != null) fields.push({ name: 'Busiest hour', value: hourText(s.topHour, clock), inline: true });
+  const topStream = sumBy(streamRows(guild.id, null, from, to), 'user_id', 'duration_ms').filter(([id, ms]) => present(id) && ms > 0).slice(0, 3);
+  if (topStream.length) fields.push({ name: 'Most time streaming', value: topStream.map(([id, ms], i) => `${medals[i]} <@${id}>\n${duration(ms)}`).join('\n'), inline: true });
   if (topVoice.length) fields.push({ name: 'Most time in voice', value: topVoice.map(([id, ms], i) => `${medals[i]} <@${id}>\n${duration(ms)}`).join('\n'), inline: true });
   if (topChat.length) fields.push({ name: 'Most messages', value: topChat.map(([id, n], i) => `${medals[i]} <@${id}>\n${plural(n, 'message')}`).join('\n'), inline: true });
 
@@ -190,7 +211,7 @@ const wrappedButtons = () => [new ActionRowBuilder().addComponents(new ButtonBui
 // ── Busy times ────────────────────────────────────────────────────────────────
 
 /** Minutes of voice per UTC day and hour over the last `days` days, from the voice sessions. */
-function hourlyMinutes(guild, days = 28, now = Date.now()) {
+function hourlyMinutes(guild, days = 28, now = Date.now(), zone = 'UTC') {
   const from = now - days * DAY;
   const sessions = selectAll(
     `SELECT joined_at, duration_ms FROM vc_sessions WHERE guild_id = ? AND COALESCE(summary, 0) = 0 AND channel_id != ?
@@ -199,7 +220,7 @@ function hourlyMinutes(guild, days = 28, now = Date.now()) {
   for (const s of sessions) {
     const end = Math.min(now, s.joined_at + (s.duration_ms ?? now - s.joined_at));
     for (let t = Math.max(s.joined_at, from); t < end;) {
-      const next = Math.min(end, (Math.floor(t / 3_600_000) + 1) * 3_600_000), d = new Date(t);
+      const next = Math.min(end, (Math.floor(t / 3_600_000) + 1) * 3_600_000), d = new Date(tz.local(zone, t));
       const key = d.toISOString().slice(0, 10);
       if (!by.has(key)) by.set(key, new Array(24).fill(0));
       by.get(key)[d.getUTCHours()] += (next - t) / 60_000;
@@ -210,25 +231,25 @@ function hourlyMinutes(guild, days = 28, now = Date.now()) {
 }
 
 /** What is usual for each weekday and hour: per weekday, the average people in voice at every hour, from the last four weeks. */
-function usualBusy(by, now = Date.now()) {
-  const today = new Date(now).toISOString().slice(0, 10), samples = Array.from({ length: 7 }, () => []);
+function usualBusy(by, now = Date.now(), zone = 'UTC') {
+  const today = new Date(tz.local(zone, now)).toISOString().slice(0, 10), samples = Array.from({ length: 7 }, () => []);
   for (let i = 1; i <= 28; i++) {
-    const t = now - i * DAY, key = new Date(t).toISOString().slice(0, 10);
+    const t = now - i * DAY, key = new Date(tz.local(zone, t)).toISOString().slice(0, 10);
     if (key === today) continue;
-    samples[new Date(t).getUTCDay()].push((by.get(key) || new Array(24).fill(0)).map(m => m / 60));
+    samples[new Date(tz.local(zone, t)).getUTCDay()].push((by.get(key) || new Array(24).fill(0)).map(m => m / 60));
   }
   return samples;   // samples[weekday] = list of 24-hour arrays (people in voice on average, per hour)
 }
 
 async function busyTimes(guild, now = Date.now()) {
   const embed = new EmbedBuilder().setColor(BLUE).setAuthor({ name: guild.name }).setTitle('Busy times');
-  const by = hourlyMinutes(guild, 28, now);
+  const zone = tz.zoneOf(guild.id), clock = tz.clockOf(guild.id), by = hourlyMinutes(guild, 28, now, zone);
   const total = [...by.values()].reduce((a, d) => a + d.reduce((x, y) => x + y, 0), 0);
   const nowIn = [...guild.voiceStates.cache.values()].filter(v => v.channelId && v.channelId !== afkOf(guild) && v.member && !v.member.user.bot).length;
   if (total < 120) return { embeds: [embed.setDescription(`Right now **${people(nowIn)}** in voice.\n\nNot enough voice history yet to show what is usual. Check back after a few days.`)], files: [] };
 
-  const d = new Date(now), dow = d.getUTCDay(), hour = d.getUTCHours();
-  const samples = usualBusy(by, now);
+  const d = new Date(tz.local(zone, now)), dow = d.getUTCDay(), hour = d.getUTCHours();
+  const samples = usualBusy(by, now, zone);
   const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
   const usualToday = samples[dow], perHour = Array.from({ length: 24 }, (_, h) => mean(usualToday.map(a => a[h])));
   const vals = usualToday.map(a => a[hour]);
@@ -241,10 +262,10 @@ async function busyTimes(guild, now = Date.now()) {
 
   embed.setDescription(`Right now **${people(nowIn)}** in voice.`).addFields(
     { name: 'Usually then', value: usually, inline: true },
-    { name: 'Peak today', value: peakToday.v >= 0.5 ? `${hourText(peakToday.h)}\nAbout ${people(Math.round(peakToday.v))}` : 'No clear peak', inline: true },
-    { name: 'Peak of the week', value: best.v >= 0.5 ? `${DAYS[best.dow]}s ${hourText(best.h)}\nAbout ${people(Math.round(best.v))}` : 'No clear peak', inline: true },
-  ).setFooter({ text: 'From the last four weeks. Times are UTC.' });
-  const chart = await require('./ui/charts').busyChart(perHour, hour);
+    { name: 'Peak today', value: peakToday.v >= 0.5 ? `${hourText(peakToday.h, clock)}\nAbout ${people(Math.round(peakToday.v))}` : 'No clear peak', inline: true },
+    { name: 'Peak of the week', value: best.v >= 0.5 ? `${DAYS[best.dow]}s ${hourText(best.h, clock)}\nAbout ${people(Math.round(best.v))}` : 'No clear peak', inline: true },
+  ).setFooter({ text: `From the last four weeks.` });
+  const chart = await require('./ui/charts').busyChart(perHour, hour, '', '');
   return { embeds: [embed, chartCard(BLUE, 'busy-times.png')], files: [png(chart, 'busy-times.png')] };
 }
 
@@ -309,7 +330,7 @@ async function postDue(client, now = new Date()) {
     try {
       const channel = await guild.channels.fetch(s.channelId).catch(() => null);
       if (!channel?.isTextBased()) continue;
-      await channel.send({ ...(await serverWrapped(guild, year)), components: wrappedButtons() });
+      await post(channel, { ...(await serverWrapped(guild, year)), components: wrappedButtons() });
       activity.setSettings(guild.id, { postedYear: year });
       posted++;
       log('INFO', 'Server Wrapped posted', { guild: guild.name, channel: channel.name });
@@ -324,4 +345,27 @@ function start(client) {
   setTimeout(() => postDue(client).catch(() => {}), 60_000).unref?.();
 }
 
-module.exports = { summarise, persona, memberWrapped, serverWrapped, wrappedButtons, busyTimes, hourlyMinutes, usualBusy, weeklyRecap, postDue, start, mostTimeWith };
+/**
+ * A view with a stats card and a chart card is sent as separate messages: when two pictures share one message Discord puts
+ * them side by side and crops both. The buttons (if any) go on the last message.
+ */
+function parts(view) {
+  const embeds = view.embeds || [];
+  if (embeds.length < 2) return [{ ...view, showpiece: true }];
+  const { components, ...rest } = view;
+  return embeds.map((e, i) => ({ ...rest, showpiece: true, embeds: [e], files: i === 0 ? [] : view.files, ...(i === embeds.length - 1 && components ? { components } : {}) }));
+}
+/** Answer an interaction with a view, as one message per card. */
+async function reply(interaction, view) {
+  const list = parts(view);
+  await interaction.editReply(list[0]);
+  for (const p of list.slice(1)) await interaction.followUp({ ...p, flags: 64 });
+}
+/** Post a view in a channel, as one message per card. */
+async function post(channel, view) {
+  let last;
+  for (const p of parts(view)) last = await channel.send(p);
+  return last;
+}
+
+module.exports = { reply, post, parts, summarise, persona, memberWrapped, serverWrapped, wrappedButtons, busyTimes, hourlyMinutes, usualBusy, weeklyRecap, postDue, start, mostTimeWith };

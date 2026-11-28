@@ -75,10 +75,16 @@ async function handle(interaction, client) {
         } catch { /* command log failure is non-critical */ }
       }
 
+      // If a command is slow to get going, tell Discord we are working before its 3 seconds run out; the reply then edits that
+      const watchdog = setTimeout(() => { if (!interaction.deferred && !interaction.replied) interaction.deferReply({ flags: 64 }).catch(() => {}); }, Math.max(300, 2300 - (Date.now() - interaction.createdTimestamp)));
       try {
         await command.execute(interaction, client);
+        clearTimeout(watchdog);
       } catch (err) {
-        log('ERROR', `Error in /${interaction.commandName}`, { guild: interaction.guild?.name || 'DM', user: interaction.user.tag, err });
+        clearTimeout(watchdog);
+        // a reply that reached Discord after its 3 seconds ran out is a slow answer, not a fault in the command
+        if (err?.code === 10062) log('WARN', `/${interaction.commandName} was too slow to answer`, { guild: interaction.guild?.name || 'DM', user: interaction.user.tag, tag: 'COMMAND' });
+        else log('ERROR', `Error in /${interaction.commandName}`, { guild: interaction.guild?.name || 'DM', user: interaction.user.tag, err });
         await replyFailure(interaction);
       }
       return;
@@ -181,6 +187,7 @@ async function passesGlobalGates(interaction) {
   let message = null;
   if (interaction.guildId && globalConfig.isGuildBanned(interaction.guildId)) message = 'This server has been blocked from using this bot.';
   else if (globalConfig.isUserBanned(uid)) message = 'You have been blocked from using this bot.';
+  else if (interaction.isChatInputCommand?.() && (globalConfig.get().disabledCommands || []).includes(interaction.commandName)) message = 'That command is switched off for now. Please try again later.';
   else if (globalConfig.isMaintenance()) message = globalConfig.get().maintenance.message || 'The bot is in maintenance mode. Please try again shortly.';
   if (!message) return true;
 

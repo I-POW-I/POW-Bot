@@ -26,11 +26,13 @@ const DEFAULTS = () => ({
   features:    { streamerAlerts: true, gameAlerts: true },
   blacklist:   { users: {}, guilds: {} },
   audit:       [],
-  alerts:      { webhookUrl: null, webhookId: null, dm: null, levels: null, digestMinutes: null, digestTo: null, memoryPercent: null },
+  alerts:      { webhookUrl: null, webhookId: null, dm: null, levels: null, digestMinutes: null, digestTo: null, memoryPercent: null, repeatMinutes: null, pingMinutes: null, perMinute: null },
   presence:    { status: 'dnd', rotateSeconds: 30, list: null },
   announce:    { lastChannels: {} },
   backup:      { lastAt: null, size: null, scope: null, error: null, failedAt: null },
   restarts:    [],
+  gameHub:     { channels: {}, seen: {} },
+  disabledCommands: [],
   pendingRestart: null,
 });
 
@@ -52,6 +54,8 @@ function load() {
     announce:    { lastChannels: { ...(raw.announce?.lastChannels || {}) } },
     backup:      { ...d.backup, ...(raw.backup || {}) },
     restarts:    Array.isArray(raw.restarts) ? raw.restarts : [],
+    gameHub:     { channels: { ...(raw.gameHub?.channels || {}) }, seen: { ...(raw.gameHub?.seen || {}) } },
+    disabledCommands: Array.isArray(raw.disabledCommands) ? raw.disabledCommands : [],
   };
   return state;
 }

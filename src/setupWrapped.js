@@ -99,7 +99,7 @@ async function handle(interaction, { guild, by, action }) {
     if (!channel) return show(noteBad('Choose a channel first.'));
     const missing = missingIn(channel, guild, [...kit.POST_PERMS, 'AttachFiles']);
     if (missing.length) return show(noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`));
-    try { await channel.send({ ...(await wrapped.serverWrapped(guild)), components: wrapped.wrappedButtons() }); }
+    try { await wrapped.post(channel, { ...(await wrapped.serverWrapped(guild)), components: wrapped.wrappedButtons() }); }
     catch (err) { log('WARN', 'Could not post Wrapped now', { guild: guild.name, err }); return show(noteBad('Discord refused the message.')); }
     done('Wrapped posted now', `#${channel.name}`);
     return show(noteGood(`Posted in ${channel}.`));

@@ -24,6 +24,7 @@ const {
 const crypto = require('crypto');
 
 const { isOwner, isBotAdmin, ownerIds } = require('./permissions');
+require('./ownerExtra');   // starts measuring how responsive the bot is from the moment it starts
 const globalConfig = require('./globalConfig');
 const alerts       = require('./errorAlerts');
 const monitor      = require('./ownerMonitor');
@@ -44,7 +45,7 @@ const n  = (v) => Number(v || 0).toLocaleString('en-GB');
 const FEATURES = {
   streamerAlerts: 'Streamer alerts (Twitch / Kick / YouTube)', gameAlerts: 'Game alerts (free games and patch notes)',
   raidProtection: 'Raid protection (join floods, raid mode, account age gate)', autoMod: 'AutoMod (message filters)', checkpoint: 'Security Check Point (trap channel)',
-  cardPanels: 'Card panels (messages drawn as cards instead of plain embeds)',
+  cardPanels: 'Card panels (the panel, member cards, Wrapped, leaderboard and alert posts drawn as pictures instead of embeds)',
 };
 
 const SECTIONS = [
@@ -53,13 +54,14 @@ const SECTIONS = [
   { key: 'alerts',    emoji: '🔔', label: 'Alerts',                   desc: 'Where alerts go, mute, console digest, memory restart' },
   { key: 'status',    emoji: '💬', label: 'Bot status',               desc: 'The rotating status line under the bot\'s name', ownerOnly: true },
   { key: 'announce',  emoji: '📣', label: 'Announcements',            desc: 'Send a message to servers you choose', ownerOnly: true },
+  { key: 'tools',     emoji: '🧰', label: 'Owner tools',              desc: 'Stat check, health and the Game Updates Hub', ownerOnly: true },
   { key: 'control',   emoji: '🛠️', label: 'Maintenance and features', desc: 'Maintenance mode, global switches, commands', ownerOnly: true },
   { key: 'blocks',    emoji: '⛔', label: 'Blocked users and servers', desc: 'Stop someone using the bot', ownerOnly: true },
   { key: 'audit',     emoji: '🧾', label: 'Recent changes',           desc: 'What was changed through the bot, and by whom' },
 ];
 
 /** Component actions only the owner (not ADMIN_IDS) may use. */
-const OWNER_ONLY = /^owner:(x_|ann_|announce|al_(ch|lvl|dig|dto|mem|dm|rm|more|view)|srv_act|blk_|mt_|ft|st_|op_cmds|op_backup|yes|no)/;
+const OWNER_ONLY = /^owner:(x_|ann_|announce|al_(ch|lvl|dig|dto|mem|dm|rm|more|view|time|trep|tping|tmax)|srv_act|blk_|mt_|ft|st_|op_cmds|op_backup|yes|no)/;
 
 // ── Pending confirmations ─────────────────────────────────────────────────────
 
@@ -250,8 +252,23 @@ function viewAlertsMore(userId, note) {
     pick('owner:al_dig', 'How often…', DIGEST_OPTIONS, st.digestMinutes),
     pick('owner:al_dto', 'Where to send it…', DIGEST_TO_OPTIONS, st.digestTo || 'auto'),
     pick('owner:al_mem', 'Memory auto-restart…', MEMORY_OPTIONS, st.memoryPercent),
-    row(btn('owner:op_digest', 'Send a digest now', ButtonStyle.Primary), btn('owner:al_view', 'Back to alerts')),
+    row(btn('owner:op_digest', 'Send a digest now', ButtonStyle.Primary), btn('owner:al_time', 'Timing'), btn('owner:al_view', 'Back to alerts')),
   ] };
+}
+
+const REPEAT_OPTIONS = [['1', 'Hold a repeat back for 1 minute'], ['5', 'Hold a repeat back for 5 minutes'], ['10', 'Hold a repeat back for 10 minutes (default)'], ['30', 'Hold a repeat back for 30 minutes'], ['60', 'Hold a repeat back for 1 hour']];
+const PING_OPTIONS = [['5', 'Ping me at most every 5 minutes'], ['15', 'Ping me at most every 15 minutes (default)'], ['30', 'Ping me at most every 30 minutes'], ['60', 'Ping me at most every hour'], ['240', 'Ping me at most every 4 hours']];
+const MAX_OPTIONS = [['3', 'At most 3 alerts a minute'], ['6', 'At most 6 alerts a minute (default)'], ['10', 'At most 10 alerts a minute'], ['20', 'At most 20 alerts a minute']];
+
+/** Third alerts page: how long the same alert is held back, how often you are pinged and the most that go out in a minute. */
+function viewAlertsTiming(note) {
+  const a = globalConfig.get().alerts;
+  const rep = String(Number(a.repeatMinutes) || 10), ping = String(Number(a.pingMinutes) || 15), max = String(Number(a.perMinute) || 6);
+  const embed = new EmbedBuilder().setColor(BLUE).setAuthor({ name: 'Owner · Alerts' }).setTitle('Alert timing').setDescription([note,
+    'The same alert is sent once, then held back and counted ("Repeated 4 more times"). Errors can ping you, but only this often. A flood is capped so the channel stays readable.'].filter(Boolean).join('\n\n'))
+    .addFields({ name: 'Repeats', value: `held back ${rep} min`, inline: true }, { name: 'Pings', value: `every ${ping} min at most`, inline: true }, { name: 'Flood cap', value: `${max} a minute`, inline: true });
+  const pick = (id, ph, opts, cur) => row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(ph).addOptions(opts.map(([value, label]) => ({ label, value, default: cur === value }))));
+  return { embeds: [embed], components: [pick('owner:al_trep', 'Repeats…', REPEAT_OPTIONS, rep), pick('owner:al_tping', 'Pings…', PING_OPTIONS, ping), pick('owner:al_tmax', 'Flood cap…', MAX_OPTIONS, max), row(btn('owner:al_more', 'Back'))] };
 }
 
 async function handleAlerts(interaction) {
@@ -272,6 +289,14 @@ async function handleAlerts(interaction) {
     }
     return true;
   }
+  if (interaction.isStringSelectMenu() && /^owner:al_(trep|tping|tmax)$/.test(id)) {
+    const v = Number(interaction.values[0]), key = { trep: 'repeatMinutes', tping: 'pingMinutes', tmax: 'perMinute' }[id.slice(9)];
+    if (!(v > 0)) return false;
+    globalConfig.update(s => { s.alerts[key] = v; });
+    audit({ action: `Alert timing changed (${key})`, actor: interaction.user, details: String(v) });
+    await show(interaction, viewAlertsTiming('Saved.'));
+    return true;
+  }
   if (interaction.isStringSelectMenu() && /^owner:al_(lvl|dig|dto|mem)$/.test(id)) {
     const v = interaction.values[0];
     const more = id !== 'owner:al_lvl';
@@ -288,6 +313,7 @@ async function handleAlerts(interaction) {
   }
   if (!interaction.isButton()) return false;
   if (id === 'owner:al_more') { await again(null, true); return true; }
+  if (id === 'owner:al_time') { await show(interaction, viewAlertsTiming()); return true; }
   if (id === 'owner:al_view') { await again(null); return true; }
   if (id === 'owner:al_dm') {
     const now = alerts.describeDestinations().dm;
@@ -331,9 +357,9 @@ function viewStatus(client, note) {
   const embed = new EmbedBuilder().setColor(BLUE).setTitle('Bot status').setDescription([note,
     list.map((e, i) => `${i + 1}. ${entryText(e)}`).join('\n'),
     '',
-    `Shown as **${{ online: 'Online', idle: 'Idle', dnd: 'Do not disturb' }[st.status]}** · changes every **${st.rotateSeconds >= 60 ? `${st.rotateSeconds / 60} min` : `${st.rotateSeconds}s`}**`,
+    `Shown as **${{ online: 'Online', idle: 'Idle', dnd: 'Do not disturb' }[st.status]}** · changes every **${st.rotateSeconds >= 60 ? `${st.rotateSeconds / 60} min` : `${st.rotateSeconds}s`}**${st.shuffle ? ', in random order' : ''}`,
     presence.isCustomised() ? null : 'These are the built-in statuses. Add or edit one to make the list your own.',
-    'Placeholders: `{servers}` `{members}` `{voicehours}` `{voicenow}` `{uptime}` `{version}`. Only totals are shown, never a server, channel or member.'].filter(v => v !== null && v !== undefined).join('\n'));
+    'Placeholders: `{servers}` `{members}` `{voicehours}` `{voicenow}` `{today}` `{calls}` `{streaming}` `{commands}` `{uptime}` `{version}` `{day}` `{time}`. Only totals are shown, never a server, channel or member.'].filter(v => v !== null && v !== undefined).join('\n'));
   const pickOne = (id, ph, opts, cur) => row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(ph).addOptions(opts.map(([value, label]) => ({ label, value, default: String(cur) === value }))));
   return {
     embeds: [embed],
@@ -342,7 +368,20 @@ function viewStatus(client, note) {
         .addOptions(list.map((e, i) => ({ label: `${i + 1}. ${entryText(e)}`.slice(0, 100), value: e.id })))),
       pickOne('owner:st_online', 'Presence', [['online', 'Online (green)'], ['idle', 'Idle (yellow)'], ['dnd', 'Do not disturb (red)']], st.status),
       pickOne('owner:st_rot', 'Rotation speed', [['15', 'Change every 15 seconds'], ['30', 'Change every 30 seconds'], ['60', 'Change every minute'], ['120', 'Change every 2 minutes'], ['300', 'Change every 5 minutes']], st.rotateSeconds),
-      row(btn('owner:st_new', 'Add status', ButtonStyle.Primary, presence.isCustomised() && list.length >= presence.MAX_ENTRIES), btn('owner:st_reset', 'Reset to defaults', ButtonStyle.Danger, !presence.isCustomised()), back()),
+      row(btn('owner:st_new', 'Add status', ButtonStyle.Primary, presence.isCustomised() && list.length >= presence.MAX_ENTRIES), btn('owner:st_packs', 'Ready-made sets'), btn('owner:st_shuffle', `Shuffle: ${st.shuffle ? 'on' : 'off'}`), btn('owner:st_reset', 'Reset', ButtonStyle.Danger, !presence.isCustomised()), back()),
+    ],
+  };
+}
+
+function viewStatusPacks(client) {
+  const sample = (list) => list.map(e => `• ${entryText({ ...e, text: presence.render(e.text, client) })}`).join('\n');
+  return {
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Ready-made status sets').setDescription([
+      'Pick a set to replace your current list. Numbers shown are live, as they would appear right now. You can edit anything afterwards.', '',
+      ...presence.PACKS.map(p => `**${p.label}**: ${p.desc}\n${sample(p.list)}`)].join('\n').slice(0, 3900))],
+    components: [
+      row(new StringSelectMenuBuilder().setCustomId('owner:st_pack').setPlaceholder('Use a set…').addOptions(presence.PACKS.map(p => ({ label: p.label, value: p.key, description: p.desc.slice(0, 100) })))),
+      row(back('status', 'Back to status')),
     ],
   };
 }
@@ -490,6 +529,7 @@ async function openSection(interaction, client, key) {
     case 'alerts':   return show(interaction, viewAlerts(uid));
     case 'status':   return show(interaction, viewStatus(client));
     case 'announce': return show(interaction, ownerAnnounce.viewHome());
+    case 'tools':    return show(interaction, require('./ownerExtra').toolsView());
     case 'control':  return show(interaction, viewControl());
     case 'blocks':   return show(interaction, viewBlocks());
     case 'audit':    return show(interaction, viewAudit());
@@ -588,6 +628,12 @@ async function handleComponent(interaction, client) {
       await show(interaction, viewStatus(client, res.ok ? `Added: ${entryText(res.entry)}` : res.error));
       return true;
     }
+    if (action === 'st_pack') {
+      const res = presence.usePack(v);
+      if (res.ok) { audit({ action: 'Bot status set replaced', actor: interaction.user, details: res.pack.label }); presence.refresh(client); }
+      await show(interaction, viewStatus(client, res.ok ? `Now using the **${res.pack.label}** set.` : res.error));
+      return true;
+    }
     if (action === 'st_newtype') { await show(interaction, viewStatusNew(v)); return true; }
     if (action === 'st_type') {
       const current = presence.list().find(e => e.id === parts[2]);
@@ -646,6 +692,8 @@ async function handleComponent(interaction, client) {
     case 'blk_add':    await interaction.showModal(blockModal()); return true;
     case 'blk_rmview': await show(interaction, viewUnblock()); return true;
     case 'st_new':     await show(interaction, viewStatusNew()); return true;
+    case 'st_packs':   await show(interaction, viewStatusPacks(client)); return true;
+    case 'st_shuffle': { const on = !presence.settings().shuffle; presence.setShuffle(on); audit({ action: 'Status shuffle changed', actor: interaction.user, details: on ? 'on' : 'off' }); presence.refresh(client); await show(interaction, viewStatus(client, `Shuffle is ${on ? 'on' : 'off'}.`)); return true; }
     case 'st_text':    await interaction.showModal(statusTextModal(`owner:st_addmodal:${parts[2]}`, 'New status')); return true;
     case 'st_edit': {
       const e = presence.list().find(x => x.id === parts[2]);
@@ -709,4 +757,4 @@ async function confirmed(interaction, client, nonce) {
   return false;
 }
 
-module.exports = { open, handleComponent, SECTIONS, _pending: pending, _views: { viewHome, viewServers, viewAlerts, viewStatus, viewControl, viewBlocks, viewAudit } };
+module.exports = { open, handleComponent, SECTIONS, _pending: pending, _views: { viewStatusPacks, viewHome, viewServers, viewAlerts, viewStatus, viewControl, viewBlocks, viewAudit } };

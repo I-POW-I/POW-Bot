@@ -138,15 +138,19 @@ function buildMemberEmbed(member, guild, kicker = 'Member') {
   const fields = [];
   if (stats.session_count > 0) {
     const live = member.voice?.channel;
+    const dayShort = (n) => new Date(n * 86_400_000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    const dayNice = (iso) => dayShort(Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86_400_000));
     fields.push(
       { name: 'Time in voice', value: formatMs(stats.total_ms), inline: true },
       { name: 'Sessions', value: String(stats.session_count), inline: true },
       { name: 'Streak', value: `${stats.streak} ${stats.streak === 1 ? 'day' : 'days'}`, inline: true },
+      { name: 'Longest streak', value: stats.longest_streak ? `${stats.longest_streak} ${stats.longest_streak === 1 ? 'day' : 'days'}${stats.longest_streak > 1 ? `\n${dayShort(stats.longest_streak_from)} to ${dayShort(stats.longest_streak_to)}` : ''}` : '—', inline: true },
       { name: 'Longest session', value: formatMs(stats.longest_session_ms), inline: true },
-      { name: 'Average session', value: formatMs(stats.avg_ms), inline: true },
       { name: 'Last in voice', value: live ? 'In voice now' : stats.last_seen ? `<t:${Math.floor(stats.last_seen / 1000)}:R>` : '—', inline: true },
     );
     if (stats.top_channel) fields.push({ name: 'Top channel', value: stats.top_channel, inline: true });
+    if (stats.busiest_day) fields.push({ name: 'Busiest day', value: `${dayNice(stats.busiest_day)}\n${formatMs(stats.busiest_day_ms)}`, inline: true });
+    if (stats.stream_ms > 0) fields.push({ name: 'Time streaming', value: `${formatMs(stats.stream_ms)}\n${stats.stream_count} ${stats.stream_count === 1 ? 'stream' : 'streams'}`, inline: true });
   } else {
     embed.setDescription('No voice time recorded yet.');
   }

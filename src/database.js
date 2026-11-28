@@ -182,7 +182,7 @@ async function init() {
 // Writes are now batched: the first write schedules one save a moment later, and
 // the file is written to a temp file then renamed so a crash mid-write can never
 // leave a half-written database behind.
-const SAVE_DELAY_MS = 5000;
+const SAVE_DELAY_MS = 15000;   // saving writes the whole database out in one go, which briefly holds everything up: do it less often
 let saveTimer = null;
 let dirty     = false;
 
@@ -308,12 +308,14 @@ function isInVoiceNow(userId, guildId) {
   }
 }
 
-function calcStreak(userId, guildId) {
+/** Every calendar day (as a day number) on which this person was in voice, from all their sessions. */
+function activeDays(userId, guildId) {
   const rows = selectAll(
-    'SELECT joined_at, left_at FROM vc_sessions WHERE user_id = ? AND guild_id = ?',
+    'SELECT joined_at, left_at FROM vc_sessions WHERE user_id = ? AND guild_id = ? AND COALESCE(summary, 0) = 0',
     [userId, guildId]
   );
-  if (rows.length === 0) return 0;
+  const days = new Set();
+  if (rows.length === 0) return days;
 
   const now = Date.now();
 
@@ -323,7 +325,6 @@ function calcStreak(userId, guildId) {
   for (const r of rows) if (r.left_at == null && r.joined_at > newestOpen) newestOpen = r.joined_at;
   const liveNow = newestOpen >= 0 && isInVoiceNow(userId, guildId);
 
-  const days = new Set();
   for (const r of rows) {
     let end   = r.left_at;
     let first = dayNumber(r.joined_at);
@@ -337,12 +338,22 @@ function calcStreak(userId, guildId) {
     const last = Math.min(dayNumber(Math.max(end, r.joined_at)), first + MAX_SESSION_DAYS);
     for (let d = first; d <= last; d++) days.add(d);
   }
+  return days;
+}
 
-  const today = dayNumber(now);
-  let cursor  = days.has(today) ? today : today - 1;   // not in voice yet today? yesterday still counts
-  let streak  = 0;
-  while (days.has(cursor)) { streak++; cursor--; }
-  return streak;
+/** Current streak, and the longest one ever with the days it ran between (day numbers). */
+function streakInfo(userId, guildId) {
+  const days = activeDays(userId, guildId);
+  const today = dayNumber(Date.now());
+  let cursor = days.has(today) ? today : today - 1, current = 0;
+  while (days.has(cursor)) { current++; cursor--; }
+  let longest = 0, from = null, to = null, run = 0, start = null, prev = null;
+  for (const d of [...days].sort((a, b) => a - b)) {
+    if (prev !== null && d === prev + 1) run++; else { run = 1; start = d; }
+    if (run > longest) { longest = run; from = start; to = d; }
+    prev = d;
+  }
+  return { current, longest, from, to, daysActive: days.size };
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -390,7 +401,22 @@ function getUserStats(userId, guildId) {
     [userId, guildId]
   );
 
-  return { ...base, top_channel: top?.channel_name || null, top_channel_ms: top?.total_ms || 0, streak: calcStreak(userId, guildId) };
+  const info = streakInfo(userId, guildId);
+  const busiest = selectOne(
+    `SELECT strftime('%Y-%m-%d', joined_at / 1000, 'unixepoch') AS day, SUM(duration_ms) AS ms FROM vc_sessions
+     WHERE user_id = ? AND guild_id = ? AND COALESCE(summary, 0) = 0 AND duration_ms IS NOT NULL GROUP BY day ORDER BY ms DESC, day ASC LIMIT 1`,
+    [userId, guildId]
+  );
+  const stream = selectOne(
+    'SELECT COALESCE(SUM(duration_ms), 0) AS total_ms, COALESCE(MAX(duration_ms), 0) AS longest_ms, COUNT(*) AS n FROM stream_sessions WHERE user_id = ? AND guild_id = ? AND duration_ms IS NOT NULL',
+    [userId, guildId]
+  ) || { total_ms: 0, longest_ms: 0, n: 0 };
+  return {
+    ...base, top_channel: top?.channel_name || null, top_channel_ms: top?.total_ms || 0,
+    streak: info.current, longest_streak: info.longest, longest_streak_from: info.from, longest_streak_to: info.to, days_active: info.daysActive,
+    busiest_day: busiest?.day || null, busiest_day_ms: Number(busiest?.ms || 0),
+    stream_ms: Number(stream.total_ms), stream_longest_ms: Number(stream.longest_ms), stream_count: Number(stream.n),
+  };
 }
 
 function getServerTotals(guildId) {
@@ -428,6 +454,6 @@ function getStreamStats(userId, guildId) {
 module.exports = {
   init, flush, run, selectOne, selectAll,
   startSession, endSession, getOpenSession,
-  getUserStats, getServerTotals, formatMs,
+  getUserStats, getServerTotals, formatMs, streakInfo, DB_PATH,
   startStreamSession, endStreamSession, getStreamStats,
 };

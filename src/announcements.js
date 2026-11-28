@@ -20,6 +20,38 @@ const field = (id, label, o = {}) => ({ id, label, style: o.long ? 'long' : 'sho
 const lines = (text) => String(text || '').split('\n').map(l => l.trim().replace(/^[-+*•]\s*/, '')).filter(Boolean);
 const safe = (text) => String(text).replace(/```/g, "'''");
 
+// ── Text formatting the owner can choose (src/ownerAnnounce.js → Format) ──────
+
+const TITLE_STYLES = { default: 'Bold (default)', large: 'Large heading', medium: 'Medium heading', small: 'Small heading', caps: 'Bold capitals', quiet: 'Small grey text' };
+const BULLET_STYLES = { none: 'Leave as typed', dots: 'Bullet points', numbers: 'Numbered list' };
+const COLOUR_CHOICES = { auto: ['Automatic (by style)', null], blue: ['Blue', 0x5865F2], green: ['Green', 0x57F287], amber: ['Amber', 0xFAA61A], red: ['Red', 0xED4245], purple: ['Purple', 0x9B59B6], pink: ['Pink', 0xEB459E], grey: ['Grey', 0x747F8D] };
+const DEFAULT_FORMAT = { title: 'default', bullets: 'none', colour: 'auto', footer: true, boldWords: [] };
+const HEADING = { large: '# ', medium: '## ', small: '### ', quiet: '-# ' };
+
+const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Bold chosen words (any case) wherever they appear, leaving text that is already bold alone. */
+function boldWords(text, words) {
+  let out = String(text);
+  for (const w of (words || []).filter(Boolean)) out = out.replace(new RegExp(`(?<![*\\w])(${esc(w)})(?![*\\w])`, 'gi'), '**$1**');
+  return out;
+}
+/** One line per item, as bullets or numbers (lines already starting with a bullet, number or heading are left alone). */
+function listed(text, mode) {
+  if (mode === 'none') return text;
+  let n = 0;
+  return String(text).split('\n').map(l => {
+    const t = l.trim();
+    if (!t || /^([-*•]\s|\d+[.)]\s|#|-#)/.test(t)) return l;
+    return mode === 'numbers' ? `${++n}. ${t}` : `• ${t}`;
+  }).join('\n');
+}
+const formatBody = (text, f) => boldWords(listed(text, f.bullets), f.boldWords);
+/** The title as a line of text, in the chosen style. */
+function titleLine(title, style) {
+  if (HEADING[style]) return `${HEADING[style]}${title}`;
+  return style === 'caps' ? `**${String(title).toUpperCase()}**` : `**${title}**`;
+}
+
 const STYLES = {
   changelog: {
     label: 'Changelog', emoji: '📋', desc: 'Title and a coloured list of what was added, fixed and removed',
@@ -30,10 +62,10 @@ const STYLES = {
       field('removed', 'Removed (one per line)', { long: true, required: false, placeholder: 'The Bot Info button' }),
       field('note', 'Note (optional, shown under the list)', { required: false, max: 200 }),
     ],
-    render(v) {
+    render(v, f) {
       const diff = [...lines(v.added).map(l => `+ ${safe(l)}`), ...lines(v.fixed).map(l => `+ Fixed: ${safe(l)}`), ...lines(v.removed).map(l => `- ${safe(l)}`)];
       if (!diff.length) return { error: 'Add at least one line to Added, Fixed or Removed.' };
-      const content = [`**${v.title}**`, '', '```diff', ...diff, '```', v.note ? v.note : null].filter(x => x !== null).join('\n');
+      const content = [titleLine(v.title, f.title), '', '```diff', ...diff, '```', v.note ? v.note : null].filter(x => x !== null).join('\n');
       return { content };
     },
     kind: 'changelog',
@@ -47,7 +79,7 @@ const STYLES = {
   maintenance: {
     label: 'Maintenance notice', emoji: '🔧', desc: 'Planned downtime, with when and for how long',
     fields: [
-      field('when', 'When', { placeholder: 'Tonight at 23:00 (UK time)' }),
+      field('when', 'When', { placeholder: 'Tonight at 11:00 PM' }),
       field('duration', 'Expected duration', { placeholder: 'About 10 minutes' }),
       field('details', 'What members should know', { long: true, required: false, max: 800, placeholder: 'The bot will be offline briefly. Nothing needs to be done.' }),
     ],
@@ -79,22 +111,36 @@ const STYLES = {
   plain: {
     label: 'Plain message', emoji: '💬', desc: 'Just text, no embed',
     fields: [field('title', 'Heading (optional)', { required: false, max: 100 }), field('body', 'Message', { long: true, max: 1800 })],
-    render: (v) => ({ content: [v.title ? `**${v.title}**` : null, v.body].filter(Boolean).join('\n') }),
+    render: (v, f) => ({ content: [v.title ? titleLine(v.title, f.title) : null, v.body].filter(Boolean).join('\n') }),
     kind: 'plain',
   },
 };
 
-/** Trim the typed values, then build the message. Returns { payload, title } or { error }. */
-function build(style, values) {
+const BODY_FIELDS = { update: ['body'], maintenance: ['details'], incident: ['details'], event: ['details'], plain: ['body'] };
+
+/** Trim the typed values, then build the message. Returns { payload, title } or { error }. `format` is the owner's text choices. */
+function build(style, values, format = {}) {
   const s = STYLES[style];
   if (!s) return { error: 'Unknown style.' };
+  const f = { ...DEFAULT_FORMAT, ...format };
   const v = {};
-  for (const f of s.fields) {
-    v[f.id] = String(values[f.id] ?? '').trim();
-    if (f.required && !v[f.id]) return { error: `"${f.label}" is required.` };
+  for (const fld of s.fields) {
+    v[fld.id] = String(values[fld.id] ?? '').trim();
+    if (fld.required && !v[fld.id]) return { error: `"${fld.label}" is required.` };
   }
-  const out = s.render(v);
+  for (const id of BODY_FIELDS[style] || []) if (v[id]) v[id] = formatBody(v[id], f);
+  const out = s.render(v, f);
   if (out.error) return { error: out.error };
+
+  for (const embed of out.embeds || []) {   // colour, footer and heading styles apply to the card styles
+    const d = embed.data;
+    if (COLOUR_CHOICES[f.colour]?.[1] != null) embed.setColor(COLOUR_CHOICES[f.colour][1]);
+    if (!f.footer) embed.setFooter(null);
+    if (d.title && (HEADING[f.title] || f.title === 'caps')) {
+      if (f.title === 'caps') embed.setTitle(String(d.title).toUpperCase());
+      else { const head = titleLine(d.title, f.title); embed.setTitle(null).setDescription([head, d.description].filter(Boolean).join('\n\n')); }
+    }
+  }
   if ((out.content || '').length > MAX_MESSAGE) return { error: `That is ${out.content.length} characters; the limit is ${MAX_MESSAGE}. Shorten it.` };
   return { payload: { ...out, allowedMentions: { parse: [] } }, title: v.title || s.label };
 }
@@ -128,4 +174,4 @@ function changelogView(id) {
   return { content: e.payload.content || null, embeds: (e.payload.embeds || []).map(x => EmbedBuilder.from(x)), components: [new ActionRowBuilder().addComponents(menu)] };
 }
 
-module.exports = { changelogView, STYLES, build, record, recent, publicEntries, entry, MAX_MESSAGE };
+module.exports = { changelogView, STYLES, TITLE_STYLES, BULLET_STYLES, COLOUR_CHOICES, DEFAULT_FORMAT, build, record, recent, publicEntries, entry, MAX_MESSAGE };

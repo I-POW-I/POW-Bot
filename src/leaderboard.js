@@ -157,7 +157,7 @@ async function view(guild, period = 'all', viewerId = null) {
   }
   const select = new StringSelectMenuBuilder().setCustomId('lb:period').setPlaceholder('Time period')
     .addOptions(Object.entries(PERIODS).map(([value, p]) => ({ label: p.label, value, default: value === period })));
-  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)], showpiece: true };
 }
 
 // ── Scheduled post ────────────────────────────────────────────────────────────
@@ -191,6 +191,7 @@ async function postView(guild, frequency) {
       .setDescription(lines.length ? rankLines(lines) : 'Nobody spent time in voice this period.')
       .setFooter({ text: `${PERIODS[period].label} · the AFK channel is not counted` })],
     allowedMentions: { parse: [] },
+    showpiece: true,
   };
 }
 

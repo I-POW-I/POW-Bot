@@ -85,7 +85,7 @@ async function postUpdate(client, sub, update) {
   const channel = await fetchChannel(client, sub.channel_id);
   if (!channel) return false;
   const card = buildUpdateCard({ ...update, game: sub.game_name || update.game });
-  await channel.send({ content: sub.role_id ? `<@&${sub.role_id}>` : undefined, ...card });
+  await channel.send({ content: sub.role_id ? `<@&${sub.role_id}>` : undefined, ...card, showpiece: 'links' });
   return true;
 }
 
@@ -104,17 +104,19 @@ async function pollUpdates(client) {
   if (!require('./globalConfig').featureEnabled('gameAlerts')) return;   // global switch (/owner features)
   const subs = unlocked(selectAll(`SELECT * FROM game_subscriptions WHERE app_id NOT IN ${require('./freeGames').SQL_IDS}`, []));
   const fetched = new Map();   // app_id → update | null | Error
+  const mirrored = new Set();  // games already copied to the hub this round
 
   for (const sub of subs) {
     if (!isUpdateKey(sub.app_id)) continue;
 
     if (!fetched.has(sub.app_id)) {
       try { fetched.set(sub.app_id, await fetchLatest(sub)); }
-      catch (err) { fetched.set(sub.app_id, err); warnOnce(sub.app_id, `Could not read updates for ${sub.game_name}`, { source: sub.app_id, err }); }
+      catch (err) { fetched.set(sub.app_id, err); warnOnce(sub.app_id, `Could not read updates for ${sub.game_name}`, { tag: 'GAMES', source: sub.app_id, err }); }
       await new Promise(r => setTimeout(r, 1000));
     }
     const update = fetched.get(sub.app_id);
     if (!update || update instanceof Error) continue;
+    if (!mirrored.has(sub.app_id)) { mirrored.add(sub.app_id); await require('./gameHub').mirror(client, sub.app_id, sub.game_name || update.game, update, postKeys(update)); }   // the owner's Game Updates Hub, once per game
 
     // A post can be known by more than one number (Steam's feed and its news API number the same post differently, and which
     // one answers can change from one check to the next), so every number and the title are remembered. Seeing any of them again is the same post.
@@ -128,7 +130,7 @@ async function pollUpdates(client) {
     try {
       if (await postUpdate(client, sub, update)) {
         run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [remember(), sub.id]);
-        log('INFO', `Posted update: ${update.title}`, { game: sub.game_name, guild: sub.guild_id });
+        log('INFO', `Posted update: ${update.title}`, { tag: 'GAMES', game: sub.game_name, guild: sub.guild_id });
       }
     } catch (err) { log('WARN', 'Failed to post a game update', { game: sub.game_name, err }); }
   }
@@ -160,7 +162,7 @@ async function checkEpicGames(client) {
 
       for (let i = 0; i < current.length; i++) {
         const { embed, row } = buildEpicGameEmbed(current[i]);
-        await channel.send({ content: i === 0 ? content : undefined, embeds: [embed], components: [row] });
+        await channel.send({ content: i === 0 ? content : undefined, embeds: [embed], components: [row], showpiece: 'links' });
         if (i < current.length - 1) await new Promise(r => setTimeout(r, 1000));
       }
 
@@ -175,7 +177,7 @@ async function checkEpicGames(client) {
             return `**${g.title}** — free from ${starts}${g.origPrice ? ` (normally ${g.origPrice})` : ''}`;
           }).join('\n'))
           .setFooter({ text: 'Epic Games Store' });
-        await channel.send({ embeds: [upEmbed] });
+        await channel.send({ embeds: [upEmbed], showpiece: 'links' });
       }
 
       run('UPDATE game_subscriptions SET last_post_id = ? WHERE id = ?', [currentKey, sub.id]);
@@ -217,7 +219,7 @@ async function checkGiveaways(client, appId) {
 
       for (let i = 0; i < newGames.length; i++) {
         const { embed, row } = await newGames[i].build();
-        await channel.send({ content: i === 0 ? content : undefined, embeds: [embed], components: [row] });
+        await channel.send({ content: i === 0 ? content : undefined, embeds: [embed], components: [row], showpiece: 'links' });
         if (i < newGames.length - 1) await new Promise(r => setTimeout(r, 1000));
       }
 

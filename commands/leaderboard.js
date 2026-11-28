@@ -12,7 +12,7 @@ module.exports = {
   async execute(interaction) {
     // A public post everyone can read, so it has no personal "your position" line and no menu that would change it for others
     await interaction.deferReply();
-    const { embeds } = await leaderboard.view(interaction.guild, interaction.options.getString('period') || 'all', null);
-    await interaction.editReply({ embeds });
+    const { embeds, showpiece } = await leaderboard.view(interaction.guild, interaction.options.getString('period') || 'all', null);
+    await interaction.editReply({ embeds, showpiece });
   },
 };

@@ -24,7 +24,7 @@ const CATEGORIES = [
       '**Join**: choose the voice channel I should join (yours, or any other). *(Manage Server)*',
       '**Move**: pick another channel and confirm. *(Manage Server or the bot control role)*',
       '**Leave**: confirm and I leave. *(server owner or the bot control role)*',
-      '**My card**: your voice time, sessions, streak and favourite channel.',
+      '**My card**: your voice time, sessions, streaks (current and longest), busiest day, streaming time and favourite channel.',
       '**Busy times**: how many people are in voice now, how many usually are at this time, and when it is busiest.',
       '**Weekly recap**: the last 7 days in voice.',
       '**Leaderboard**: who has spent the most time in voice, for all time, the last 30 days or the last 7 days.',

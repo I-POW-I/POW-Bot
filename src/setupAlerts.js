@@ -74,7 +74,7 @@ function viewStreamers(guild, user, note) {
     components: [
       channelSelect('setup:streamers:ch', 'Post live alerts in…', d.channelId, ALERT_CHANNELS),
       roleSelect('setup:streamers:role', 'Role to ping (optional)', d.roleId, true),
-      new ActionRowBuilder().addComponents(button('setup:streamers:add', 'Add streamer', ButtonStyle.Primary), button('setup:streamers:rm', 'Remove streamer', ButtonStyle.Secondary, total === 0), backButton()),
+      new ActionRowBuilder().addComponents(...[button('setup:streamers:add', 'Add streamer', ButtonStyle.Primary), button('setup:streamers:rm', 'Remove streamer', ButtonStyle.Secondary, total === 0), kit.announcementButton('setup:streamers:annch', guild), backButton()].filter(Boolean)),
     ],
   };
 }
@@ -135,8 +135,9 @@ async function handleStreamers(interaction, { guild, by, action }) {
   const show = (note) => respond(interaction, viewStreamers(guild, by, note));
 
   if (!action) return show();
-  if (action === 'ch') {
-    const channel = interaction.channels.first();
+  if (action === 'ch' || action === 'annch') {
+    const channel = action === 'annch' ? kit.announcementChannel(guild) : interaction.channels.first();
+    if (!channel) return show(noteBad('I could not find that channel.'));
     const missing = missingIn(channel, guild);
     if (missing.length) return show(noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`));
     d.channelId = channel.id;
@@ -210,6 +211,7 @@ function viewUpdates(guild, user, note) {
   if (d.source === 'rss')   buttons.push(button('setup:updates:find', 'Enter feed URL'));
   buttons.push(button('setup:updates:add', 'Add alert', ButtonStyle.Primary, !ready));
   buttons.push(button('setup:updates:manage', 'Manage alerts', ButtonStyle.Secondary, subs.length === 0));
+  const annBtn = kit.announcementButton('setup:updates:annch', guild); if (annBtn) buttons.push(annBtn);
   buttons.push(backButton());
   components.push(new ActionRowBuilder().addComponents(buttons));
   return { embeds: [embed], components };
@@ -284,8 +286,10 @@ async function handleUpdates(interaction, { guild, by, action, arg, client }) {
     d.name = d.source === 'steam' ? d.matches?.find(m => String(m.appid) === d.value)?.name || null : SOURCES[d.source]?.games?.find(g => g.value === d.value)?.name || null;
     return show();
   }
-  if (action === 'ch') {
-    const channel = interaction.channels.first(), missing = missingIn(channel, guild);
+  if (action === 'ch' || action === 'annch') {
+    const channel = action === 'annch' ? kit.announcementChannel(guild) : interaction.channels.first();
+    if (!channel) return show(noteBad('I could not find that channel.'));
+    const missing = missingIn(channel, guild);
     if (missing.length) return show(noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`));
     d.channelId = channel.id; return show();
   }
@@ -382,7 +386,7 @@ function viewFree(guild, note) {
       channelSelect('setup:free:ch', 'Post free games in…', current?.channel_id, ALERT_CHANNELS),
       roleSelect('setup:free:role', 'Role to ping (optional)', current?.role_id, true),
       new ActionRowBuilder().addComponents(...IDS.map(id => button(`setup:free:store:${id}`, `${STORES[id].short}: ${on.has(id) ? 'on' : 'off'}`, on.has(id) ? ButtonStyle.Success : ButtonStyle.Secondary, !current))),
-      new ActionRowBuilder().addComponents(button('setup:free:off', 'Turn all off', ButtonStyle.Danger, !current), backButton()),
+      new ActionRowBuilder().addComponents(...[button('setup:free:off', 'Turn all off', ButtonStyle.Danger, !current), kit.announcementButton('setup:free:annch', guild), backButton()].filter(Boolean)),
     ],
   };
 }
@@ -392,8 +396,10 @@ async function handleFree(interaction, { guild, by, action, arg }) {
   const current = freeRows(guild.id)[0];
 
   if (!action) return show();
-  if (action === 'ch') {
-    const channel = interaction.channels.first(), missing = missingIn(channel, guild);
+  if (action === 'ch' || action === 'annch') {
+    const channel = action === 'annch' ? kit.announcementChannel(guild) : interaction.channels.first();
+    if (!channel) return show(noteBad('I could not find that channel.'));
+    const missing = missingIn(channel, guild);
     if (missing.length) return show(noteBad(`I can't post in ${channel}: missing **${missing.join(', ')}**.`));
     saveFree(guild, channel.id, current?.role_id || null);
     audit({ action: current ? 'Free game alerts changed' : 'Free game alerts set up', actor: by, guild, details: `→ #${channel.name}` });

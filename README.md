@@ -9,7 +9,7 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 - Joins a voice channel and stays connected, with automatic rejoin after a restart or a dropped connection
 - Live voice control panel with Join, Move and Leave (with pickers and confirmations), My card, busy times, a weekly recap, the leaderboard and Wrapped (a personal and a server year in review, with optional message counting and a December auto-post)
 - Voice leaderboard (all time, 30 days, 7 days) with optional role rewards and an optional weekly or monthly post
-- Logs for voice activity, deleted and edited messages, members and server changes (channels, roles, emoji, invites, threads, AutoMod and more, with who did it). Each log can be switched on and off by kind of event, message logs can ignore channels, roles, people and bots, and server changes can be routed to a channel per kind. Every message the bot sends uses one consistent card look
+- Logs for voice activity, deleted and edited messages, members and server changes (channels, roles, emoji, invites, threads, AutoMod and more, with who did it). Each log can be switched on and off by kind of event, message logs can ignore channels, roles, people and bots, and server changes can be routed to a channel per kind. The live panel, My card and member cards, Wrapped, busy times, the weekly recap, the leaderboard and streamer, game update and free game posts are dark picture cards; everything else (verification, reaction roles, help, setup, polls, announcements, logs) is a classic Discord embed. Each server can switch the picture cards to embeds with /setup > Display > Card style
 - Welcome and leave posts: image card, rich embed or both, five card styles, welcome-back for returning members, welcome message and roles for new members
 - Human verification with staff approval, quarantine and auto-removal
 - Role menus (members pick their own roles), join-to-create voice rooms and polls
@@ -44,6 +44,10 @@ A Discord bot that stays in a voice channel 24/7, keeps call timers running, log
 | `/owner` | The owner control hub | `OWNER_IDS` / `ADMIN_IDS` only |
 
 ---
+
+## Game Updates Hub (optional)
+
+Set `GAME_UPDATES_HUB_GUILD_ID` to the ID of your own server and give the bot **Manage Channels** there. Each game update the bot posts anywhere is also copied to a channel for that game, so you have one place to read them all. See the changelog for details.
 
 ## Server setup advice
 

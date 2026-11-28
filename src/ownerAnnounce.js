@@ -41,7 +41,7 @@ function newDraft(userId, style, values) {
   const now = Date.now();
   for (const [k, v] of drafts) if (v.expires < now) drafts.delete(k);
   const id = crypto.randomBytes(4).toString('hex');
-  drafts.set(id, { userId, style, values, selected: new Set(), overrides: new Map(), expires: now + TTL });
+  drafts.set(id, { userId, style, values, format: { ...announcements.DEFAULT_FORMAT }, selected: new Set(), overrides: new Map(), expires: now + TTL });
   return id;
 }
 function draftOf(id, userId) {
@@ -119,7 +119,7 @@ const modalFor = (styleKey, nonce, values = {}) => {
 };
 
 function viewPreview(nonce, d, note) {
-  const built = announcements.build(d.style, d.values);
+  const built = announcements.build(d.style, d.values, d.format);
   const label = announcements.STYLES[d.style].label;
   if (built.error) {
     return { content: null, embeds: [new EmbedBuilder().setColor(AMBER).setTitle(`${label}: needs a change`).setDescription(built.error)],
@@ -129,7 +129,33 @@ function viewPreview(nonce, d, note) {
   return {
     content: built.payload.content || null,
     embeds: [...(built.payload.embeds || []), info],
-    components: [row(btn(`owner:ann_edit:${nonce}`, 'Edit text'), btn(`owner:ann_servers:${nonce}:0`, 'Choose servers', ButtonStyle.Primary), btn(`owner:ann_cancel:${nonce}`, 'Discard'))],
+    components: [row(btn(`owner:ann_edit:${nonce}`, 'Edit text'), btn(`owner:ann_fmt:${nonce}`, 'Format text'), btn(`owner:ann_servers:${nonce}:0`, 'Choose servers', ButtonStyle.Primary), btn(`owner:ann_cancel:${nonce}`, 'Discard'))],
+  };
+}
+
+function viewFormat(nonce, d, note) {
+  const f = d.format, A = announcements;
+  const pick = (kind, ph, options, cur) => row(new StringSelectMenuBuilder().setCustomId(`owner:ann_fset:${nonce}:${kind}`).setPlaceholder(ph)
+    .addOptions(options.map(([value, label]) => ({ label, value, default: cur === value }))));
+  const embedStyle = ['changelog', 'plain'].includes(d.style) ? false : true;
+  return {
+    content: null,
+    embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Format text').setDescription([note,
+      'Change how the message reads. The preview updates as you choose.',
+      '',
+      `**Title:** ${A.TITLE_STYLES[f.title]}`,
+      `**List lines as:** ${A.BULLET_STYLES[f.bullets]}`,
+      embedStyle ? `**Colour:** ${A.COLOUR_CHOICES[f.colour][0]}` : null,
+      `**Bold words:** ${f.boldWords.length ? f.boldWords.join(', ') : 'none'}`,
+      embedStyle ? `**Footer:** ${f.footer ? 'shown' : 'hidden'}` : null,
+      '',
+      '-# Text you type yourself can also use **bold**, *italics*, __underline__, ~~strike~~ and `code`.'].filter(v => v !== null && v !== undefined).join('\n'))],
+    components: [
+      pick('title', 'Title style', Object.entries(A.TITLE_STYLES), f.title),
+      pick('bullets', 'List lines as…', Object.entries(A.BULLET_STYLES), f.bullets),
+      ...(embedStyle ? [pick('colour', 'Colour', Object.entries(A.COLOUR_CHOICES).map(([k, [label]]) => [k, label]), f.colour)] : []),
+      row(btn(`owner:ann_fwords:${nonce}`, 'Bold words…'), ...(embedStyle ? [btn(`owner:ann_ffoot:${nonce}`, f.footer ? 'Hide footer' : 'Show footer')] : []), btn(`owner:ann_freset:${nonce}`, 'Reset'), btn(`owner:ann_preview:${nonce}`, 'Back to preview', ButtonStyle.Primary)),
+    ],
   };
 }
 
@@ -194,7 +220,7 @@ function viewChannelPick(guild, nonce, d) {
 }
 
 function viewConfirm(client, nonce, d) {
-  const built = announcements.build(d.style, d.values);
+  const built = announcements.build(d.style, d.values, d.format);
   const count = selectedGuilds(client, d).filter(g => targetFor(g, d)).length;
   return {
     content: null,
@@ -217,7 +243,7 @@ function viewHistory() {
 // ── Sending ───────────────────────────────────────────────────────────────────
 
 async function send(interaction, client, d) {
-  const built = announcements.build(d.style, d.values);
+  const built = announcements.build(d.style, d.values, d.format);
   const sent = [], failed = [], skipped = [];
   for (const guild of selectedGuilds(client, d)) {
     const target = targetFor(guild, d);
@@ -256,6 +282,14 @@ async function handle(interaction, client) {
     return true;
   }
 
+  if (interaction.isModalSubmit() && action === 'ann_wordsmodal') {
+    const d = draftOf(nonce, uid);
+    if (!d) { await respond(interaction, { content: 'That announcement expired. Start again from Announcements.', embeds: [], components: [row(backToSection())] }); return true; }
+    d.format.boldWords = interaction.fields.getTextInputValue('words').split(/[,\n]/).map(w => w.trim()).filter(Boolean).slice(0, 12);
+    await respond(interaction, viewFormat(nonce, d, 'Bold words saved.'));
+    return true;
+  }
+
   if (action === 'ann_style') { await interaction.showModal(modalFor(interaction.values[0], 'new')); return true; }
   if (action === 'ann_hist') { await respond(interaction, viewHistory()); return true; }
 
@@ -269,6 +303,22 @@ async function handle(interaction, client) {
     case 'ann_edit': await interaction.showModal(modalFor(d.style, nonce, d.values)); return true;
     case 'ann_cancel': drafts.delete(nonce); await respond(interaction, viewHome('Discarded.')); return true;
     case 'ann_preview': await respond(interaction, viewPreview(nonce, d)); return true;
+    case 'ann_fmt': await respond(interaction, viewFormat(nonce, d)); return true;
+    case 'ann_fset': {
+      const kind = parts[3], v = interaction.values[0], A = announcements;
+      if (kind === 'title' && A.TITLE_STYLES[v]) d.format.title = v;
+      if (kind === 'bullets' && A.BULLET_STYLES[v]) d.format.bullets = v;
+      if (kind === 'colour' && A.COLOUR_CHOICES[v]) d.format.colour = v;
+      await respond(interaction, viewFormat(nonce, d));
+      return true;
+    }
+    case 'ann_ffoot': d.format.footer = !d.format.footer; await respond(interaction, viewFormat(nonce, d)); return true;
+    case 'ann_freset': d.format = { ...announcements.DEFAULT_FORMAT }; await respond(interaction, viewFormat(nonce, d, 'Back to the defaults.')); return true;
+    case 'ann_fwords':
+      await interaction.showModal(new ModalBuilder().setCustomId(`owner:ann_wordsmodal:${nonce}`).setTitle('Bold words').addComponents(
+        row(new TextInputBuilder().setCustomId('words').setLabel('Words to make bold (comma separated)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(200)
+          .setValue(d.format.boldWords.join(', ')).setPlaceholder('new, fixed, important'))));
+      return true;
     case 'ann_servers': await respond(interaction, viewServers(client, nonce, d, Number(parts[3]) || 0)); return true;
     case 'ann_pg': await respond(interaction, viewServers(client, nonce, d, Number(parts[3]) || 0)); return true;
     case 'ann_pick': {
@@ -321,4 +371,4 @@ async function handle(interaction, client) {
   }
 }
 
-module.exports = { viewHome, handle, _drafts: drafts, _targetFor: targetFor, _announcementChannel: announcementChannel };
+module.exports = { viewHome, viewFormat, handle, _drafts: drafts, _targetFor: targetFor, _announcementChannel: announcementChannel };

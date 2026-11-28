@@ -50,10 +50,19 @@ function emojiName(str) {
  * Text the bundled font can draw. Fancy "letters" from the maths block (𝐇𝐞𝐥𝐥𝐨) and full-width forms are turned into
  * ordinary letters; box-drawing and block characters used to decorate channel names are dropped (they would show as boxes).
  */
-const DECORATIVE = /[\u2500-\u259F\u25A0-\u25FF\u2800-\u28FF\uE000-\uF8FF\uFFF0-\uFFFF]/gu;
+const DECORATIVE = /[\u27C0-\u27EF\u2980-\u29FF\u2500-\u259F\u25A0-\u25FF\u2800-\u28FF\uE000-\uF8FF\uFFF0-\uFFFF]/gu;
 // invisible fillers (Hangul fillers are the usual "blank" channel-name trick), control and unassigned characters, and tag characters
 const INVISIBLE = /[\u115F\u1160\u3164\uFFA0\u034F\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u{E0000}-\u{E007F}\p{Cc}\p{Cn}\p{Co}]/gu;
-const clean = (s) => String(s ?? '').replace(INVISIBLE, '').normalize('NFKC').replace(INVISIBLE, '').replace(DECORATIVE, '');
+// symbols and ornaments the font cannot draw (★ ✦ ☠ and the like; real emoji are drawn separately), stacked "zalgo" accents, and 「 」 style brackets
+const ORNAMENT = /[\p{Extended_Pictographic}\u2700-\u27BF]/gu;
+const notEmoji = (c) => (/\p{Emoji}/u.test(c) ? c : '');
+const STACKED_MARKS = /[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]/g;
+const CJK_BRACKETS = /[\u3008-\u3011\u3014-\u301B\uFF5F\uFF60\u2E28\u2E29]/g;
+// small capitals (ᴀʙᴄ) are common in names and are read as ordinary letters
+const SMALL_CAPS = { 'ᴀ': 'A', 'ʙ': 'B', 'ᴄ': 'C', 'ᴅ': 'D', 'ᴇ': 'E', 'ꜰ': 'F', 'ɢ': 'G', 'ʜ': 'H', 'ɪ': 'I', 'ᴊ': 'J', 'ᴋ': 'K', 'ʟ': 'L', 'ᴍ': 'M', 'ɴ': 'N', 'ᴏ': 'O', 'ᴘ': 'P', 'ǫ': 'Q', 'ʀ': 'R', 'ꜱ': 'S', 'ᴛ': 'T', 'ᴜ': 'U', 'ᴠ': 'V', 'ᴡ': 'W', 'ʏ': 'Y', 'ᴢ': 'Z' };
+const SMALL_CAPS_RE = new RegExp(`[${Object.keys(SMALL_CAPS).join('')}]`, 'g');
+const clean = (s) => String(s ?? '').replace(INVISIBLE, '').normalize('NFKC').replace(SMALL_CAPS_RE, c => SMALL_CAPS[c]).replace(INVISIBLE, '')
+  .replace(STACKED_MARKS, '').replace(CJK_BRACKETS, '').replace(ORNAMENT, notEmoji).replace(DECORATIVE, '');
 
 function inline(text, resolve = () => null, base = {}, markdown = true) {
   const runs = [];
@@ -210,4 +219,4 @@ function wrapRuns(ctx, runs, maxW, size, weight, hard = false) {
   return out;
 }
 
-module.exports = { inline, layout, linksIn, plain, fontFor, emojiName, timestampText, MONO };
+module.exports = { clean, inline, layout, linksIn, plain, fontFor, emojiName, timestampText, MONO };

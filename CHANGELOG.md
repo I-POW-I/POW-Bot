@@ -1,5 +1,30 @@
 # Changelog
 
+## 5.10.0
+
+- **Cards where they help, embeds everywhere else.** The live panel, My card and member cards, Wrapped, busy times, the weekly recap, the leaderboard, and streamer, game update and free game posts stay as picture cards (links stay clickable buttons, and the people and channels in them are repeated above the card as real mentions). Everything else is now a classic Discord embed: verification, reaction roles, help, setup and `/owner` screens, confirmations, polls, announcements, log entries and error replies. A card that cannot be drawn, or is too long to read as a picture, is still sent as the embed. Embeds send faster, and their text can be copied and read by a screen reader. Each server can switch the picture cards to embeds with `/setup` > Display > **Card style**; the panel embed shows the same figures as the card, and the card image has a spoken description. The older per-area choices on that page still work
+- **Verification wording.** The prompt, code screen, "Why verify?" and the replies are shorter and plainer, with no emoji or exclamation marks. Buttons are now **Verify** and **New image**
+- **Fewer false alarms.** A brief Discord voice-server drop (errors like 522 or 503) is now a warning, not an error, and the hourly check rejoins as before. If Discord rate-limits the alert webhook (429), the bot waits the time Discord asks for and tries once more instead of losing the alert
+- **Game Updates Hub.** Set `GAME_UPDATES_HUB_GUILD_ID` to your own server's ID (the bot needs Manage Channels there) and every game update is also copied there, one channel per game under a "Game Updates" category, posted once however many servers follow the game. If the server has Community on, the channels are Announcement channels, so anyone can follow them with Discord's Follow button. Other servers keep their own updates channel and are not affected. `/owner` > Owner tools shows whether it is connected
+- **Alert timing.** `/owner` > Alerts > Digest and memory > Timing sets how long a repeat of the same alert is held back (1 minute to 1 hour), how often errors can ping you (5 minutes to 4 hours) and the most alerts per minute. The console digest shows the latest 14 lines instead of 6
+- **Cleaner alerts.** Webhook, DM and channel alerts now share one layout: a label on top (Error, Warning, Change, Notice, Memory, Console digest), the plain-English cause, then short fields (server, user, code, where). Repeats and skipped alerts are worded clearly. The console digest reads the new log lines, shows 12-hour times, and has one row of memory, CPU, uptime and calls
+- **More on My card and Wrapped.** My card shows your longest streak ever with its dates (not only the current one), your busiest day and your time streaming. My Server Time Wrapped and Server Wrapped show the streak with its dates, time streaming, and who streamed the most. Streaks no longer use imported totals, which have no dates
+- **Owner tools** (`/owner` > Owner tools): Stat check (how one member's voice days, streaks and streams add up), Health (how long the bot goes without being able to answer, memory, database size), Game Updates Hub status, Switch commands off (a command you switch off answers politely for everyone but you and bot admins; `/owner`, `/setup` and `/help` can never be switched off) and Save data now
+- **Announcement formatting.** After writing an announcement, Format text lets you pick the title style (bold, large, medium or small heading, capitals, small grey), bullets or numbers, words to make bold, the colour and whether the footer shows. The preview updates as you choose
+- **Bot status.** 22 templates, seven ready-made sets (Minimal, Community, Voice focused, Stats showcase, Gaming, Professional, Day and time) and a shuffle option. New placeholders: `{today}`, `{calls}`, `{streaming}`, `{commands}`, `{day}`, `{time}`
+- **Server options** in `/setup` > Display: an accent colour for the bot's posts and replies, and a 12 or 24 hour clock. Times read like `9:00 PM` by default
+- **One tap channel.** Streamer alerts, game updates, free games and the scheduled leaderboard post offer "Use #announcements" when the server has an announcement channel
+- **Names on cards.** Small capitals, stacked "zalgo" accents, odd brackets and symbols the font cannot draw are cleaned from names, so they no longer show as empty boxes
+
+## 5.9.1
+
+- **Console lines.** Every line is now `LEVEL | TAG | sentence | details` and starts with one of Discloud's own levels (trace, debug, info, warn, error, fatal) in its colours, so Discloud's filters and search work on all of them. Each tag has its own colour, so lines are easy to tell apart at a glance. HEART, VOICE and AUDIT are tags on info lines, a lost call is a warning, and an uncaught exception is fatal
+- **Heartbeat.** One line an hour (`Connected | all 8 healthy | up …`) instead of a line per server. Server details only appear on a problem, and reconnects only when an error caused one
+- **Slow replies.** The bot now tells Discord it is working sooner (after 0.7 seconds, and a watchdog at 2.3 seconds for commands that are slow to start), so a slow moment no longer becomes "Unknown interaction". A reply that still arrives too late is logged as a warning, not an error. Database saves are less frequent, because each one briefly holds the bot up
+- **Streaks in Wrapped** now count every day a call ran into, so a session across midnight no longer breaks a streak (My card already did this)
+- **Time zones.** `/setup` > Display has a time zone choice for the server (UK time unless the bot's `TZ` says otherwise). Busy times, Wrapped's busiest hour and the charts use it instead of UTC
+- **Wrapped cards** are sent as separate messages, because Discord was putting the stats card and the chart side by side and cropping both
+
 ## 5.9.0
 
 - **Role menus.** `/setup` > Role menus: write a title, choose up to 15 roles, a channel and whether members pick one or any, and the bot posts a message with a drop-down. Picking gives the roles and removes the ones no longer chosen. Menus can be posted again or removed from the same page

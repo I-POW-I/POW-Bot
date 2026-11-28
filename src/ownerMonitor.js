@@ -149,9 +149,17 @@ async function consoleFile(lines = 400) {
 
 // Discloud puts an ISO timestamp in front of every console line; the digest drops it (clutter) and
 // only shows a short [HH:MM] on lines that matter (errors / warnings).
+const ZONE = () => process.env.TZ || 'Europe/London';
+/** 9:05 AM style, in the bot's own time zone. */
+const clock = (d) => new Intl.DateTimeFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: ZONE() }).format(d).replace(/\s?([ap])m/i, (_, x) => ` ${x.toUpperCase()}M`).replace(/^0/, '');
 const TS_RE = /^\s*\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})[\d:.]*Z?\s+/;
-const splitLine = (line) => { const m = TS_RE.exec(line); return m ? { time: `${m[1]}:${m[2]}`, text: line.slice(m[0].length).trim() } : { time: null, text: line.trim() }; };
-const ISSUE = /\b(ERROR|WARN|GHOST)\b/;
+const splitLine = (line) => {
+  const m = TS_RE.exec(line);
+  if (!m) return { time: null, text: line.trim() };
+  const iso = /^\s*(\d{4}-\d{2}-\d{2}T[\d:.]+)Z?/.exec(line)?.[1];
+  return { time: iso ? clock(new Date(`${iso}Z`)) : `${m[1]}:${m[2]}`, text: line.slice(m[0].length).trim() };
+};
+const ISSUE = /\b(ERROR|WARN|FATAL|GHOST)\b/;
 const showLine = (l) => (ISSUE.test(l.text) && l.time ? `[${l.time}] ` : '') + l.text;
 
 async function runDigest() {
@@ -176,23 +184,23 @@ async function runDigest() {
   const parsed = fresh.map(splitLine);
   const heart  = parsed.filter(l => /\bHEART\b/.test(l.text));
   const rest   = parsed.filter(l => !/\bHEART\b/.test(l.text));
-  const summary = [...heart].reverse().find(l => /Hourly summary/i.test(l.text));
-  const voice   = summary ? summary.text.replace(/^.*Hourly summary\s*[—-]\s*/i, '').trim() : null;
+  const summary = [...heart].reverse().find(l => /Connected\s*\|/.test(l.text));
+  const voice   = summary ? (summary.text.split('|').map(x => x.trim())[3] || null) : null;   // "all 8 healthy"
 
   const count = (re) => parsed.filter(l => re.test(l.text)).length;
-  const errors = count(/\bERROR\b/), warns = count(/\bWARN\b/), changes = count(/\bAUDIT\b/), starts = count(/Bot fully ready/);
+  const errors = count(/^(ERROR|FATAL)\b/), warns = count(/^WARN\b/), changes = count(/\|\s*AUDIT\s*\|/), starts = count(/Bot fully ready/);
 
   const snap = await system.getSnapshot({ force: true });
   const mins = getSettings().digestMinutes || 60;
   const now  = new Date(), from = new Date(now.getTime() - mins * 60_000);
-  const hm   = (d) => d.toISOString().slice(11, 16);
+  const hm   = clock;
 
-  const tailLines = rest.slice(-6).map(showLine).map(l => l.length > 150 ? l.slice(0, 149) + '…' : l);
+  const tailLines = rest.slice(-14).map(showLine).map(l => l.length > 110 ? l.slice(0, 109) + '…' : l);
   const stamp = now.toISOString().replace(/[:T]/g, '-').slice(0, 13);
 
   // The attached file: window header, then the lines (time only on errors/warnings), heartbeat summarised once
   const fileText = [
-    `Console log — ${hm(from)} to ${hm(now)} UTC`,
+    `Console log, ${hm(from)} to ${hm(now)}`,
     `${rest.length} lines${heart.length ? ` + ${heart.length} routine heartbeat lines (summarised at the end)` : ''}`,
     '',
     ...rest.map(showLine),
@@ -202,22 +210,20 @@ async function runDigest() {
 
   return alerts.notify({
     level: 'DIGEST',
-    title: `Console log — ${hm(from)} to ${hm(now)} UTC`,
+    title: `Console digest: ${hm(from)} to ${hm(now)}`,
     description: [
-      `**${errors}** error${errors === 1 ? '' : 's'} · **${warns}** warning${warns === 1 ? '' : 's'} · **${changes}** change${changes === 1 ? '' : 's'} · **${starts}** start${starts === 1 ? '' : 's'}`,
-      rolled ? '_Console buffer rolled over or the bot restarted since the last digest — some lines may be missing._' : null,
-      fresh.length === 0 ? '_No new console output._' : (rest.length === 0 ? '_Only routine heartbeat lines this period._' : null),
+      [`**${errors}** error${errors === 1 ? '' : 's'}`, `**${warns}** warning${warns === 1 ? '' : 's'}`, `**${changes}** change${changes === 1 ? '' : 's'}`, `**${starts}** start${starts === 1 ? '' : 's'}`].join('  ·  '),
+      rolled ? '-# The console rolled over or the bot restarted since the last digest, so some lines may be missing.' : null,
+      fresh.length === 0 ? '-# No new console output.' : (rest.length === 0 ? '-# Only routine heartbeat lines this time.' : null),
     ].filter(Boolean).join('\n'),
     fields: [
-      { name: 'RAM',       value: system.formatMemory(snap.memory) },
-      { name: 'CPU',       value: snap.discloud.cpu || `${snap.cpuPercent.toFixed(1)}%` },
-      { name: 'Container', value: snap.discloud.container || 'n/a' },
-      { name: 'Voice',     value: voice || 'n/a' },
-      { name: 'Uptime',    value: formatDuration(snap.uptimeSec * 1000) },
-      { name: 'New lines', value: `${rest.length}${heart.length ? ` (+${heart.length} heartbeat)` : ''}` },
-      ...(url ? [{ name: 'Live console', value: `[Open live console](${url})`, inline: false }] : []),
+      { name: 'Memory',  value: system.formatMemory(snap.memory) },
+      { name: 'CPU',     value: snap.discloud.cpu || `${snap.cpuPercent.toFixed(1)}%` },
+      { name: 'Uptime',  value: formatDuration(snap.uptimeSec * 1000) },
+      { name: 'Calls',   value: voice || `${voiceConnectionCount()} connected` },
+      ...(url ? [{ name: 'Live console', value: `[Open on Discloud](${url})`, inline: true }] : []),
     ],
-    codeBlocks: tailLines.length ? [{ label: `Latest ${tailLines.length} line(s) — routine heartbeat hidden`, text: tailLines.join('\n'), max: 1100 }] : [],
+    codeBlocks: tailLines.length ? [{ label: `Latest ${tailLines.length} line${tailLines.length === 1 ? '' : 's'}`, text: tailLines.join('\n'), max: 2300 }] : [],
     files: fresh.length ? [{ name: `console-${stamp}h.txt`, data: fileText }] : [],
     dm: 'fallback',
     to,

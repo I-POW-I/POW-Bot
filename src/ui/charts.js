@@ -33,10 +33,10 @@ function bars(ctx, values, labels, { highlight = -1, labelEvery = 1, left = 30, 
 }
 
 /** 24 bars, one per hour (UTC). `values` are average people in voice; `now` is the hour to highlight. */
-function busyChart(values, now, nowLabel = '') {
+function busyChart(values, now, nowLabel = '', label = 'UTC') {
   const { canvas, ctx } = frame();
   ctx.fillStyle = MUTED; ctx.font = '600 24px Inter, sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText('PEOPLE IN VOICE BY HOUR (UTC)', 30, 34);
+  ctx.fillText(`PEOPLE IN VOICE BY HOUR (${label})`, 30, 34);
   bars(ctx, values, Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0')), { highlight: now, labelEvery: 3, top: 60, unit: nowLabel });
   return canvas.encode('png');
 }

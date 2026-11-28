@@ -31,21 +31,13 @@ function startHeartbeat(client) {
       const conn = getVoiceConnection(guildId);
 
       if (conn && HEALTHY.includes(conn.state.status)) {
-        // Only log healthy connections once per hour — not every 2 minutes
-        if (shouldLog) {
-          log('HEART', 'Hourly check — connection healthy', {
-            guild:      meta.guildName,
-            channel:    meta.channelName,
-            uptime:     store.formatUptime(meta.joinedAt),
-            reconnects: meta.reconnectCount,
-          });
-        }
+        // healthy connections are only counted: one summary line an hour, and nothing per server
         continue;
       }
 
       // Ghost detected — always log immediately regardless of interval
       allHealthy = false;
-      log('GHOST', 'Ghost detected — attempting auto-rejoin', {
+      log('GHOST', 'Lost the call, reconnecting', {
         guild: meta.guildName, channel: meta.channelName,
       });
 
@@ -91,7 +83,7 @@ function startHeartbeat(client) {
 
     // Single summary log every hour if everything is fine
     if (shouldLog && allHealthy && entries.length > 0) {
-      log('HEART', `Hourly summary — all ${entries.length} connection(s) healthy`);
+      log('HEART', 'Connected', { note: `all ${entries.length} healthy`, uptime: require('./duration').duration(process.uptime() * 1000) });
     }
 
   }, HEARTBEAT_INTERVAL);
@@ -120,7 +112,10 @@ function attachDisconnectHandler(connection, guildName, channelName) {
   });
 
   connection.on('error', (err) => {
-    log('ERROR', 'Voice connection error', { guild: guildName, channel: channelName, err });
+    // Discord's voice servers sometimes drop a connection (522/502/503/504, resets). The hourly check rejoins, so this is a warning, not an error.
+    const transient = /\b(52[0-9]|50[234])\b|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|timed out/i.test(String(err?.message || err));
+    if (transient) log('WARN', 'Voice connection hiccup, will rejoin if needed', { guild: guildName, channel: channelName, error: err?.message });
+    else log('ERROR', 'Voice connection error', { guild: guildName, channel: channelName, err });
   });
 }
 

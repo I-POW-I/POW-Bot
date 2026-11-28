@@ -148,6 +148,7 @@ async function checkSubscriptionLocked(client, sub) {
         embeds:     [buildLiveEmbed(sub.platform, sub, status)],
         components: [buildWatchButton(status.url)],
         liveStamp:  true,
+        showpiece:  'links',
       });
 
       run(
@@ -183,6 +184,7 @@ async function checkSubscriptionLocked(client, sub) {
       await message.edit({
         embeds:     [buildLiveEmbed(sub.platform, sub, status)],
         components: [buildWatchButton(status.url)],
+        showpiece:  'links',
       });
 
       run(
